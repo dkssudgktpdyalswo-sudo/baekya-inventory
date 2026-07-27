@@ -330,6 +330,7 @@
     <p id="or-desc" style="font-size:13px;color:var(--muted);margin-top:-6px;"></p>
 
     <div id="or-jeol-wrap" class="hidden">
+      <div id="or-jeol-stock-info" style="font-size:13px; color:var(--primary-dark); background:#eef3f8; border-radius:8px; padding:8px 10px; margin-bottom:8px;"></div>
       <label>몇 절 출고하시나요?</label>
       <input id="or-jeol-count" type="number" min="1" step="1" placeholder="예: 2" oninput="renderJeolYardInputs()">
       <div id="or-jeol-list" style="margin-top:8px;"></div>
@@ -2785,6 +2786,21 @@ function openOrderReceiveModal(id) {
     manualWrap.classList.add('hidden');
     const defaultCount = remain > 0 ? Math.ceil(remain) : 1;
     document.getElementById('or-jeol-count').value = defaultCount;
+
+    const stockRolls = findInventoryRolls(o.item, o.color);
+    const stockInfoEl = document.getElementById('or-jeol-stock-info');
+    if (stockRolls.length > 0) {
+      const byTang = new Map();
+      for (const r of stockRolls) byTang.set(r.tang, Math.round(((byTang.get(r.tang) || 0) + r.qty) * 100) / 100);
+      const total = stockRolls.reduce((s, r) => s + r.qty, 0);
+      const tangText = Array.from(byTang.entries()).map(([t, q]) => `탕${t} ${q}y`).join(' · ');
+      stockInfoEl.innerHTML = `현재 재고: ${tangText} <b>(총 ${Math.round(total * 100) / 100}y)</b>`;
+      stockInfoEl.classList.remove('hidden');
+    } else {
+      stockInfoEl.innerHTML = `현재 이 컬러 재고가 없어요 (0y)`;
+      stockInfoEl.classList.remove('hidden');
+    }
+
     renderJeolYardInputs();
     document.getElementById('orderReceiveModal').classList.add('open');
     return;
