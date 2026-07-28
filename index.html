@@ -135,10 +135,10 @@
     body > *:not(#printArea) { display: none !important; }
     #printArea { display: block !important; }
     #printArea table { width: 100%; border-collapse: collapse; }
-    #printArea th, #printArea td { border: 1px solid #999; padding: 6px 8px; font-size: 13px; text-align: left; }
+    #printArea th, #printArea td { border: 1px solid #8fc1e3; padding: 6px 8px; font-size: 13px; text-align: left; }
     #printArea .compact-statement th, #printArea .compact-statement td { padding: 1.5px 4px !important; font-size: 8.5px !important; line-height: 1.15; }
     #printArea .ledger-print th, #printArea .ledger-print td { padding: 3px 6px !important; font-size: 11px !important; }
-    #printArea th { background: #eee; }
+    #printArea th { background: #eaf4fb; color: #1a5f8a; }
   }
 </style>
 </head>
@@ -374,6 +374,8 @@
     <label id="or-price-label">판매단가(원/y) — 매출 기록하려면 입력, 아니면 비워두세요</label>
     <input id="or-price" type="number" step="1" placeholder="예: 3500">
     <label style="display:flex;align-items:center;gap:6px;font-size:14px;color:var(--text);margin-top:8px;"><input type="checkbox" id="or-tax" style="width:auto;"> 부가세 10% 추가해서 매출 잡기 (온라인 결제 등)</label>
+    <label>비고 (스타일넘버, 어느 공장으로 갔는지, 불량이면 어떤 불량인지 등)</label>
+    <input id="or-note" placeholder="선택사항">
 
     <div class="modal-actions">
       <button class="btn-cancel" onclick="closeOrderReceiveModal()">취소</button>
@@ -453,6 +455,8 @@
     </div>
     <label>입금계좌 (명세서 하단에 표시)</label>
     <input id="biz-bank" placeholder="예: ○○은행 123-456-789012 (예금주: 백야)">
+    <label>참고사항 (명세서 맨 아래 표시)</label>
+    <input id="biz-note" placeholder="예: 백민재 하나은행 155-910051-44504 / 원단커팅시 반품 불가합니다">
     <div class="modal-actions">
       <button class="btn-cancel" onclick="closeBizInfoModal()">취소</button>
       <button class="btn-save" onclick="saveBizInfo()">저장</button>
@@ -590,7 +594,7 @@ const DEFAULT_ROLLS = [["0", "0114", "#23살구", 1, 66], ["0", "0114", "#23살�
 const DEFAULT_COSTS = [["ㄱ", "글로우", "import", 25], ["ㄷ", "데일리", "import", 6.5], ["ㄷ", "데이지", "import", 20.5], ["ㄹ", "로웰", "import", 18.3], ["ㄹ", "리노", "import", 12.5], ["ㄹ", "루엔", "import", 12], ["ㄹ", "루돌프", "import", 27], ["ㄹ", "로드", "import", 23.8], ["ㄹ", "레몬", "import", 10.5], ["ㄹ", "로빈", "import", 17], ["ㄹ", "로앤", "import", 28.5], ["ㄹ", "로렌", "import", 24], ["ㄹ", "라떼", "import", 25], ["ㄹ", "라인", "import", 21.5], ["ㄹ", "리브st", "domestic", 3850], ["ㄹ", "루나", "import", 15.5], ["ㅁ", "밀크", "import", 24], ["ㅁ", "머플러", "import", 20], ["ㅁ", "메이플", "import", 29.8], ["ㅁ", "멜론", "import", 17.5], ["ㅁ", "머핀", "import", 15], ["ㅁ", "마들렌", "import", 26.8], ["ㅁ", "마린", "import", 18.5], ["ㅁ", "모카", "import", 20], ["ㅁ", "머랭", "import", 17], ["ㅁ", "무드", "import", 14.5], ["ㅁ", "마카롱", "import", 25], ["ㅂ", "브리즈", "import", 15.5], ["ㅂ", "바나나", "import", 20.5], ["ㅂ", "버터", "import", 22.5], ["ㅂ", "빈티지", "import", 18], ["ㅂ", "베리", "import", 21], ["ㅂ", "버블", "import", 16], ["ㅂ", "바닐라", "import", 21.5], ["ㅂ", "브루니", "import", 24.5], ["ㅅ", "스콘", "import", 24], ["ㅅ", "스카이", "import", 17.3], ["ㅅ", "샌드", "import", 12.5], ["ㅅ", "선셋", "import", 20], ["ㅅ", "샤워", "import", 19.5], ["ㅅ", "소다", "import", 19.5], ["ㅅ", "스무디", "import", 16], ["ㅅ", "솔라", "domestic", 5000], ["ㅅ", "소프트", "import", 21.5], ["ㅅ", "시나몬", "import", 28], ["ㅅ", "세이지", "import", 27], ["ㅇ", "워머", "import", 24], ["ㅇ", "인디고", "import", 18], ["ㅇ", "와플", "import", 30], ["ㅇ", "오로라", "import", 31.5], ["ㅇ", "오슬로", "import", 30], ["ㅇ", "우드", "import", 18.5], ["ㅇ", "오트", "import", 24], ["ㅇ", "아이스", "import", 13.5], ["ㅇ", "아몬드", "import", 25.5], ["ㅇ", "오션", "import", 19], ["ㅇ", "웨이브", "import", 18.5], ["ㅇ", "에덴", "domestic", 2400], ["ㅇ", "어텀", "import", 22], ["ㅇ", "엠버", "import", 16.5], ["ㅇ", "에센셜", "import", 21.5], ["ㅇ", "애쉬", "import", 14], ["ㅈ", "지크", "import", 13.5], ["ㅈ", "젤리", "import", 12.3], ["ㅈ", "제이드", "import", 20], ["ㅊ", "치즈", "import", 12.5], ["ㅋ", "코코", "import", 22], ["ㅋ", "카카오", "import", 23], ["ㅋ", "크로키", "import", 19], ["ㅋ", "캔버스", "import", 18.5], ["ㅋ", "케치켄", "import", 35], ["ㅋ", "캔디", "import", 11], ["ㅋ", "컴포트", "domestic", 4000], ["ㅌ", "트러플기모", "import", 23.1], ["ㅌ", "토스트", "import", 27.5], ["ㅌ", "토피", "import", 22], ["ㅌ", "테디", "import", 27], ["ㅍ", "포켓", "import", 14.5], ["ㅍ", "푸딩", "import", 8.8], ["ㅍ", "피넛", "import", 14.5], ["ㅎ", "헤이븐", "import", 28.3], ["ㅎ", "헤이즐", "import", 28.5], ["0", "#009", "import", 17.5], ["0", "#092", "import", 21.5], ["1", "1428", "import", 20], ["1", "102", "import", 22], ["1", "1032", "import", 27.5], ["1", "124", "domestic", 3700], ["2", "216", "import", 10.5], ["2", "236", "import", 22.3], ["2", "249", "import", 15], ["2", "287", "import", 14.5], ["3", "326", "import", 16], ["3", "372", "import", 17.5], ["3", "350무지", "import", 32], ["3", "350기모", "import", 34.5], ["3", "350피치", "import", 34.7], ["3", "339", "import", 19], ["4", "400", "import", 21.5], ["4", "454", "domestic", 3100], ["5", "574", "import", 18.5], ["5", "553", "import", 19], ["7", "701", "import", 17], ["8", "805", "import", 21.5], ["8", "808", "import", 14.5], ["8", "802", "import", 13.5], ["8", "821", "import", 20], ["8", "843", "import", 19], ["8", "887", "import", 16.8], ["8", "819", "import", 18], ["8", "885", "import", 21.5], ["9", "908", "import", 19], ["9", "916", "import", 14.3], ["9", "938", "import", 25.5], ["9", "971", "import", 27], ["9", "988", "import", 23.5], ["9", "954", "import", 17.5]];       // [분류, 품목, type(import/domestic), 중국단가 또는 고정원가]
 const DEFAULT_SETTINGS = {
   rate: 220, yard: 0.9144, ship: 300,
-  bizName: '', bizOwner: '', bizNumber: '', bizAddress: '', bizType: '', bizItem: '', bankInfo: ''
+  bizName: '', bizOwner: '', bizNumber: '', bizAddress: '', bizType: '', bizItem: '', bankInfo: '', noteText: ''
 };
 const SWATCH_MIGRATION = {"swatch": [["0", "0114", "#23살구", 1], ["0", "0114", "#3핑크", 2], ["0", "0114", "#27블루", 3], ["0", "0114", "#2노랑", 4], ["0", "0114", "#18아이보리", 5], ["0", "0114", "#20L베이지", 6], ["0", "0114", "#15카키베지", 7], ["0", "0114", "#16L카키", 8], ["0", "0114", "#29민트", 9], ["0", "0114", "#31그레이", 10], ["0", "0114", "#1베이지", 11], ["0", "0114", "#33D베이지", 12], ["0", "0114", "#34카키", 13], ["0", "0114", "청블루", 14], ["0", "0114", "먹색", 15], ["0", "0114", "네이비", 16], ["0", "0114", "검정", 17], ["0", "0245", "핑크", 1], ["0", "0245", "살구", 2], ["0", "0245", "보라", 3], ["0", "0245", "#27연카키", 4], ["0", "0245", "#28회베이지", 5], ["0", "0245", "#2크림", 6], ["0", "0245", "#4진베이지", 7], ["0", "0245", "#34카멜베이지", 8], ["0", "0245", "#19먹색", 9], ["0", "0245", "곤색", 10], ["0", "0245", "검정", 11], ["0", "009", "#22베지", 1], ["0", "009", "#32진베", 2], ["0", "009", "#29회베", 3], ["0", "009", "#7베지", 4], ["0", "009", "#9연밤", 5], ["0", "009", "#31그레이", 6], ["0", "009", "#24진차콜", 7], ["0", "009", "#18먹색", 8], ["0", "009", "#20곤색", 9], ["0", "009", "#검정", 10], ["0", "092", "#연베지", 1], ["0", "092", "#4연베지", 2], ["0", "092", "#1화이트", 3], ["0", "092", "#27진베", 4], ["0", "092", "#15브라운", 5], ["0", "092", "#21핑크", 6], ["0", "092", "#6연핑크", 7], ["0", "092", "#2연민트", 8], ["0", "092", "#3연회", 9], ["0", "092", "#1블루", 10], ["0", "092", "26곤색", 11], ["0", "092", "검정", 12], ["1", "124", "연보라", 1], ["1", "124", "핑크", 2], ["1", "124", "소라", 3], ["1", "124", "D베이지", 4], ["1", "124", "회베이지", 5], ["1", "124", "카멜", 6], ["1", "124", "모카", 7], ["1", "124", "차콜", 8], ["1", "124", "머스타드", 9], ["1", "124", "노랑", 10], ["1", "124", "크림", 11], ["1", "124", "L베이지", 12], ["1", "124", "베이지", 13], ["1", "124", "L그레이", 14], ["1", "124", "레드", 15], ["1", "124", "D그레이", 16], ["1", "124", "진곤", 17], ["1", "124", "검정", 18], ["1", "124", "그린", 19], ["1", "124", "딥그린", 20], ["1", "124", "백색", 21], ["1", "124", "연밤", 22], ["1", "124", "진밤", 23], ["1", "1428", "#17소라", 1], ["1", "1428", "#19연회", 2], ["1", "1428", "#18회색", 3], ["1", "1428", "#1차콜", 4], ["1", "1428", "#3아이", 5], ["1", "1428", "#12연곤", 6], ["1", "1428", "#6진곤", 7], ["1", "1428", "#7검정", 8], ["1", "1428", "#23핑크", 9], ["1", "1428", "#14멜란지곤", 10], ["1", "1428", "#72회베지", 11], ["1", "1032", "#58블루", 1], ["1", "1032", "#151크림", 2], ["1", "1032", "#56카베", 3], ["1", "1032", "#4와인", 4], ["1", "1032", "#진카키", 5], ["1", "1032", "#청록", 6], ["1", "1032", "#진베", 7], ["1", "1032", "#60소털", 8], ["1", "1032", "#19진밤", 9], ["1", "1032", "#모카", 10], ["1", "1032", "#13회", 11], ["1", "1032", "#먹", 12], ["1", "1032", "#차콜", 13], ["1", "1032", "#진차콜", 14], ["1", "1032", "#진곤", 15], ["1", "1032", "#검정", 16], ["2", "216", "1진베지", 1], ["2", "216", "61베지", 2], ["2", "216", "#54밤", 3], ["2", "216", "66밤색", 4], ["2", "216", "2진베지", 5], ["2", "216", "#76베이지", 6], ["2", "216", "75베지", 7], ["2", "216", "#29베지", 8], ["2", "216", "#4크림", 9], ["2", "216", "#3화이트", 10], ["2", "216", "#59진블루", 11], ["2", "216", "#62카키", 12], ["2", "216", "#25진카키", 13], ["2", "216", "65차콜", 14], ["2", "216", "10차콜", 15], ["2", "216", "검정", 16], ["2", "216", "27카밤", 17], ["2", "249", "BT베이지", 1], ["2", "249", "#131중밤", 2], ["2", "249", "#53먹색", 3], ["2", "249", "#82회색", 4], ["2", "249", "#83베지", 5], ["2", "249", "#5진베지", 6], ["2", "249", "#민트", 7], ["2", "249", "#54카키", 8], ["2", "249", "#61곤색", 9], ["2", "249", "#검정", 10], ["2", "249", "#48진밤", 11], ["2", "249", "#4베이지", 12], ["2", "2630", "곤색", 1], ["2", "2630", "검정", 2], ["2", "287고방", "#27검백", 1], ["2", "287고방", "#35소라", 2], ["2", "287고방", "#21연베지", 3], ["2", "287고방", "#36베이지", 4], ["2", "287고방", "#25밤소라", 5], ["2", "287고방", "#검정", 6], ["3", "326", "#11베이지", 1], ["3", "326", "#4연베지", 2], ["3", "326", "#1화이트", 3], ["3", "326", "#13카키베지", 4], ["3", "326", "#19코코아", 5], ["3", "326", "#31먹색", 6], ["3", "326", "#25곤색", 7], ["3", "326", "#26검정", 8], ["3", "350", "#2진베지", 1], ["3", "350", "#1연베지", 2], ["3", "350", "#3밤색", 3], ["3", "350", "#4연회색", 4], ["3", "350", "#8차콜", 5], ["3", "350", "#12검정", 6], ["3", "350", "#11진차콜", 7], ["3", "350", "7곤색", 8], ["3", "350기모", "#2진베지", 1], ["3", "350기모", "#3밤색", 2], ["3", "350기모", "#1연베지", 3], ["3", "350기모", "#5연회", 4], ["3", "350기모", "#6차콜", 5], ["3", "350기모", "#7진차콜", 6], ["3", "350기모", "#8검정", 7], ["3", "350겉피치", "#2진베지", 1], ["3", "350겉피치", "#1연베지", 2], ["3", "350겉피치", "#4연회", 3], ["3", "350겉피치", "#8차콜", 4], ["3", "350겉피치", "#11진차콜", 5], ["3", "350겉피치", "#12검정", 6], ["3", "369", "코코아", 1], ["3", "369", "연베이지", 2], ["3", "369", "진밤", 3], ["3", "369", "검정", 4], ["4", "432", "밤색", 1], ["4", "432", "베이지", 2], ["4", "432", "차콜", 3], ["4", "432", "검정", 4], ["4", "432", "진카멜", 5], ["4", "432", "아이보리", 6], ["4", "432", "진차콜", 7], ["4", "432", "M베이지", 8], ["4", "456체크", "베이지", 1], ["4", "456체크", "차콜", 2], ["5", "530", "23-19A연베", 1], ["5", "530", "D베지", 2], ["5", "530", "13A카키", 3], ["5", "530", "23-11A코코아", 4], ["5", "530", "23-12A밤", 5], ["5", "530", "23-7A먹색", 6], ["5", "530", "12A곤색", 7], ["5", "530", "검정", 8], ["5", "501", "소라", 1], ["5", "501", "민트", 2], ["5", "501", "핑크", 3], ["5", "501", "백아이", 4], ["5", "501", "연베이지", 5], ["5", "501", "17 베이지", 6], ["5", "501", "20 올리브", 7], ["5", "501", "먹색", 8], ["5", "501", "곤색", 9], ["5", "501", "검정", 10], ["5", "522", "#5연베지", 2], ["5", "522", "D베이지", 3], ["5", "522", "카키", 4], ["5", "522", "아이", 5], ["5", "522", "진밤", 6], ["5", "522", "먹색", 7], ["5", "522", "곤색", 8], ["5", "522", "검정", 9], ["5", "553", "#19밤색", 1], ["5", "553", "#16모카", 2], ["5", "553", "#28연밤", 3], ["5", "553", "#36밤색", 4], ["5", "553", "#26차콜", 5], ["5", "553", "#67차콜", 6], ["5", "553", "#35검정", 7], ["5", "574", "#38진베지", 1], ["5", "574", "#11베이지", 2], ["5", "574", "#18카키", 3], ["5", "574", "#24블루", 4], ["5", "574", "#8회색", 5], ["5", "574", "#17먹색", 6], ["5", "574", "#39진차콜", 7], ["5", "574", "#37노랑베지", 8], ["5", "574", "#40연베이지", 9], ["5", "574", "#50베이지", 10], ["5", "574", "#3연카베지", 11], ["5", "574", "#5카베지", 12], ["5", "574", "#26민트", 13], ["5", "574", "#9소라", 14], ["5", "574", "#1백아이", 15], ["5", "574", "#4샌드베이지", 16], ["5", "574", "#15밤색", 17], ["5", "574", "#19곤색", 18], ["5", "574", "#20검정", 19], ["6", "602", "4A밤색", 1], ["6", "602", "2A베이지", 2], ["6", "602", "11진밤", 3], ["6", "602", "아이보리", 4], ["6", "602", "3카멜", 5], ["6", "602", "17수박", 6], ["6", "602", "14먹색", 7], ["6", "602", "차콜", 8], ["6", "602", "18곤색", 9], ["6", "602", "검정", 10], ["6", "604체크", "밤색", 1], ["6", "604체크", "밤색기모", 2], ["6", "604체크", "차콜", 3], ["6", "604체크", "차콜기모", 4], ["6", "635체크", "아이보리", 1], ["6", "635체크", "베이지", 2], ["ㄷ", "데일리", "#13연베지", 1], ["ㄷ", "데일리", "#2아이보리", 2], ["ㄷ", "데일리", "#26진베지", 5], ["ㄹ", "리노", "#14베지", 1], ["ㄹ", "리노", "#1내추럴", 2], ["ㄹ", "리노", "#8베지", 3], ["ㄹ", "라떼", "#1백아이", 4], ["ㄹ", "라떼", "#10밤색", 11], ["ㅁ", "메이플", "1베지", 2], ["ㅁ", "메이플", "#5그레이", 17], ["ㅁ", "모카", "그레이", 10], ["ㅁ", "무드", "#8밤색", 1], ["ㅁ", "무드", "#34베이지", 2], ["ㅁ", "무드", "#2회베", 3], ["ㅁ", "무드", "#1크림", 4], ["ㅁ", "무드", "#7진베", 5], ["ㅁ", "무드", "#15카멜", 6], ["ㅁ", "무드", "#13진밤", 7], ["ㅁ", "무드", "레드브라운", 8], ["ㅁ", "무드", "#21차콜", 9], ["ㅁ", "무드", "#10검정", 10], ["ㅁ", "모자이크", "#c진회", 1], ["ㅁ", "모자이크", "#b회색", 2], ["ㅁ", "모자이크", "#a연회", 3], ["ㅁ", "모자이크", "#6-0오트", 4], ["ㅁ", "모자이크", "#6-x와인", 5], ["ㅁ", "모자이크", "#7-b밤색", 6], ["ㅁ", "모자이크", "#13밤", 7], ["ㅁ", "모자이크", "#7-a진밤", 8], ["ㅁ", "모자이크", "#검정", 9], ["ㅂ", "브리즈", "#17청", 1], ["ㅂ", "브리즈", "#14연밤", 4], ["ㅂ", "브리즈", "#38밤", 5], ["ㅂ", "버블", "#7청색", 1], ["ㅂ", "버블", "#18진청", 2], ["ㅂ", "버블", "#연청", 3], ["ㅂ", "버블", "#14크림", 4], ["ㅂ", "버블", "#21베지", 5], ["ㅂ", "버블", "#13진베", 6], ["ㅂ", "버블", "#10진밤", 7], ["ㅂ", "버블", "#8검백", 8], ["ㅂ", "버블", "#19진검백", 9], ["ㅂ", "버블", "#올검정", 10], ["ㅂ", "버블", "#3브라운", 11], ["ㅅ", "소프트", "#9베이지", 1], ["ㅇ", "에센셜", "#18진베지", 1], ["ㅇ", "에센셜", "#8연베지", 2], ["ㅇ", "에센셜", "#4크림", 3], ["ㅇ", "에센셜", "#15카키", 4], ["ㅇ", "에센셜", "#14차콜", 5], ["ㅇ", "에센셜", "#17와인", 6], ["ㅇ", "에센셜", "#20검정", 7], ["ㅇ", "웨이브", "#5청색", 1], ["ㅇ", "웨이브", "#12진청", 5], ["ㅇ", "웨이브", "#3검백", 6], ["ㅇ", "오트", "#1아이", 6], ["ㅇ", "오트", "#2연베지", 1], ["ㅇ", "오트", "#12밤색", 13], ["ㅇ", "아몬드", "#24밤", 1], ["ㅇ", "아몬드", "#31진베", 2], ["ㅇ", "아몬드", "#2크림", 3], ["ㅇ", "아몬드", "#1백아이", 4], ["ㅇ", "아몬드", "#6크림", 5], ["ㅇ", "아몬드", "#11연회", 6], ["ㅇ", "아몬드", "#12회", 7], ["ㅇ", "아몬드", "#28블루", 8], ["ㅇ", "아몬드", "#21차콜", 9], ["ㅇ", "아몬드", "#23진차콜", 10], ["ㅇ", "아몬드", "#22먹", 11], ["ㅇ", "아몬드", "#26곤색", 12], ["ㅇ", "아몬드", "#27검정", 13], ["ㅈ", "젤리", "#95베지", 8], ["ㅋ", "캔디", "#43베지", 2], ["ㅍ", "피넛", "#10베지", 1], ["ㅍ", "피넛", "#20밤", 2], ["ㅍ", "피넛", "#2백아이", 3], ["ㅍ", "피넛", "#9회색", 4], ["ㅍ", "피넛", "#26핑크", 5], ["ㅍ", "피넛", "#18진베", 6], ["ㅍ", "피넛", "#28차콜", 7], ["ㅍ", "피넛", "#검정", 8]], "zeroStockSwatch": [], "zeroStockChina": []};
 const RENAME_MAP = [["0", "9530", ",092"], ["1", "16318", "1428"], ["2", "3019", "249"], ["3", "9307", "350"], ["3", "9308", "350기모"], ["8", "#088", "808"], ["ㄷ", "#0230", "데일리"], ["ㄹ", "8002", "라인"], ["ㄹ", "2011", "로웰"], ["ㄹ", "8502", "로앤"], ["ㄹ", "6773", "리노"], ["ㄹ", "29006", "로드"], ["ㄹ", "2353", "루엔"], ["ㄹ", "6012", "루돌프"], ["ㄹ", "8001", "로렌"], ["ㄹ", "수보", "리브"], ["ㄹ", "16106", "라떼"], ["ㅁ", "2040, 3019", "멜론"], ["ㅁ", "#8377", "메이플"], ["ㅁ", "#2461", "머플러"], ["ㅁ", "#3039", "머핀"], ["ㅁ", "#1231", "밀크"], ["ㅁ", "#36024", "모카"], ["ㅁ", "#3188", "모자이크"], ["ㅁ", "단가", "모자이크"], ["ㅂ", "7016, 7025", "브리즈"], ["ㅂ", "2558", "베리"], ["ㅂ", "894", "버블"], ["ㅂ", "12003", "버블"], ["ㅅ", "7005", "스카이"], ["ㅅ", "7058 , 2351", "선셋"], ["ㅅ", "8026", "스무디"], ["ㅅ", "수보", "솔라"], ["ㅇ", "673", "에센셜"], ["ㅇ", "2772 /7110", "인디고"], ["ㅇ", "1703", "우드"], ["ㅇ", "#0123", "에덴"], ["ㅇ", "8008", "와플"], ["ㅇ", "96297", "오션"], ["ㅇ", "2177", "웨이브"], ["ㅇ", "36058", "오트"], ["ㅇ", "#6652", "아몬드"], ["ㅇ", "단가", "아몬드"], ["ㅈ", "8683", "지크"], ["ㅊ", "52517", "초코"], ["ㅋ", "2185", "캔디"], ["ㅋ", "sb-250305", "코코넛"], ["ㅌ", "2478", "트러플"], ["ㅍ", "h308", "피넛"], ["ㅍ", "단가", "피넛"]];  // [cat, badCode(중국품번으로 오인된 가짜 품번), trueItem]
@@ -1982,7 +1986,7 @@ function buildStatementHTML(customerName, startDate, endDate) {
     totalSale += grossSale;
     totalSupply += rowSupply;
     totalTax += rowTax;
-    saleRows.push({ date: e.date, desc: `${e.item} ${e.color || ''}`, qty: `${e.amount}${e.unit}${e.unit === '절' ? ` (${e.yardsShipped}y)` : ''}`, unitPrice: e.unitPrice.toLocaleString(), supply: rowSupply, tax: rowTax, amount: grossSale, color: 'black' });
+    saleRows.push({ date: e.date, desc: `${e.item} ${e.color || ''}${e.note ? ' (' + e.note + ')' : ''}`, qty: `${e.amount}${e.unit}${e.unit === '절' ? ` (${e.yardsShipped}y)` : ''}`, unitPrice: e.unitPrice.toLocaleString(), supply: rowSupply, tax: rowTax, amount: grossSale, color: 'black' });
 
     if (defectAmt > 0) {
       totalReturnDefect += defectAmt;
@@ -2027,19 +2031,22 @@ function buildStatementHTML(customerName, startDate, endDate) {
     <table style="font-size:${sizes.boxFont}; margin-bottom:${sizes.boxGap};">
       <tr>
         <td style="width:50%; vertical-align:top; padding:4px;">
-          <div style="font-weight:700; background:#eef3f8; padding:3px 8px; margin-bottom:3px;">공급자</div>
+          <div style="font-weight:700; background:#cfe8f7; color:#1a5f8a; padding:3px 8px; margin-bottom:3px;">공급자</div>
           <table style="font-size:${sizes.innerFont};"><tbody>
-            <tr><td style="width:70px;background:#f7f7f7;">등록번호</td><td>${esc(b.bizNumber || '')}</td></tr>
-            <tr><td style="background:#f7f7f7;">상호</td><td>${esc(b.bizName || '')}</td><td style="background:#f7f7f7;width:50px;">성명</td><td>${esc(b.bizOwner || '')}</td></tr>
-            <tr><td style="background:#f7f7f7;">주소</td><td colspan="3">${esc(b.bizAddress || '')}</td></tr>
-            <tr><td style="background:#f7f7f7;">업태</td><td>${esc(b.bizType || '')}</td><td style="background:#f7f7f7;">종목</td><td>${esc(b.bizItem || '')}</td></tr>
+            <tr><td style="width:70px;background:#eaf4fb;color:#1a5f8a;">등록번호</td><td>${esc(b.bizNumber || '')}</td></tr>
+            <tr><td style="background:#eaf4fb;color:#1a5f8a;">상호</td><td>${esc(b.bizName || '')}</td><td style="background:#eaf4fb;color:#1a5f8a;width:50px;">성명</td><td>${esc(b.bizOwner || '')}</td></tr>
+            <tr><td style="background:#eaf4fb;color:#1a5f8a;">주소</td><td colspan="3">${esc(b.bizAddress || '')}</td></tr>
+            <tr><td style="background:#eaf4fb;color:#1a5f8a;">업태</td><td>${esc(b.bizType || '')}</td><td style="background:#eaf4fb;color:#1a5f8a;">종목</td><td>${esc(b.bizItem || '')}</td></tr>
           </tbody></table>
         </td>
-        <td style="width:50%; vertical-align:middle; padding:4px; text-align:center;">
-          <div style="font-weight:700; background:#eef3f8; padding:3px 8px; margin-bottom:3px; text-align:left;">공급받는자</div>
-          <div style="display:flex; align-items:center; justify-content:center; height:${compact ? '54px' : '78px'}; border:1px solid #ddd;">
-            <div style="font-size:${compact ? '15px' : '22px'}; font-weight:800; letter-spacing:1px;">${esc(customerName)} <span style="font-weight:400;">귀하</span></div>
-          </div>
+        <td style="width:50%; vertical-align:top; padding:4px;">
+          <div style="font-weight:700; background:#cfe8f7; color:#1a5f8a; padding:3px 8px; margin-bottom:3px;">공급받는자</div>
+          <table style="font-size:${sizes.innerFont};"><tbody>
+            <tr><td style="width:70px;background:#eaf4fb;color:#1a5f8a;">등록번호</td><td></td></tr>
+            <tr><td style="background:#eaf4fb;color:#1a5f8a;">상호</td><td>${esc(customerName)}</td><td style="background:#eaf4fb;color:#1a5f8a;width:50px;">성명</td><td></td></tr>
+            <tr><td style="background:#eaf4fb;color:#1a5f8a;">주소</td><td colspan="3"></td></tr>
+            <tr><td style="background:#eaf4fb;color:#1a5f8a;">업태</td><td></td><td style="background:#eaf4fb;color:#1a5f8a;">종목</td><td></td></tr>
+          </tbody></table>
         </td>
       </tr>
     </table>
@@ -2048,8 +2055,8 @@ function buildStatementHTML(customerName, startDate, endDate) {
   const renderCopy = (copyLabel) => `
     <div class="${compact ? 'compact-statement' : ''}" style="padding:${sizes.pad}; font-family:-apple-system,'Malgun Gothic',sans-serif; box-sizing:border-box; height:50%; overflow:hidden;">
       <div style="display:flex; justify-content:space-between; align-items:baseline; margin-bottom:${sizes.titleGap};">
-        <h2 style="margin:0; font-size:${sizes.titleSize}; letter-spacing:2px;">거 래 명 세 표</h2>
-        <span style="font-size:${sizes.metaSize}; font-weight:700; border:1px solid #333; padding:2px 10px; border-radius:4px;">${copyLabel}</span>
+        <h2 style="margin:0; font-size:${sizes.titleSize}; letter-spacing:2px; color:#1a5f8a;">거 래 명 세 표</h2>
+        <span style="font-size:${sizes.metaSize}; font-weight:700; border:1px solid #1a5f8a; color:#1a5f8a; padding:2px 10px; border-radius:4px;">${copyLabel}</span>
       </div>
       <div style="color:#555; margin-bottom:${sizes.metaGap}; font-size:${sizes.metaSize};">거래기간: ${esc(startDate)} ~ ${esc(endDate)} · 발행일: ${todayStr()}</div>
       ${infoBox}
@@ -2060,13 +2067,14 @@ function buildStatementHTML(customerName, startDate, endDate) {
         <tbody>${rowsHtml}</tbody>
       </table>
       <table style="font-size:${sizes.totalsFont}; margin-top:${sizes.totalsGap};">
-        <tr><td style="background:#f7f7f7;width:25%;">공급가액 합계</td><td style="text-align:right;">${totalSupply.toLocaleString()}원</td>
-            <td style="background:#f7f7f7;width:25%;">세액 합계</td><td style="text-align:right;">${totalTax.toLocaleString()}원</td></tr>
-        ${totalReturnDefect > 0 ? `<tr><td style="background:#f7f7f7;color:#c0392b;">반품/불량 차감</td><td style="text-align:right;color:#c0392b;">-${totalReturnDefect.toLocaleString()}원</td><td style="background:#f7f7f7;">공제액</td><td style="text-align:right;">${totalDiscount.toLocaleString()}원</td></tr>` : (totalDiscount > 0 ? `<tr><td style="background:#f7f7f7;">공제액</td><td style="text-align:right;">${totalDiscount.toLocaleString()}원</td><td></td><td></td></tr>` : '')}
-        <tr><td style="background:#f7f7f7;color:#1a56db;">입금 합계</td><td style="text-align:right;color:#1a56db;">${totalPaid.toLocaleString()}원</td>
-            <td style="background:#e8edf5;font-weight:800;">청구(미수)금액</td><td style="text-align:right;font-weight:800;">${balance.toLocaleString()}원</td></tr>
+        <tr><td style="background:#eaf4fb;color:#1a5f8a;width:25%;">공급가액 합계</td><td style="text-align:right;">${totalSupply.toLocaleString()}원</td>
+            <td style="background:#eaf4fb;color:#1a5f8a;width:25%;">세액 합계</td><td style="text-align:right;">${totalTax.toLocaleString()}원</td></tr>
+        ${totalReturnDefect > 0 ? `<tr><td style="background:#eaf4fb;color:#1a5f8a;color:#c0392b;">반품/불량 차감</td><td style="text-align:right;color:#c0392b;">-${totalReturnDefect.toLocaleString()}원</td><td style="background:#eaf4fb;color:#1a5f8a;">공제액</td><td style="text-align:right;">${totalDiscount.toLocaleString()}원</td></tr>` : (totalDiscount > 0 ? `<tr><td style="background:#eaf4fb;color:#1a5f8a;">공제액</td><td style="text-align:right;">${totalDiscount.toLocaleString()}원</td><td></td><td></td></tr>` : '')}
+        <tr><td style="background:#eaf4fb;color:#1a5f8a;color:#1a56db;">입금 합계</td><td style="text-align:right;color:#1a56db;">${totalPaid.toLocaleString()}원</td>
+            <td style="background:#d3e9f7;color:#1a5f8a;font-weight:800;">청구(미수)금액</td><td style="text-align:right;font-weight:800;">${balance.toLocaleString()}원</td></tr>
       </table>
       ${b.bankInfo ? `<div style="margin-top:${sizes.bankGap}; font-size:${sizes.bankSize}; color:#333;">입금계좌: ${esc(b.bankInfo)}</div>` : ''}
+      ${b.noteText ? `<div style="margin-top:2px; font-size:${sizes.bankSize}; color:#555;">참고사항: ${esc(b.noteText)}</div>` : ''}
     </div>
   `;
 
@@ -2461,7 +2469,7 @@ function renderShipmentLog() {
               </div>
               <div class="order-status ${(e.isReturn || e.isDefect) ? 'status-wait' : (e.isFullCompletion ? 'status-done' : 'status-partial')}">${e.isDefect ? '불량' : e.isReturn ? '반품' : (e.isFullCompletion ? '전량완료' : '부분출고')}</div>
             </div>
-            <div class="order-progress">${(e.isReturn || e.isDefect) ? `<span style="color:var(--danger);font-weight:700;">${e.isDefect ? '불량' : '반품'} ${Math.abs(e.amount)}${e.unit}${e.deductAmount != null ? ` (-${e.deductAmount.toLocaleString()}원)` : ''}</span>${e.note ? ` · ${esc(e.note)}` : ''}` : e.manualClose ? `수동 완료 처리${e.note ? ' · ' + esc(e.note) : ''}` : `출고 ${e.amount}${e.unit}${e.unit === '절' && e.yardsShipped ? ` (${e.yardsShipped}y${e.yardsEstimated ? ' 추정' : ''})` : ''}${e.remainAfter > 0 ? ` <span style="color:var(--muted);font-size:12px;">(잔여 ${e.remainAfter}${e.unit})</span>` : ''}`}</div>
+            <div class="order-progress">${(e.isReturn || e.isDefect) ? `<span style="color:var(--danger);font-weight:700;">${e.isDefect ? '불량' : '반품'} ${Math.abs(e.amount)}${e.unit}${e.deductAmount != null ? ` (-${e.deductAmount.toLocaleString()}원)` : ''}</span>${e.note ? ` · ${esc(e.note)}` : ''}` : e.manualClose ? `수동 완료 처리${e.note ? ' · ' + esc(e.note) : ''}` : `출고 ${e.amount}${e.unit}${e.unit === '절' && e.yardsShipped ? ` (${e.yardsShipped}y${e.yardsEstimated ? ' 추정' : ''})` : ''}${e.remainAfter > 0 ? ` <span style="color:var(--muted);font-size:12px;">(잔여 ${e.remainAfter}${e.unit})</span>` : ''}${e.note ? ` · ${esc(e.note)}` : ''}`}</div>
             <div class="order-btns">
               <button class="btn-out" onclick="openLogEditModal(${e.id})">수정</button>
               <button class="btn-del" onclick="cancelShipmentLogEntry(${e.id})">이 출고 취소</button>
@@ -2817,6 +2825,7 @@ function openOrderReceiveModal(id) {
   const remembered = findRememberedPrice(o.customer, o.item, o.color);
   document.getElementById('or-price').value = remembered != null ? remembered : '';
   document.getElementById('or-tax').checked = false;
+  document.getElementById('or-note').value = '';
   document.querySelector('input[name="or-price-mode"][value="unit"]').checked = true;
   onPriceModeChange();
 
@@ -3122,11 +3131,13 @@ async function confirmOrderReceive() {
     if (unitPrice) await rememberPrice(o.customer, o.item, o.color, unitPrice);
   }
 
+  const shipNote = document.getElementById('or-note').value.trim();
   shipmentLog.push({
     id: nextLogId++, date: todayStr(), orderId: o.id,
     customer: o.customer, factory: o.factory, item: o.item, color: o.color,
     amount: raw, unit: o.unit || 'y', yardsShipped, remainAfter: remain, isFullCompletion: remain <= 0,
-    unitPrice, supplyAmount, taxAmount, saleAmount, paidAmount: 0, yardsEstimated, taxIncluded: !!(supplyAmount && taxIncluded), isFlatTotal: priceMode === 'total'
+    unitPrice, supplyAmount, taxAmount, saleAmount, paidAmount: 0, yardsEstimated, taxIncluded: !!(supplyAmount && taxIncluded), isFlatTotal: priceMode === 'total',
+    note: shipNote
   });
   await persistShipmentLog();
 
@@ -3386,6 +3397,7 @@ function openBizInfoModal() {
   document.getElementById('biz-type').value = settings.bizType || '';
   document.getElementById('biz-item').value = settings.bizItem || '';
   document.getElementById('biz-bank').value = settings.bankInfo || '';
+  document.getElementById('biz-note').value = settings.noteText || '';
   document.getElementById('bizInfoModal').classList.add('open');
 }
 function closeBizInfoModal() { document.getElementById('bizInfoModal').classList.remove('open'); }
@@ -3399,6 +3411,7 @@ async function saveBizInfo() {
     bizType: document.getElementById('biz-type').value.trim(),
     bizItem: document.getElementById('biz-item').value.trim(),
     bankInfo: document.getElementById('biz-bank').value.trim(),
+    noteText: document.getElementById('biz-note').value.trim(),
   };
   await persistSettings();
   closeBizInfoModal();
