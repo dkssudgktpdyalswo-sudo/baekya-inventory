@@ -203,10 +203,13 @@
     <input id="f-item" placeholder="예: 350" autocomplete="off" oninput="showItemSuggestions(this)" onfocus="showItemSuggestions(this)" onblur="hideItemSuggestionsDelayed()">
     <label>칼라</label>
     <input id="f-color" placeholder="예: 검정 (기존 컬러면 목록에서 선택)" autocomplete="off" oninput="showColorSuggestions(this,'f-item')" onfocus="showColorSuggestions(this,'f-item')" onblur="hideItemSuggestionsDelayed()">
-    <div class="row2">
-      <div><label>탕번호</label><input id="f-tang" type="number" value="1" min="1"></div>
-      <div><label>마수(y)</label><input id="f-qty" type="number" placeholder="예: 55"></div>
-    </div>
+    <label>스왓치 순번 (선택 - 지정하면 그 번호로 넣고 기존 컬러들은 자동으로 한 칸씩 밀려요)</label>
+    <input id="f-swatch-order" type="number" min="1" placeholder="예: 8">
+
+    <label>탕별 마수 (한 번에 여러 탕 입고 가능)</label>
+    <div id="f-roll-list"></div>
+    <button onclick="addRollRow()" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;margin-top:6px;">+ 탕 추가</button>
+
     <div class="modal-actions">
       <button class="btn-cancel" onclick="closeAddModal()">취소</button>
       <button class="btn-save" onclick="saveAdd()">입고 등록</button>
@@ -1202,11 +1205,28 @@ function onFItemInput(inputEl) {
 function openRollAddModal() {
   document.getElementById('f-item').value = '';
   document.getElementById('f-color').value = '';
-  document.getElementById('f-tang').value = 1;
-  document.getElementById('f-qty').value = '';
+  document.getElementById('f-swatch-order').value = '';
+  document.getElementById('f-roll-list').innerHTML = '';
+  addRollRow();
   document.getElementById('addModal').classList.add('open');
 }
 function closeAddModal() { document.getElementById('addModal').classList.remove('open'); }
+function addRollRow() {
+  const listEl = document.getElementById('f-roll-list');
+  const rowCount = listEl.children.length;
+  const row = document.createElement('div');
+  row.className = 'row2 f-roll-row';
+  row.style.marginTop = '6px';
+  row.innerHTML = `
+    <div><input type="number" min="1" value="${rowCount + 1}" placeholder="탕번호" class="f-roll-tang"></div>
+    <div><input type="number" step="0.1" placeholder="마수(y)" class="f-roll-qty"></div>
+    <button onclick="this.parentElement.remove()" style="border:none;background:#fdecea;color:var(--danger);border-radius:8px;padding:0 10px;font-size:12px;flex:none;">삭제</button>
+  `;
+  row.style.display = 'flex';
+  row.style.gap = '8px';
+  row.style.alignItems = 'center';
+  listEl.appendChild(row);
+}
 function autoDeriveCat(item) {
   const existing = rolls.find(r => String(r.item).trim() === String(item).trim());
   if (existing) return existing.cat;
@@ -1220,13 +1240,45 @@ function autoDeriveCat(item) {
 async function saveAdd() {
   const item = document.getElementById('f-item').value.trim();
   const color = document.getElementById('f-color').value.trim();
-  const tang = parseInt(document.getElementById('f-tang').value) || 1;
-  const qty = parseFloat(document.getElementById('f-qty').value);
-  if (!item || !color || !qty || qty <= 0) { showToast('품번, 칼라, 마수를 확인해주세요'); return; }
+  if (!item || !color) { showToast('품번, 칼라를 확인해주세요'); return; }
+
+  const tangInputs = document.querySelectorAll('.f-roll-tang');
+  const qtyInputs = document.querySelectorAll('.f-roll-qty');
+  const entries = [];
+  for (let i = 0; i < tangInputs.length; i++) {
+    const tang = parseInt(tangInputs[i].value) || 1;
+    const qty = parseFloat(qtyInputs[i].value);
+    if (qty && qty > 0) entries.push({ tang, qty });
+  }
+  if (entries.length === 0) { showToast('마수를 하나 이상 입력해주세요'); return; }
+
   const cat = autoDeriveCat(item);
-  rolls.push({ id: nextId++, cat, item, color, tang, qty });
+  for (const en of entries) {
+    rolls.push({ id: nextId++, cat, item, color, tang: en.tang, qty: en.qty });
+  }
   await persistRolls();
-  closeAddModal(); render(); showToast('입고 등록되었습니다');
+
+  const orderRaw = document.getElementById('f-swatch-order').value.trim();
+  if (orderRaw !== '') {
+    const order = parseInt(orderRaw);
+    let sw = findExactSwatch(cat, item, color);
+    const conflict = swatchInfo.some(s => String(s.item).trim() === String(item).trim() && s.order === order && String(s.color).trim() !== String(color).trim());
+    if (conflict) {
+      const t_item = String(item).trim();
+      const toShift = swatchInfo.filter(s => String(s.item).trim() === t_item && s.order != null && s.order >= order && String(s.color).trim() !== String(color).trim());
+      toShift.sort((a, b) => b.order - a.order);
+      for (const s of toShift) s.order = s.order + 1;
+    }
+    if (!sw) {
+      sw = { id: nextSwatchId++, cat, item, color, order: null, chinaCode: null };
+      swatchInfo.push(sw);
+    }
+    sw.order = order;
+    await persistSwatchInfo();
+  }
+
+  closeAddModal(); render();
+  showToast(`입고 등록되었습니다 (${entries.length}개 탕)`);
 }
 
 function openOutModal(id) {
@@ -3005,6 +3057,18 @@ function autoFillOrderRolls() {
 }
 
 function closeOrderReceiveModal() { document.getElementById('orderReceiveModal').classList.remove('open'); pendingReceiveOrderId = null; }
+function cleanupDepletedRolls(item, color, touchedRollIds) {
+  // 이번 거래로 재고 0이 된 롤들을 정리하되, 그 품목·컬러가 화면에서 완전히 사라지지 않게 1줄은 남김
+  const t_item = String(item).trim();
+  const t_color = String(color).trim();
+  const zeroed = rolls.filter(r => touchedRollIds.includes(r.id) && r.qty <= 0);
+  if (zeroed.length === 0) return;
+  const stillHasStock = rolls.some(r => String(r.item).trim() === t_item && String(r.color).trim() === t_color && r.qty > 0);
+  const toRemove = stillHasStock ? zeroed : zeroed.slice(1); // 다른 재고가 하나도 없으면 1개는 0으로 남김
+  const removeIds = new Set(toRemove.map(r => r.id));
+  rolls = rolls.filter(r => !removeIds.has(r.id));
+}
+
 function deductFromInventory(item, color, amount, tang) {
   const t_item = resolveInventoryItem(item);
   const t_color = String(resolveInventoryColor(item, color)).trim();
@@ -3027,7 +3091,7 @@ function deductFromInventory(item, color, amount, tang) {
       remain = 0;
     }
   }
-  rolls = rolls.filter(r => !(matches.includes(r) && r.qty === 0));
+  cleanupDepletedRolls(item, color, matches.map(r => r.id));
   const deducted = Math.round((amount - remain) * 100) / 100;
   return { ok: true, deducted, shortBy: remain };
 }
@@ -3063,7 +3127,7 @@ async function confirmOrderReceive() {
         const take = Math.min(roll.qty, a.amt);
         roll.qty = Math.round((roll.qty - take) * 100) / 100;
       }
-      rolls = rolls.filter(r => !(allocations.some(a => a.rollId === r.id) && r.qty <= 0));
+      cleanupDepletedRolls(o.item, resolveInventoryColor(o.item, o.color), allocations.map(a => a.rollId));
       await persistRolls();
       inv = { ok: true, deducted: yardsShipped, shortBy: 0 };
     } else {
@@ -3097,7 +3161,7 @@ async function confirmOrderReceive() {
         yardsShipped += take;
       }
       yardsShipped = Math.round(yardsShipped * 100) / 100;
-      rolls = rolls.filter(r => r.qty > 0 || !allocations.some(a => a.rollId === r.id));
+      cleanupDepletedRolls(o.item, resolveInventoryColor(o.item, o.color), allocations.map(a => a.rollId));
       await persistRolls();
       inv = { ok: true, deducted: yardsShipped, shortBy: 0 };
       raw = yardsShipped;
