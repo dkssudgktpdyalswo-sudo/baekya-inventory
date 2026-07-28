@@ -132,11 +132,11 @@
   .btn-receive { background: #dbe9f0; color: var(--primary-dark); }
   .btn-complete { background: #eaf3ec; color: #2f6b46; }
   @media print {
+    @page { margin: 6mm; }
     body > *:not(#printArea) { display: none !important; }
     #printArea { display: block !important; }
     #printArea table { width: 100%; border-collapse: collapse; }
     #printArea th, #printArea td { border: 1px solid #8fc1e3; padding: 6px 8px; font-size: 13px; text-align: left; }
-    #printArea .compact-statement th, #printArea .compact-statement td { padding: 1.5px 4px !important; font-size: 8.5px !important; line-height: 1.15; }
     #printArea .ledger-print th, #printArea .ledger-print td { padding: 3px 6px !important; font-size: 11px !important; }
     #printArea th { background: #eaf4fb; color: #1a5f8a; }
   }
@@ -1975,7 +1975,7 @@ function buildStatementHTML(customerName, startDate, endDate) {
       const label = e.isDefect ? '불량' : '반품';
       const amt = e.deductAmount != null ? -e.deductAmount : null;
       if (amt != null) totalReturnDefect += Math.abs(amt);
-      saleRows.push({ date: e.date, desc: `${label} - ${e.item} ${e.color || ''}${e.note ? ' (' + e.note + ')' : ''}`, qty: `-${q}${e.unit}`, unitPrice: e.unitPrice ? e.unitPrice.toLocaleString() : '', supply: amt, tax: 0, amount: amt, color: 'red' });
+      saleRows.push({ date: e.date, desc: `${label} - ${e.item} ${e.color || ''}`, note: e.note || '', qty: `-${q}${e.unit}`, unitPrice: e.unitPrice ? e.unitPrice.toLocaleString() : '', supply: amt, tax: 0, amount: amt, color: 'red' });
       continue;
     }
     if (e.saleAmount == null) continue;
@@ -1986,18 +1986,18 @@ function buildStatementHTML(customerName, startDate, endDate) {
     totalSale += grossSale;
     totalSupply += rowSupply;
     totalTax += rowTax;
-    saleRows.push({ date: e.date, desc: `${e.item} ${e.color || ''}${e.note ? ' (' + e.note + ')' : ''}`, qty: `${e.amount}${e.unit}${e.unit === '절' ? ` (${e.yardsShipped}y)` : ''}`, unitPrice: e.unitPrice.toLocaleString(), supply: rowSupply, tax: rowTax, amount: grossSale, color: 'black' });
+    saleRows.push({ date: e.date, desc: `${e.item} ${e.color || ''}`, note: e.note || '', qty: `${e.amount}${e.unit}${e.unit === '절' ? ` (${e.yardsShipped}y)` : ''}`, unitPrice: e.unitPrice.toLocaleString(), supply: rowSupply, tax: rowTax, amount: grossSale, color: 'black' });
 
     if (defectAmt > 0) {
       totalReturnDefect += defectAmt;
-      saleRows.push({ date: e.date, desc: `불량 - ${e.item} ${e.color || ''}${e.defectNote ? ' (' + e.defectNote + ')' : ''}`, qty: `-${e.defectYards}y`, unitPrice: '', supply: -defectAmt, tax: 0, amount: -defectAmt, color: 'red' });
+      saleRows.push({ date: e.date, desc: `불량 - ${e.item} ${e.color || ''}`, note: e.defectNote || '', qty: `-${e.defectYards}y`, unitPrice: '', supply: -defectAmt, tax: 0, amount: -defectAmt, color: 'red' });
     }
     totalDiscount += (e.discount || 0);
 
     const pays = (e.payments || []).filter(p => inRange(p.date));
     for (const p of pays) {
       totalPaid += p.amount;
-      paymentRows.push({ date: p.date, desc: `입금 (${(p.method || 'cash') === 'cash' ? '현금' : '온라인'})`, qty: '', unitPrice: '', supply: null, tax: null, amount: p.amount, color: 'blue' });
+      paymentRows.push({ date: p.date, desc: `입금 (${(p.method || 'cash') === 'cash' ? '현금' : '온라인'})`, note: '', qty: '', unitPrice: '', supply: null, tax: null, amount: p.amount, color: 'blue' });
     }
   }
   saleRows.sort((a, b) => String(a.date).localeCompare(String(b.date)));
@@ -2007,24 +2007,36 @@ function buildStatementHTML(customerName, startDate, endDate) {
   const rowsHtml = rows.map(r => {
     const style = r.color === 'blue' ? 'color:#1a56db;' : r.color === 'red' ? 'color:#c0392b;' : '';
     const fmt = (v) => v == null ? '' : (v < 0 ? `-${Math.abs(v).toLocaleString()}` : v.toLocaleString());
+    const pad = `padding:${sizes.rowPad} 4px;`;
     return `
       <tr style="${style}">
-        <td>${esc(r.date)}</td>
-        <td>${esc(r.desc)}</td>
-        <td style="text-align:right;">${esc(r.qty)}</td>
-        <td style="text-align:right;">${esc(r.unitPrice)}</td>
-        <td style="text-align:right;">${fmt(r.supply)}</td>
-        <td style="text-align:right;">${fmt(r.tax)}</td>
-        <td style="text-align:right;">${fmt(r.amount)}</td>
+        <td style="${pad}">${esc(r.date)}</td>
+        <td style="${pad}">${esc(r.desc)}</td>
+        <td style="text-align:right;${pad}">${esc(r.qty)}</td>
+        <td style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-size:0.85em;${pad}">${esc(r.note || '')}</td>
+        <td style="text-align:right;${pad}">${esc(r.unitPrice)}</td>
+        <td style="text-align:right;${pad}">${fmt(r.supply)}</td>
+        <td style="text-align:right;${pad}">${fmt(r.tax)}</td>
+        <td style="text-align:right;${pad}">${fmt(r.amount)}</td>
       </tr>`;
   }).join('');
 
   const balance = Math.max(0, totalSale - totalDiscount - totalReturnDefect - totalPaid);
 
-  const compact = startDate !== endDate || rows.length > 8; // 하루짜리라도 품목이 많으면 촘촘하게
+  const compact = startDate !== endDate || rows.length > 5; // 하루짜리라도 품목이 많으면 촘촘하게
+  // 줄 수가 많을수록 표 글씨를 더 세밀하게 줄여서, 반쪽 안에 무조건 다 들어가게 함
+  const n = rows.length;
+  let rowFontPx, rowPadPx;
+  if (n <= 6) { rowFontPx = 10; rowPadPx = 3; }
+  else if (n <= 10) { rowFontPx = 9; rowPadPx = 2.2; }
+  else if (n <= 16) { rowFontPx = 7.5; rowPadPx = 1.6; }
+  else if (n <= 24) { rowFontPx = 6.3; rowPadPx = 1.1; }
+  else if (n <= 34) { rowFontPx = 5.3; rowPadPx = 0.7; }
+  else { rowFontPx = 4.4; rowPadPx = 0.4; }
+
   const sizes = compact
-    ? { pad: '6mm 10mm', titleSize: '14px', titleGap: '3px', metaSize: '9px', metaGap: '3px', boxGap: '2px', boxFont: '9px', innerFont: '10px', rowFont: '10px', totalsFont: '9px', totalsGap: '2px', bankSize: '9px', bankGap: '2px' }
-    : { pad: '14mm 16mm', titleSize: '20px', titleGap: '10px', metaSize: '12px', metaGap: '12px', boxGap: '8px', boxFont: '12px', innerFont: '12px', rowFont: '12px', totalsFont: '13px', totalsGap: '10px', bankSize: '12px', bankGap: '10px' };
+    ? { pad: '2mm 4mm 6mm 4mm', titleSize: '14px', titleGap: '3px', metaSize: '9px', metaGap: '3px', boxGap: '2px', boxFont: '9px', innerFont: '10px', rowFont: rowFontPx + 'px', rowPad: rowPadPx + 'px', totalsFont: '9px', totalsGap: '2px', bankSize: '9px', bankGap: '2px' }
+    : { pad: '4mm 6mm 14mm 6mm', titleSize: '20px', titleGap: '10px', metaSize: '12px', metaGap: '12px', boxGap: '8px', boxFont: '12px', innerFont: '12px', rowFont: '12px', rowPad: '6px', totalsFont: '13px', totalsGap: '10px', bankSize: '12px', bankGap: '10px' };
 
   const b = settings;
   const infoBox = `
@@ -2053,34 +2065,28 @@ function buildStatementHTML(customerName, startDate, endDate) {
   `;
 
   const renderCopy = (copyLabel) => `
-    <div class="${compact ? 'compact-statement' : ''}" style="padding:${sizes.pad}; font-family:-apple-system,'Malgun Gothic',sans-serif; box-sizing:border-box; height:50%; overflow:hidden; display:flex; flex-direction:column;">
-      <div style="flex:none;">
-        <div style="display:flex; justify-content:space-between; align-items:baseline; margin-bottom:${sizes.titleGap};">
-          <h2 style="margin:0; font-size:${sizes.titleSize}; letter-spacing:2px; color:#1a5f8a;">거 래 명 세 표</h2>
-          <span style="font-size:${sizes.metaSize}; font-weight:700; border:1px solid #1a5f8a; color:#1a5f8a; padding:2px 10px; border-radius:4px;">${copyLabel}</span>
-        </div>
-        <div style="color:#555; margin-bottom:${sizes.metaGap}; font-size:${sizes.metaSize};">거래기간: ${esc(startDate)} ~ ${esc(endDate)} · 발행일: ${todayStr()}</div>
-        ${infoBox}
+    <div class="${compact ? 'compact-statement' : ''}" style="padding:${sizes.pad}; font-family:-apple-system,'Malgun Gothic',sans-serif; box-sizing:border-box; height:50%; overflow:hidden;">
+      <div style="display:flex; justify-content:space-between; align-items:baseline; margin-bottom:${sizes.titleGap};">
+        <h2 style="margin:0; font-size:${sizes.titleSize}; letter-spacing:2px; color:#1a5f8a;">거 래 명 세 표</h2>
+        <span style="font-size:${sizes.metaSize}; font-weight:700; border:1px solid #1a5f8a; color:#1a5f8a; padding:2px 10px; border-radius:4px;">${copyLabel}</span>
       </div>
-      <div style="flex:1 1 auto; overflow:hidden; min-height:0;">
-        <table style="font-size:${sizes.rowFont}; table-layout:fixed; width:100%;">
-          <thead>
-            <tr><th style="width:11%;">날짜</th><th style="width:26%;">내용</th><th style="width:11%;">수량</th><th style="width:12%;">단가(원)</th><th style="width:14%;">공급가액(원)</th><th style="width:12%;">세액(원)</th><th style="width:14%;">합계(원)</th></tr>
-          </thead>
-          <tbody>${rowsHtml}</tbody>
-        </table>
-      </div>
-      <div style="flex:none;">
-        <table style="font-size:${sizes.totalsFont}; margin-top:${sizes.totalsGap};">
-          <tr><td style="background:#eaf4fb;color:#1a5f8a;width:25%;">공급가액 합계</td><td style="text-align:right;">${totalSupply.toLocaleString()}원</td>
-              <td style="background:#eaf4fb;color:#1a5f8a;width:25%;">세액 합계</td><td style="text-align:right;">${totalTax.toLocaleString()}원</td></tr>
-          ${totalReturnDefect > 0 ? `<tr><td style="background:#eaf4fb;color:#c0392b;">반품/불량 차감</td><td style="text-align:right;color:#c0392b;">-${totalReturnDefect.toLocaleString()}원</td><td style="background:#eaf4fb;color:#1a5f8a;">공제액</td><td style="text-align:right;">${totalDiscount.toLocaleString()}원</td></tr>` : (totalDiscount > 0 ? `<tr><td style="background:#eaf4fb;color:#1a5f8a;">공제액</td><td style="text-align:right;">${totalDiscount.toLocaleString()}원</td><td></td><td></td></tr>` : '')}
-          <tr><td style="background:#eaf4fb;color:#1a56db;">입금 합계</td><td style="text-align:right;color:#1a56db;">${totalPaid.toLocaleString()}원</td>
-              <td style="background:#d3e9f7;color:#1a5f8a;font-weight:800;">청구(미수)금액</td><td style="text-align:right;font-weight:800;">${balance.toLocaleString()}원</td></tr>
-        </table>
-        ${b.bankInfo ? `<div style="margin-top:${sizes.bankGap}; font-size:${sizes.bankSize}; color:#333;">입금계좌: ${esc(b.bankInfo)}</div>` : ''}
-        ${b.noteText ? `<div style="margin-top:2px; font-size:${sizes.bankSize}; color:#555;">참고사항: ${esc(b.noteText)}</div>` : ''}
-      </div>
+      <div style="color:#555; margin-bottom:${sizes.metaGap}; font-size:${sizes.metaSize};">거래기간: ${esc(startDate)} ~ ${esc(endDate)} · 발행일: ${todayStr()}</div>
+      ${infoBox}
+      <table style="font-size:${sizes.rowFont}; table-layout:fixed; width:100%;">
+        <thead>
+          <tr><th style="width:8%; padding:${sizes.rowPad} 4px;">날짜</th><th style="width:24%; padding:${sizes.rowPad} 4px;">내용</th><th style="width:8%; padding:${sizes.rowPad} 4px;">수량</th><th style="width:14%; padding:${sizes.rowPad} 4px;">비고</th><th style="width:9%; padding:${sizes.rowPad} 4px;">단가(원)</th><th style="width:12%; padding:${sizes.rowPad} 4px;">공급가액(원)</th><th style="width:10%; padding:${sizes.rowPad} 4px;">세액(원)</th><th style="width:12%; padding:${sizes.rowPad} 4px;">합계(원)</th></tr>
+        </thead>
+        <tbody>${rowsHtml}</tbody>
+      </table>
+      <table style="font-size:${sizes.totalsFont}; margin-top:${sizes.totalsGap};">
+        <tr><td style="background:#eaf4fb;color:#1a5f8a;width:25%;">공급가액 합계</td><td style="text-align:right;">${totalSupply.toLocaleString()}원</td>
+            <td style="background:#eaf4fb;color:#1a5f8a;width:25%;">세액 합계</td><td style="text-align:right;">${totalTax.toLocaleString()}원</td></tr>
+        ${totalReturnDefect > 0 ? `<tr><td style="background:#eaf4fb;color:#c0392b;">반품/불량 차감</td><td style="text-align:right;color:#c0392b;">-${totalReturnDefect.toLocaleString()}원</td><td style="background:#eaf4fb;color:#1a5f8a;">공제액</td><td style="text-align:right;">${totalDiscount.toLocaleString()}원</td></tr>` : (totalDiscount > 0 ? `<tr><td style="background:#eaf4fb;color:#1a5f8a;">공제액</td><td style="text-align:right;">${totalDiscount.toLocaleString()}원</td><td></td><td></td></tr>` : '')}
+        <tr><td style="background:#eaf4fb;color:#1a56db;">입금 합계</td><td style="text-align:right;color:#1a56db;">${totalPaid.toLocaleString()}원</td>
+            <td style="background:#d3e9f7;color:#1a5f8a;font-weight:800;">청구(미수)금액</td><td style="text-align:right;font-weight:800;">${balance.toLocaleString()}원</td></tr>
+      </table>
+      ${b.bankInfo ? `<div style="margin-top:${sizes.bankGap}; font-size:${sizes.bankSize}; color:#333;">입금계좌: ${esc(b.bankInfo)}</div>` : ''}
+      ${b.noteText ? `<div style="margin-top:2px; font-size:${sizes.bankSize}; color:#555;">참고사항: ${esc(b.noteText)}</div>` : ''}
     </div>
   `;
 
