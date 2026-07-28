@@ -1295,7 +1295,11 @@ async function confirmOut() {
   if (!amt || amt <= 0) { showToast('출고 마수를 입력해주세요'); return; }
   const r = rolls.find(x => x.id === pendingOut);
   if (!r) return;
-  if (amt >= r.qty) { rolls = rolls.filter(x => x.id !== pendingOut); showToast('전체 출고되어 목록에서 삭제되었습니다'); }
+  if (amt >= r.qty) {
+    r.qty = 0;
+    cleanupDepletedRolls(r.item, r.color, [r.id]);
+    showToast('전체 출고 처리됐어요');
+  }
   else { r.qty = Math.round((r.qty - amt) * 100) / 100; showToast(`${amt}y 출고, 남은 마수 ${r.qty}y`); }
   await persistRolls(); closeOutModal(); render();
 }
