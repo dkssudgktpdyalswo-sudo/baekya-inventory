@@ -2021,7 +2021,7 @@ function buildStatementHTML(customerName, startDate, endDate) {
 
   const balance = Math.max(0, totalSale - totalDiscount - totalReturnDefect - totalPaid);
 
-  const compact = startDate !== endDate; // 하루짜리면 여유있게, 기간(여러 날)이면 촘촘하게
+  const compact = startDate !== endDate || rows.length > 8; // 하루짜리라도 품목이 많으면 촘촘하게
   const sizes = compact
     ? { pad: '6mm 10mm', titleSize: '14px', titleGap: '3px', metaSize: '9px', metaGap: '3px', boxGap: '2px', boxFont: '9px', innerFont: '10px', rowFont: '10px', totalsFont: '9px', totalsGap: '2px', bankSize: '9px', bankGap: '2px' }
     : { pad: '14mm 16mm', titleSize: '20px', titleGap: '10px', metaSize: '12px', metaGap: '12px', boxGap: '8px', boxFont: '12px', innerFont: '12px', rowFont: '12px', totalsFont: '13px', totalsGap: '10px', bankSize: '12px', bankGap: '10px' };
@@ -2060,9 +2060,9 @@ function buildStatementHTML(customerName, startDate, endDate) {
       </div>
       <div style="color:#555; margin-bottom:${sizes.metaGap}; font-size:${sizes.metaSize};">거래기간: ${esc(startDate)} ~ ${esc(endDate)} · 발행일: ${todayStr()}</div>
       ${infoBox}
-      <table style="font-size:${sizes.rowFont};">
+      <table style="font-size:${sizes.rowFont}; table-layout:fixed; width:100%;">
         <thead>
-          <tr><th>날짜</th><th>내용</th><th>수량</th><th>단가(원)</th><th>공급가액(원)</th><th>세액(원)</th><th>합계(원)</th></tr>
+          <tr><th style="width:11%;">날짜</th><th style="width:26%;">내용</th><th style="width:11%;">수량</th><th style="width:12%;">단가(원)</th><th style="width:14%;">공급가액(원)</th><th style="width:12%;">세액(원)</th><th style="width:14%;">합계(원)</th></tr>
         </thead>
         <tbody>${rowsHtml}</tbody>
       </table>
