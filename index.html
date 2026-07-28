@@ -2053,28 +2053,34 @@ function buildStatementHTML(customerName, startDate, endDate) {
   `;
 
   const renderCopy = (copyLabel) => `
-    <div class="${compact ? 'compact-statement' : ''}" style="padding:${sizes.pad}; font-family:-apple-system,'Malgun Gothic',sans-serif; box-sizing:border-box; height:50%; overflow:hidden;">
-      <div style="display:flex; justify-content:space-between; align-items:baseline; margin-bottom:${sizes.titleGap};">
-        <h2 style="margin:0; font-size:${sizes.titleSize}; letter-spacing:2px; color:#1a5f8a;">거 래 명 세 표</h2>
-        <span style="font-size:${sizes.metaSize}; font-weight:700; border:1px solid #1a5f8a; color:#1a5f8a; padding:2px 10px; border-radius:4px;">${copyLabel}</span>
+    <div class="${compact ? 'compact-statement' : ''}" style="padding:${sizes.pad}; font-family:-apple-system,'Malgun Gothic',sans-serif; box-sizing:border-box; height:50%; overflow:hidden; display:flex; flex-direction:column;">
+      <div style="flex:none;">
+        <div style="display:flex; justify-content:space-between; align-items:baseline; margin-bottom:${sizes.titleGap};">
+          <h2 style="margin:0; font-size:${sizes.titleSize}; letter-spacing:2px; color:#1a5f8a;">거 래 명 세 표</h2>
+          <span style="font-size:${sizes.metaSize}; font-weight:700; border:1px solid #1a5f8a; color:#1a5f8a; padding:2px 10px; border-radius:4px;">${copyLabel}</span>
+        </div>
+        <div style="color:#555; margin-bottom:${sizes.metaGap}; font-size:${sizes.metaSize};">거래기간: ${esc(startDate)} ~ ${esc(endDate)} · 발행일: ${todayStr()}</div>
+        ${infoBox}
       </div>
-      <div style="color:#555; margin-bottom:${sizes.metaGap}; font-size:${sizes.metaSize};">거래기간: ${esc(startDate)} ~ ${esc(endDate)} · 발행일: ${todayStr()}</div>
-      ${infoBox}
-      <table style="font-size:${sizes.rowFont}; table-layout:fixed; width:100%;">
-        <thead>
-          <tr><th style="width:11%;">날짜</th><th style="width:26%;">내용</th><th style="width:11%;">수량</th><th style="width:12%;">단가(원)</th><th style="width:14%;">공급가액(원)</th><th style="width:12%;">세액(원)</th><th style="width:14%;">합계(원)</th></tr>
-        </thead>
-        <tbody>${rowsHtml}</tbody>
-      </table>
-      <table style="font-size:${sizes.totalsFont}; margin-top:${sizes.totalsGap};">
-        <tr><td style="background:#eaf4fb;color:#1a5f8a;width:25%;">공급가액 합계</td><td style="text-align:right;">${totalSupply.toLocaleString()}원</td>
-            <td style="background:#eaf4fb;color:#1a5f8a;width:25%;">세액 합계</td><td style="text-align:right;">${totalTax.toLocaleString()}원</td></tr>
-        ${totalReturnDefect > 0 ? `<tr><td style="background:#eaf4fb;color:#1a5f8a;color:#c0392b;">반품/불량 차감</td><td style="text-align:right;color:#c0392b;">-${totalReturnDefect.toLocaleString()}원</td><td style="background:#eaf4fb;color:#1a5f8a;">공제액</td><td style="text-align:right;">${totalDiscount.toLocaleString()}원</td></tr>` : (totalDiscount > 0 ? `<tr><td style="background:#eaf4fb;color:#1a5f8a;">공제액</td><td style="text-align:right;">${totalDiscount.toLocaleString()}원</td><td></td><td></td></tr>` : '')}
-        <tr><td style="background:#eaf4fb;color:#1a5f8a;color:#1a56db;">입금 합계</td><td style="text-align:right;color:#1a56db;">${totalPaid.toLocaleString()}원</td>
-            <td style="background:#d3e9f7;color:#1a5f8a;font-weight:800;">청구(미수)금액</td><td style="text-align:right;font-weight:800;">${balance.toLocaleString()}원</td></tr>
-      </table>
-      ${b.bankInfo ? `<div style="margin-top:${sizes.bankGap}; font-size:${sizes.bankSize}; color:#333;">입금계좌: ${esc(b.bankInfo)}</div>` : ''}
-      ${b.noteText ? `<div style="margin-top:2px; font-size:${sizes.bankSize}; color:#555;">참고사항: ${esc(b.noteText)}</div>` : ''}
+      <div style="flex:1 1 auto; overflow:hidden; min-height:0;">
+        <table style="font-size:${sizes.rowFont}; table-layout:fixed; width:100%;">
+          <thead>
+            <tr><th style="width:11%;">날짜</th><th style="width:26%;">내용</th><th style="width:11%;">수량</th><th style="width:12%;">단가(원)</th><th style="width:14%;">공급가액(원)</th><th style="width:12%;">세액(원)</th><th style="width:14%;">합계(원)</th></tr>
+          </thead>
+          <tbody>${rowsHtml}</tbody>
+        </table>
+      </div>
+      <div style="flex:none;">
+        <table style="font-size:${sizes.totalsFont}; margin-top:${sizes.totalsGap};">
+          <tr><td style="background:#eaf4fb;color:#1a5f8a;width:25%;">공급가액 합계</td><td style="text-align:right;">${totalSupply.toLocaleString()}원</td>
+              <td style="background:#eaf4fb;color:#1a5f8a;width:25%;">세액 합계</td><td style="text-align:right;">${totalTax.toLocaleString()}원</td></tr>
+          ${totalReturnDefect > 0 ? `<tr><td style="background:#eaf4fb;color:#c0392b;">반품/불량 차감</td><td style="text-align:right;color:#c0392b;">-${totalReturnDefect.toLocaleString()}원</td><td style="background:#eaf4fb;color:#1a5f8a;">공제액</td><td style="text-align:right;">${totalDiscount.toLocaleString()}원</td></tr>` : (totalDiscount > 0 ? `<tr><td style="background:#eaf4fb;color:#1a5f8a;">공제액</td><td style="text-align:right;">${totalDiscount.toLocaleString()}원</td><td></td><td></td></tr>` : '')}
+          <tr><td style="background:#eaf4fb;color:#1a56db;">입금 합계</td><td style="text-align:right;color:#1a56db;">${totalPaid.toLocaleString()}원</td>
+              <td style="background:#d3e9f7;color:#1a5f8a;font-weight:800;">청구(미수)금액</td><td style="text-align:right;font-weight:800;">${balance.toLocaleString()}원</td></tr>
+        </table>
+        ${b.bankInfo ? `<div style="margin-top:${sizes.bankGap}; font-size:${sizes.bankSize}; color:#333;">입금계좌: ${esc(b.bankInfo)}</div>` : ''}
+        ${b.noteText ? `<div style="margin-top:2px; font-size:${sizes.bankSize}; color:#555;">참고사항: ${esc(b.noteText)}</div>` : ''}
+      </div>
     </div>
   `;
 
