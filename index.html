@@ -331,11 +331,24 @@
 
     <div id="or-jeol-wrap" class="hidden">
       <div id="or-jeol-stock-info" style="font-size:13px; color:var(--primary-dark); background:#eef3f8; border-radius:8px; padding:8px 10px; margin-bottom:8px;"></div>
-      <label>몇 절 출고하시나요?</label>
-      <input id="or-jeol-count" type="number" min="1" step="1" placeholder="예: 2" oninput="renderJeolYardInputs()">
-      <div id="or-jeol-list" style="margin-top:8px;"></div>
-      <div style="display:flex; justify-content:flex-end; margin-top:6px; font-size:13px;">
-        <span>합계: <b id="or-jeol-total">0</b>y</span>
+      <label>몇 절 출고하시나요? (기록용 - 재고매칭 없으면 이걸로 계산돼요)</label>
+      <input id="or-jeol-count" type="number" min="1" step="1" placeholder="예: 2">
+
+      <div id="or-jeol-tang-section" class="hidden" style="margin-top:12px;">
+        <label>탕별로 실제 나갈 야드를 입력하세요</label>
+        <div id="or-jeol-tang-list"></div>
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-top:6px; font-size:13px;">
+          <button onclick="autoFillJeolTangs()" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:8px;padding:6px 10px;font-size:12px;">자동 채우기</button>
+          <span>합계: <b id="or-jeol-tang-total">0</b>y</span>
+        </div>
+      </div>
+
+      <div id="or-jeol-manual-wrap" class="hidden" style="margin-top:12px;">
+        <label>재고 매칭이 안 돼서, 각 절의 실제 야드를 직접 적어주세요</label>
+        <div id="or-jeol-list" style="margin-top:8px;"></div>
+        <div style="display:flex; justify-content:flex-end; margin-top:6px; font-size:13px;">
+          <span>합계: <b id="or-jeol-total">0</b>y</span>
+        </div>
       </div>
     </div>
 
@@ -1558,12 +1571,31 @@ function toggleOrderGroupMode() {
   render();
 }
 
+let _fixingStuckOrders = false;
+async function autoFixStuckOrders() {
+  if (_fixingStuckOrders) return;
+  let changed = false;
+  for (const o of orders) {
+    if (!o.done && o.orderQty > 0 && o.received >= o.orderQty) {
+      o.done = true;
+      if (!o.doneDate) o.doneDate = o.date || todayStr();
+      changed = true;
+    }
+  }
+  if (changed) {
+    _fixingStuckOrders = true;
+    await persistOrders();
+    _fixingStuckOrders = false;
+  }
+}
+
 function renderOrders() {
   document.getElementById('rateBar').classList.add('hidden');
   document.getElementById('invTools').classList.add('hidden');
   document.getElementById('salesTools').classList.add('hidden');
   document.getElementById('orderTools').classList.remove('hidden');
   document.getElementById('orderGroupToggleBtn').textContent = orderGroupMode === 'customer' ? '품목별로 보기' : '거래처별로 보기';
+  autoFixStuckOrders();
 
   const activeCount = orders.filter(o => !o.done).length;
   const waitCount = orders.filter(o => orderStatus(o) === 'wait').length;
@@ -1637,7 +1669,7 @@ async function confirmLogEdit() {
   const o = e.orderId != null ? orders.find(x => x.id === e.orderId) : null;
 
   // 1) 기존 효과 되돌리기: 재고 다시 채우고, 주문 진행량 되돌리기
-  if (e.yardsShipped) {
+  if (e.yardsShipped && hasKnownItem(e.item)) {
     const existingCat = (rolls.find(r => String(r.item).trim() === String(e.item).trim()) || {}).cat || '';
     rolls.push({ id: nextId++, cat: existingCat, item: e.item, color: e.color, tang: 1, qty: e.yardsShipped });
   }
@@ -1693,7 +1725,7 @@ async function cancelShipmentLogEntry(logId) {
     await persistOrders();
   }
 
-  if (!entry.manualClose && (entry.yardsShipped || entry.amount) > 0) {
+  if (!entry.manualClose && (entry.yardsShipped || entry.amount) > 0 && hasKnownItem(entry.item)) {
     const restoreQty = entry.yardsShipped != null ? entry.yardsShipped : entry.amount;
     const existingCat = (rolls.find(r => String(r.item).trim() === String(entry.item).trim()) || {}).cat || '';
     rolls.push({ id: nextId++, cat: existingCat, item: entry.item, color: entry.color, tang: 1, qty: restoreQty });
@@ -2654,11 +2686,23 @@ async function saveOrderAdd() {
   if (editingOrderId !== null) {
     const o = orders.find(x => x.id === editingOrderId);
     const received = Math.max(0, parseFloat(document.getElementById('o-received').value) || 0);
-    if (o) { o.date = date; o.customer = customer; o.factory = factory; o.item = item; o.color = color; o.orderQty = orderQty; o.unit = unit; o.note = note; o.received = received; }
+    if (o) {
+      o.date = date; o.customer = customer; o.factory = factory; o.item = item; o.color = color; o.orderQty = orderQty; o.unit = unit; o.note = note; o.received = received;
+      if (orderQty > 0 && received >= orderQty && !o.done) {
+        o.done = true;
+        o.doneDate = date;
+      } else if (orderQty > 0 && received < orderQty && o.done) {
+        o.done = false; o.doneDate = null;
+      }
+    }
   } else {
     orders.push({ id: nextOrderId++, date, customer, factory, item, color, orderQty, unit, received: 0, note, done: false });
   }
   await persistOrders(); closeOrderAddModal(); render(); showToast('저장되었습니다');
+}
+
+function hasKnownItem(item) {
+  return _knownItemNames.includes(String(item).trim());
 }
 
 function resolveInventoryItem(itemName) {
@@ -2789,6 +2833,8 @@ function openOrderReceiveModal(id) {
 
     const stockRolls = findInventoryRolls(o.item, o.color);
     const stockInfoEl = document.getElementById('or-jeol-stock-info');
+    const tangSection = document.getElementById('or-jeol-tang-section');
+    const jeolManualWrap = document.getElementById('or-jeol-manual-wrap');
     if (stockRolls.length > 0) {
       const byTang = new Map();
       for (const r of stockRolls) byTang.set(r.tang, Math.round(((byTang.get(r.tang) || 0) + r.qty) * 100) / 100);
@@ -2796,12 +2842,28 @@ function openOrderReceiveModal(id) {
       const tangText = Array.from(byTang.entries()).map(([t, q]) => `탕${t} ${q}y`).join(' · ');
       stockInfoEl.innerHTML = `현재 재고: ${tangText} <b>(총 ${Math.round(total * 100) / 100}y)</b>`;
       stockInfoEl.classList.remove('hidden');
+
+      pendingReceiveRolls = stockRolls.map(r => ({ rollId: r.id, tang: r.tang, qty: r.qty }));
+      const tangListEl = document.getElementById('or-jeol-tang-list');
+      tangListEl.innerHTML = pendingReceiveRolls.map(r => `
+        <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; padding:6px 0; border-bottom:1px dashed var(--border);">
+          <div style="font-size:13px;">탕${r.tang} · 재고 ${r.qty}y</div>
+          <input type="number" step="0.1" min="0" max="${r.qty}" value="0" data-roll-id="${r.rollId}"
+            oninput="updateJeolTangTotal()" style="width:90px; padding:6px; border:1px solid var(--border); border-radius:6px; font-size:13px;">
+        </div>
+      `).join('');
+      tangSection.classList.remove('hidden');
+      jeolManualWrap.classList.add('hidden');
+      updateJeolTangTotal();
     } else {
       stockInfoEl.innerHTML = `현재 이 컬러 재고가 없어요 (0y)`;
       stockInfoEl.classList.remove('hidden');
+      tangSection.classList.add('hidden');
+      jeolManualWrap.classList.remove('hidden');
+      pendingReceiveRolls = [];
+      renderJeolYardInputs();
     }
 
-    renderJeolYardInputs();
     document.getElementById('orderReceiveModal').classList.add('open');
     return;
   }
@@ -2865,6 +2927,29 @@ function updateJeolTotal() {
   let total = 0;
   inputs.forEach(inp => { total += parseFloat(inp.value) || 0; });
   document.getElementById('or-jeol-total').textContent = Math.round(total * 100) / 100;
+}
+
+function updateJeolTangTotal() {
+  const inputs = document.querySelectorAll('#or-jeol-tang-list input[data-roll-id]');
+  let total = 0;
+  inputs.forEach(inp => { total += parseFloat(inp.value) || 0; });
+  document.getElementById('or-jeol-tang-total').textContent = Math.round(total * 100) / 100;
+}
+function autoFillJeolTangs() {
+  const jeolCountRaw = parseInt(document.getElementById('or-jeol-count').value);
+  let rollsNeeded = (jeolCountRaw && jeolCountRaw > 0) ? jeolCountRaw : 1;
+  const inputs = document.querySelectorAll('#or-jeol-tang-list input[data-roll-id]');
+  inputs.forEach(inp => {
+    const rollId = parseInt(inp.dataset.rollId);
+    const roll = pendingReceiveRolls.find(r => r.rollId === rollId);
+    if (rollsNeeded > 0) {
+      inp.value = roll.qty;
+      rollsNeeded--;
+    } else {
+      inp.value = 0;
+    }
+  });
+  updateJeolTangTotal();
 }
 
 function updateOrderRollsTotal() {
@@ -2938,17 +3023,43 @@ async function confirmOrderReceive() {
   let inv = { ok: false, deducted: 0, shortBy: 0 };
 
   if (isJeol) {
-    const inputs = document.querySelectorAll('.or-jeol-yard-input');
-    const yards = [];
-    inputs.forEach(inp => {
-      const v = parseFloat(inp.value) || 0;
-      if (v > 0) yards.push(v);
-    });
-    if (yards.length === 0) { showToast('각 절의 실제 야드를 입력해주세요'); return; }
-    raw = yards.length; // 절 개수 = 실제로 입력한 칸 수
-    yardsShipped = Math.round(yards.reduce((s, v) => s + v, 0) * 100) / 100;
-    inv = deductFromInventory(o.item, o.color, yardsShipped, null);
-    if (inv.ok) await persistRolls();
+    const tangSectionVisible = !document.getElementById('or-jeol-tang-section').classList.contains('hidden');
+    const jeolCountRaw = parseInt(document.getElementById('or-jeol-count').value);
+    const jeolCount = (jeolCountRaw && jeolCountRaw > 0) ? jeolCountRaw : null;
+
+    if (tangSectionVisible) {
+      if (!jeolCount) { showToast('몇 절인지 입력해주세요'); return; }
+      const tangInputs = document.querySelectorAll('#or-jeol-tang-list input[data-roll-id]');
+      const allocations = [];
+      tangInputs.forEach(inp => {
+        const amt = parseFloat(inp.value) || 0;
+        if (amt > 0) allocations.push({ rollId: parseInt(inp.dataset.rollId), amt });
+      });
+      if (allocations.length === 0) { showToast('롤별로 뺄 양을 입력해주세요'); return; }
+      yardsShipped = Math.round(allocations.reduce((s, a) => s + a.amt, 0) * 100) / 100;
+      raw = jeolCount;
+      for (const a of allocations) {
+        const roll = rolls.find(r => r.id === a.rollId);
+        if (!roll) continue;
+        const take = Math.min(roll.qty, a.amt);
+        roll.qty = Math.round((roll.qty - take) * 100) / 100;
+      }
+      rolls = rolls.filter(r => !(allocations.some(a => a.rollId === r.id) && r.qty <= 0));
+      await persistRolls();
+      inv = { ok: true, deducted: yardsShipped, shortBy: 0 };
+    } else {
+      const inputs = document.querySelectorAll('.or-jeol-yard-input');
+      const yards = [];
+      inputs.forEach(inp => {
+        const v = parseFloat(inp.value) || 0;
+        if (v > 0) yards.push(v);
+      });
+      if (yards.length === 0) { showToast('각 절의 실제 야드를 입력해주세요'); return; }
+      raw = yards.length; // 절 개수 = 실제로 입력한 칸 수
+      yardsShipped = Math.round(yards.reduce((s, v) => s + v, 0) * 100) / 100;
+      inv = deductFromInventory(o.item, o.color, yardsShipped, null);
+      if (inv.ok) await persistRolls();
+    }
   } else {
     const rollsWrapVisible = !document.getElementById('or-rolls-wrap').classList.contains('hidden');
     if (rollsWrapVisible) {
@@ -3161,11 +3272,15 @@ async function confirmReturn() {
   const deductAmount = unitPrice ? Math.round(unitPrice * yardsAmount) : null;
 
   // 불량은 재고를 다시 채우지 않음(못쓰는 물건), 반품만 재고에 더하기
+  let returnAddedToInventory = false;
   if (!isDefectType) {
-    const resolvedColor = resolveInventoryColor(item, color);
-    const existingCat = (rolls.find(r => String(r.item).trim() === String(item).trim()) || {}).cat || '';
-    rolls.push({ id: nextId++, cat: existingCat, item, color: resolvedColor, tang: 1, qty: yardsAmount });
-    await persistRolls();
+    if (hasKnownItem(item)) {
+      const resolvedColor = resolveInventoryColor(item, color);
+      const existingCat = (rolls.find(r => String(r.item).trim() === String(item).trim()) || {}).cat || '';
+      rolls.push({ id: nextId++, cat: existingCat, item, color: resolvedColor, tang: 1, qty: yardsAmount });
+      await persistRolls();
+      returnAddedToInventory = true;
+    }
   }
 
   // 연결된 주문이 있으면 진행상황도 되돌리기 (반품일 때만 - 불량은 이미 나간 물건 처리이므로 이월 수량은 안 건드림)
@@ -3191,7 +3306,9 @@ async function confirmReturn() {
   const priceMsg = deductAmount != null ? `, 매출 ${deductAmount.toLocaleString()}원 차감 반영` : ' (단가를 몰라 금액 계산은 안 됐어요)';
   showToast(isDefectType
     ? `불량 ${amt}${unit} 등록됨${priceMsg}`
-    : `반품 ${amt}${unit} 처리, 재고에 ${yardsAmount}y 추가됐어요${priceMsg}`);
+    : returnAddedToInventory
+      ? `반품 ${amt}${unit} 처리, 재고에 ${yardsAmount}y 추가됐어요${priceMsg}`
+      : `반품 ${amt}${unit} 처리${priceMsg} (재고에 없는 품목이라 자동 추가는 안 했어요, 필요하면 "+입고"로 직접 넣어주세요)`);
 }
 
 async function markOrderDone(id) {
