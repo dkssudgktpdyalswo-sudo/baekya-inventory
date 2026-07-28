@@ -1675,7 +1675,7 @@ async function confirmLogEdit() {
   // 1) 기존 효과 되돌리기: 재고 다시 채우고, 주문 진행량 되돌리기
   if (e.yardsShipped && hasKnownItem(e.item)) {
     const existingCat = (rolls.find(r => String(r.item).trim() === String(e.item).trim()) || {}).cat || '';
-    rolls.push({ id: nextId++, cat: existingCat, item: e.item, color: e.color, tang: 1, qty: e.yardsShipped });
+    rolls.push({ id: nextId++, cat: existingCat, item: e.item, color: resolveInventoryColor(e.item, e.color), tang: 1, qty: e.yardsShipped });
   }
   if (o) {
     o.received = Math.round(Math.max(0, o.received - e.amount) * 100) / 100;
@@ -1732,7 +1732,7 @@ async function cancelShipmentLogEntry(logId) {
   if (!entry.manualClose && (entry.yardsShipped || entry.amount) > 0 && hasKnownItem(entry.item)) {
     const restoreQty = entry.yardsShipped != null ? entry.yardsShipped : entry.amount;
     const existingCat = (rolls.find(r => String(r.item).trim() === String(entry.item).trim()) || {}).cat || '';
-    rolls.push({ id: nextId++, cat: existingCat, item: entry.item, color: entry.color, tang: 1, qty: restoreQty });
+    rolls.push({ id: nextId++, cat: existingCat, item: entry.item, color: resolveInventoryColor(entry.item, entry.color), tang: 1, qty: restoreQty });
     await persistRolls();
   }
 
@@ -1986,7 +1986,7 @@ function buildStatementHTML(customerName, startDate, endDate) {
     totalSale += grossSale;
     totalSupply += rowSupply;
     totalTax += rowTax;
-    saleRows.push({ date: e.date, desc: `${e.item} ${e.color || ''}`, note: e.note || '', qty: `${e.amount}${e.unit}${e.unit === '절' ? ` (${e.yardsShipped}y)` : ''}`, unitPrice: e.unitPrice.toLocaleString(), supply: rowSupply, tax: rowTax, amount: grossSale, color: 'black' });
+    saleRows.push({ date: e.date, desc: `${e.item} ${e.color || ''}`, note: e.note || '', qty: e.unit === '절' ? `${e.yardsShipped}y` : `${e.amount}${e.unit}`, unitPrice: e.unitPrice.toLocaleString(), supply: rowSupply, tax: rowTax, amount: grossSale, color: 'black' });
 
     if (defectAmt > 0) {
       totalReturnDefect += defectAmt;
@@ -2857,11 +2857,9 @@ function openOrderReceiveModal(id) {
     const tangSection = document.getElementById('or-jeol-tang-section');
     const jeolManualWrap = document.getElementById('or-jeol-manual-wrap');
     if (stockRolls.length > 0) {
-      const byTang = new Map();
-      for (const r of stockRolls) byTang.set(r.tang, Math.round(((byTang.get(r.tang) || 0) + r.qty) * 100) / 100);
       const total = stockRolls.reduce((s, r) => s + r.qty, 0);
-      const tangText = Array.from(byTang.entries()).map(([t, q]) => `탕${t} ${q}y`).join(' · ');
-      stockInfoEl.innerHTML = `현재 재고: ${tangText} <b>(총 ${Math.round(total * 100) / 100}y)</b>`;
+      const rollText = stockRolls.map(r => `탕${r.tang}(${r.qty}y)`).join(' · ');
+      stockInfoEl.innerHTML = `현재 재고: ${rollText} <b>(총 ${Math.round(total * 100) / 100}y)</b>`;
       stockInfoEl.classList.remove('hidden');
 
       pendingReceiveRolls = stockRolls.map(r => ({ rollId: r.id, tang: r.tang, qty: r.qty }));
@@ -3144,9 +3142,10 @@ async function confirmOrderReceive() {
   }
 
   const shipNote = document.getElementById('or-note').value.trim();
+  const resolvedColorForLog = resolveInventoryColor(o.item, o.color);
   shipmentLog.push({
     id: nextLogId++, date: todayStr(), orderId: o.id,
-    customer: o.customer, factory: o.factory, item: o.item, color: o.color,
+    customer: o.customer, factory: o.factory, item: o.item, color: resolvedColorForLog,
     amount: raw, unit: o.unit || 'y', yardsShipped, remainAfter: remain, isFullCompletion: remain <= 0,
     unitPrice, supplyAmount, taxAmount, saleAmount, paidAmount: 0, yardsEstimated, taxIncluded: !!(supplyAmount && taxIncluded), isFlatTotal: priceMode === 'total',
     note: shipNote
@@ -3377,7 +3376,7 @@ async function markOrderDone(id) {
 
   shipmentLog.push({
     id: nextLogId++, date: todayStr(), orderId: o.id,
-    customer: o.customer, factory: o.factory, item: o.item, color: o.color,
+    customer: o.customer, factory: o.factory, item: o.item, color: resolveInventoryColor(o.item, o.color),
     amount: remain > 0 ? remain : 0, unit: o.unit || 'y', yardsShipped, remainAfter: 0,
     isFullCompletion: true, manualClose: remain <= 0, yardsEstimated: isJeol && remain > 0, taxIncluded,
     unitPrice, supplyAmount, taxAmount, saleAmount, paidAmount: 0,
