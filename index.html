@@ -2004,6 +2004,21 @@ function buildStatementHTML(customerName, startDate, endDate) {
   paymentRows.sort((a, b) => String(a.date).localeCompare(String(b.date)));
   const rows = [...saleRows, ...paymentRows];
 
+  const compact = startDate !== endDate || rows.length > 5; // 하루짜리라도 품목이 많으면 촘촘하게
+  // 줄 수가 많을수록 표 글씨를 더 세밀하게 줄여서, 반쪽 안에 무조건 다 들어가게 함
+  const n = rows.length;
+  let rowFontPx, rowPadPx;
+  if (n <= 6) { rowFontPx = 10; rowPadPx = 3; }
+  else if (n <= 10) { rowFontPx = 9; rowPadPx = 2.2; }
+  else if (n <= 16) { rowFontPx = 7.5; rowPadPx = 1.6; }
+  else if (n <= 24) { rowFontPx = 6.3; rowPadPx = 1.1; }
+  else if (n <= 34) { rowFontPx = 5.3; rowPadPx = 0.7; }
+  else { rowFontPx = 4.4; rowPadPx = 0.4; }
+
+  const sizes = compact
+    ? { pad: '2mm 4mm 6mm 4mm', titleSize: '14px', titleGap: '3px', metaSize: '9px', metaGap: '3px', boxGap: '2px', boxFont: '9px', innerFont: '10px', rowFont: rowFontPx + 'px', rowPad: rowPadPx + 'px', totalsFont: '9px', totalsGap: '2px', bankSize: '9px', bankGap: '2px' }
+    : { pad: '4mm 6mm 14mm 6mm', titleSize: '20px', titleGap: '10px', metaSize: '12px', metaGap: '12px', boxGap: '8px', boxFont: '12px', innerFont: '12px', rowFont: '12px', rowPad: '6px', totalsFont: '13px', totalsGap: '10px', bankSize: '12px', bankGap: '10px' };
+
   const rowsHtml = rows.map(r => {
     const style = r.color === 'blue' ? 'color:#1a56db;' : r.color === 'red' ? 'color:#c0392b;' : '';
     const fmt = (v) => v == null ? '' : (v < 0 ? `-${Math.abs(v).toLocaleString()}` : v.toLocaleString());
@@ -2022,21 +2037,6 @@ function buildStatementHTML(customerName, startDate, endDate) {
   }).join('');
 
   const balance = Math.max(0, totalSale - totalDiscount - totalReturnDefect - totalPaid);
-
-  const compact = startDate !== endDate || rows.length > 5; // 하루짜리라도 품목이 많으면 촘촘하게
-  // 줄 수가 많을수록 표 글씨를 더 세밀하게 줄여서, 반쪽 안에 무조건 다 들어가게 함
-  const n = rows.length;
-  let rowFontPx, rowPadPx;
-  if (n <= 6) { rowFontPx = 10; rowPadPx = 3; }
-  else if (n <= 10) { rowFontPx = 9; rowPadPx = 2.2; }
-  else if (n <= 16) { rowFontPx = 7.5; rowPadPx = 1.6; }
-  else if (n <= 24) { rowFontPx = 6.3; rowPadPx = 1.1; }
-  else if (n <= 34) { rowFontPx = 5.3; rowPadPx = 0.7; }
-  else { rowFontPx = 4.4; rowPadPx = 0.4; }
-
-  const sizes = compact
-    ? { pad: '2mm 4mm 6mm 4mm', titleSize: '14px', titleGap: '3px', metaSize: '9px', metaGap: '3px', boxGap: '2px', boxFont: '9px', innerFont: '10px', rowFont: rowFontPx + 'px', rowPad: rowPadPx + 'px', totalsFont: '9px', totalsGap: '2px', bankSize: '9px', bankGap: '2px' }
-    : { pad: '4mm 6mm 14mm 6mm', titleSize: '20px', titleGap: '10px', metaSize: '12px', metaGap: '12px', boxGap: '8px', boxFont: '12px', innerFont: '12px', rowFont: '12px', rowPad: '6px', totalsFont: '13px', totalsGap: '10px', bankSize: '12px', bankGap: '10px' };
 
   const b = settings;
   const infoBox = `
