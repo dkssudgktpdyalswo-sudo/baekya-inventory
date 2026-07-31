@@ -1050,9 +1050,10 @@ function toggleSortMode() {
 
 function renderInv() {
   document.getElementById('rateBar').classList.add('hidden');
-  const totalQty = rolls.reduce((s, r) => s + r.qty, 0);
+  const totalQty = rolls.reduce((s, r) => s + (r.defective ? 0 : r.qty), 0);
+  const defectiveQty = rolls.reduce((s, r) => s + (r.defective ? r.qty : 0), 0);
   const items = new Set(rolls.map(r => r.item)).size;
-  document.getElementById('stats').innerHTML = `<span>품번 ${items}종</span><span>총 롤 ${rolls.length}개</span><span>총 마수 ${totalQty.toLocaleString()}y</span><span>스왓치정보 ${swatchInfo.length}건</span>`;
+  document.getElementById('stats').innerHTML = `<span>품번 ${items}종</span><span>총 롤 ${rolls.length}개</span><span>총 마수 ${totalQty.toLocaleString()}y</span>${defectiveQty > 0 ? `<span style="color:#ffb3a7;">불량 ${defectiveQty.toLocaleString()}y</span>` : ''}<span>스왓치정보 ${swatchInfo.length}건</span>`;
   renderChips();
 
   let groups = buildGroups(); // 컬러 단위 (cat,item,color,rolls[])
@@ -1104,7 +1105,7 @@ function renderInv() {
   if (itemGroups.length === 0) { list.innerHTML = '<div class="empty">해당 조건의 재고가 없습니다</div>'; return; }
 
   for (const ig of itemGroups) {
-    const itemTotal = ig.colors.reduce((s, g) => s + g.rolls.reduce((s2, r) => s2 + r.qty, 0), 0);
+    const itemTotal = ig.colors.reduce((s, g) => s + g.rolls.reduce((s2, r) => s2 + (r.defective ? 0 : r.qty), 0), 0);
     const ik = 'item:' + ig.cat + '|' + ig.item;
     const itemOpen = openGroups.has(ik);
     const costMatch = findCostFor(ig.item);
@@ -1129,7 +1130,10 @@ function renderInv() {
     const itemInner = itemDiv.querySelector('.rolls');
 
     for (const g of ig.colors) {
-      const total = g.rolls.reduce((s, r) => s + r.qty, 0);
+      const normalRolls = g.rolls.filter(r => !r.defective);
+      const defectiveRolls = g.rolls.filter(r => r.defective);
+      const total = normalRolls.reduce((s, r) => s + r.qty, 0);
+      const defectiveTotal = defectiveRolls.reduce((s, r) => s + r.qty, 0);
       const ck = 'color:' + g.cat + '|' + g.item + '|' + g.color;
       const isOpen = openGroups.has(ck);
       const sw = g._swatch;
@@ -1140,7 +1144,7 @@ function renderInv() {
           ${sw && sw.order != null ? `<div class="swatch-num">${sw.order}</div>` : `<div class="swatch-num swatch-num-empty">-</div>`}
           <div class="info">
             <div class="name">${esc(g.color)}</div>
-            <div class="sub">${total > 0 ? `롤 ${g.rolls.length}개` : '재고 없음'}</div>
+            <div class="sub">${total > 0 ? `롤 ${normalRolls.length}개` : '재고 없음'}${defectiveTotal > 0 ? ` · <span style="color:var(--danger);font-weight:700;">불량 ${defectiveTotal.toLocaleString()}y</span>` : ''}</div>
             <div style="margin-top:4px;"><button onclick="event.stopPropagation(); openSwatchEditModal('${escAttr(g.cat)}','${escAttr(g.item)}','${escAttr(g.color)}')" style="border:none;background:#f1eee7;color:var(--muted);border-radius:6px;padding:3px 8px;font-size:11px;">스왓치·중국품번 수정</button></div>
           </div>
           <div class="total">
@@ -1153,7 +1157,7 @@ function renderInv() {
       itemInner.appendChild(cdiv);
       const rollsDiv = cdiv.querySelector('.rolls');
 
-      if (total <= 0) {
+      if (total <= 0 && defectiveTotal <= 0) {
         const empty = document.createElement('div');
         empty.style.padding = '10px 14px';
         empty.style.fontSize = '13px';
@@ -1169,7 +1173,7 @@ function renderInv() {
         const tangNums = Array.from(byTang.keys()).sort((a, b) => a - b);
         for (const tn of tangNums) {
           const tangRolls = byTang.get(tn);
-          const tangTotal = tangRolls.reduce((s, r) => s + r.qty, 0);
+          const tangTotal = tangRolls.reduce((s, r) => s + (r.defective ? 0 : r.qty), 0);
           const th = document.createElement('div');
           th.className = 'tang-head';
           th.innerHTML = `탕${tn} · ${tangTotal.toLocaleString()}y`;
@@ -1177,12 +1181,26 @@ function renderInv() {
           for (const r of tangRolls) {
             const rr = document.createElement('div');
             rr.className = 'roll-row';
-            rr.innerHTML = `
-              <div>롤 <span class="yd">${r.qty}y</span></div>
-              <div class="btns">
-                <button class="btn-out" onclick="event.stopPropagation(); openOutModal(${r.id})">출고</button>
-                <button class="btn-del" onclick="event.stopPropagation(); deleteRoll(${r.id})">삭제</button>
-              </div>`;
+            if (r.defective) {
+              rr.style.background = 'var(--danger-bg)';
+              rr.innerHTML = `
+                <div>
+                  <div style="color:var(--danger);font-weight:700;">불량 <span class="yd">${r.qty}y</span></div>
+                  ${r.defectReason ? `<div style="font-size:11px;color:var(--danger);margin-top:2px;">사유: ${esc(r.defectReason)}</div>` : ''}
+                </div>
+                <div class="btns">
+                  <button class="btn-out" onclick="event.stopPropagation(); unmarkRollDefective(${r.id})">정상으로</button>
+                  <button class="btn-del" onclick="event.stopPropagation(); deleteRoll(${r.id})">삭제</button>
+                </div>`;
+            } else {
+              rr.innerHTML = `
+                <div>롤 <span class="yd">${r.qty}y</span></div>
+                <div class="btns">
+                  <button class="btn-out" onclick="event.stopPropagation(); openOutModal(${r.id})">출고</button>
+                  <button class="btn-out" style="background:#fdecea;color:var(--danger);" onclick="event.stopPropagation(); markRollDefective(${r.id})">불량</button>
+                  <button class="btn-del" onclick="event.stopPropagation(); deleteRoll(${r.id})">삭제</button>
+                </div>`;
+            }
             rollsDiv.appendChild(rr);
           }
         }
@@ -1215,16 +1233,24 @@ function addRollRow() {
   const listEl = document.getElementById('f-roll-list');
   const rowCount = listEl.children.length;
   const row = document.createElement('div');
-  row.className = 'row2 f-roll-row';
+  row.className = 'f-roll-row';
   row.style.marginTop = '6px';
+  row.style.padding = '8px';
+  row.style.border = '1px solid var(--border)';
+  row.style.borderRadius = '8px';
   row.innerHTML = `
-    <div><input type="number" min="1" value="${rowCount + 1}" placeholder="탕번호" class="f-roll-tang"></div>
-    <div><input type="number" step="0.1" placeholder="마수(y)" class="f-roll-qty"></div>
-    <button onclick="this.parentElement.remove()" style="border:none;background:#fdecea;color:var(--danger);border-radius:8px;padding:0 10px;font-size:12px;flex:none;">삭제</button>
+    <div style="display:flex; gap:8px; align-items:center;">
+      <input type="number" min="1" value="${rowCount + 1}" placeholder="탕번호" class="f-roll-tang" style="flex:1;">
+      <input type="number" step="0.1" placeholder="마수(y)" class="f-roll-qty" style="flex:1;">
+      <button onclick="this.closest('.f-roll-row').remove()" style="border:none;background:#fdecea;color:var(--danger);border-radius:8px;padding:0 10px;font-size:12px;flex:none;height:38px;">삭제</button>
+    </div>
+    <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:var(--text);margin:6px 0 0;">
+      <input type="checkbox" class="f-roll-defective" style="width:auto;" onchange="this.closest('.f-roll-row').querySelector('.f-roll-reason-wrap').classList.toggle('hidden', !this.checked)"> 이 롤은 불량이에요
+    </label>
+    <div class="f-roll-reason-wrap hidden" style="margin-top:4px;">
+      <input type="text" class="f-roll-reason" placeholder="불량 사유 (예: 염색 불량)" style="width:100%; padding:8px; border:1px solid var(--border); border-radius:8px; font-size:13px;">
+    </div>
   `;
-  row.style.display = 'flex';
-  row.style.gap = '8px';
-  row.style.alignItems = 'center';
   listEl.appendChild(row);
 }
 function autoDeriveCat(item) {
@@ -1242,19 +1268,20 @@ async function saveAdd() {
   const color = document.getElementById('f-color').value.trim();
   if (!item || !color) { showToast('품번, 칼라를 확인해주세요'); return; }
 
-  const tangInputs = document.querySelectorAll('.f-roll-tang');
-  const qtyInputs = document.querySelectorAll('.f-roll-qty');
+  const rowEls = document.querySelectorAll('.f-roll-row');
   const entries = [];
-  for (let i = 0; i < tangInputs.length; i++) {
-    const tang = parseInt(tangInputs[i].value) || 1;
-    const qty = parseFloat(qtyInputs[i].value);
-    if (qty && qty > 0) entries.push({ tang, qty });
-  }
+  rowEls.forEach(rowEl => {
+    const tang = parseInt(rowEl.querySelector('.f-roll-tang').value) || 1;
+    const qty = parseFloat(rowEl.querySelector('.f-roll-qty').value);
+    const defective = rowEl.querySelector('.f-roll-defective').checked;
+    const reason = rowEl.querySelector('.f-roll-reason').value.trim();
+    if (qty && qty > 0) entries.push({ tang, qty, defective, reason });
+  });
   if (entries.length === 0) { showToast('마수를 하나 이상 입력해주세요'); return; }
 
   const cat = autoDeriveCat(item);
   for (const en of entries) {
-    rolls.push({ id: nextId++, cat, item, color, tang: en.tang, qty: en.qty });
+    rolls.push({ id: nextId++, cat, item, color, tang: en.tang, qty: en.qty, defective: en.defective, defectReason: en.defective ? en.reason : '' });
   }
   await persistRolls();
 
@@ -1302,6 +1329,27 @@ async function confirmOut() {
   }
   else { r.qty = Math.round((r.qty - amt) * 100) / 100; showToast(`${amt}y 출고, 남은 마수 ${r.qty}y`); }
   await persistRolls(); closeOutModal(); render();
+}
+async function markRollDefective(id) {
+  const r = rolls.find(x => x.id === id);
+  if (!r) return;
+  const reason = prompt(`이 롤(${r.qty}y)을 불량으로 표시합니다.\n불량 사유를 적어주세요 (선택사항)`, '');
+  if (reason === null) return;
+  r.defective = true;
+  r.defectReason = reason.trim();
+  await persistRolls();
+  render();
+  showToast('불량으로 표시했습니다');
+}
+async function unmarkRollDefective(id) {
+  const r = rolls.find(x => x.id === id);
+  if (!r) return;
+  if (!confirm('이 롤을 다시 정상 재고로 되돌릴까요?')) return;
+  r.defective = false;
+  r.defectReason = '';
+  await persistRolls();
+  render();
+  showToast('정상 재고로 되돌렸습니다');
 }
 async function deleteRoll(id) {
   if (!confirm('이 롤을 삭제하시겠습니까?')) return;
@@ -2877,7 +2925,7 @@ async function rememberPrice(customer, item, color, unitPrice) {
 function findInventoryRolls(item, color) {
   const t_item = resolveInventoryItem(item);
   const t_color = String(resolveInventoryColor(item, color)).trim();
-  return rolls.filter(r => String(r.item).trim() === t_item && String(r.color).trim() === t_color)
+  return rolls.filter(r => String(r.item).trim() === t_item && String(r.color).trim() === t_color && !r.defective)
     .sort((a, b) => (a.tang - b.tang) || (a.id - b.id));
 }
 
@@ -3076,7 +3124,7 @@ function cleanupDepletedRolls(item, color, touchedRollIds) {
 function deductFromInventory(item, color, amount, tang) {
   const t_item = resolveInventoryItem(item);
   const t_color = String(resolveInventoryColor(item, color)).trim();
-  let matches = rolls.filter(r => String(r.item).trim() === t_item && String(r.color).trim() === t_color);
+  let matches = rolls.filter(r => String(r.item).trim() === t_item && String(r.color).trim() === t_color && !r.defective);
   if (tang !== undefined && tang !== null && tang !== '') {
     matches = matches.filter(r => r.tang === tang);
   }
