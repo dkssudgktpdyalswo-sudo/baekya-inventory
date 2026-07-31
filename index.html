@@ -296,29 +296,38 @@
     <input id="o-date" type="date">
     <label>거래처</label>
     <input id="o-customer" placeholder="예: 클래식" autocomplete="off" oninput="showCustomerSuggestions(this)" onfocus="showCustomerSuggestions(this)" onblur="hideItemSuggestionsDelayed()">
-    <label>공장/연락처</label>
-    <input id="o-factory" placeholder="예: 010-0000-0000 또는 매장" autocomplete="off" oninput="showFactorySuggestions(this)" onfocus="showFactorySuggestions(this)" onblur="hideItemSuggestionsDelayed()">
-    <div class="row2">
-      <div><label>품목</label><input id="o-item" placeholder="예: 피넛" autocomplete="off" oninput="showItemSuggestions(this)" onfocus="showItemSuggestions(this)" onblur="hideItemSuggestionsDelayed()"></div>
-      <div><label>칼라</label><input id="o-color" placeholder="예: 1번연베지" autocomplete="off" oninput="showColorSuggestions(this,'o-item')" onfocus="showColorSuggestions(this,'o-item')" onblur="hideItemSuggestionsDelayed()"></div>
+
+    <div id="o-multi-wrap">
+      <div id="o-multi-list"></div>
+      <button onclick="addFactoryGroup()" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;margin-top:6px;">+ 공장 추가</button>
     </div>
-    <label>발주수량</label>
-    <div class="row2">
-      <div><input id="o-qty" type="number" step="0.1" placeholder="예: 30"></div>
-      <div>
-        <select id="o-unit">
-          <option value="y">y (야드)</option>
-          <option value="절">절 (1절 ≈ 50~60y)</option>
-        </select>
+
+    <div id="o-single-wrap" class="hidden">
+      <label>공장/연락처</label>
+      <input id="o-factory" placeholder="예: 010-0000-0000 또는 매장" autocomplete="off" oninput="showFactorySuggestions(this)" onfocus="showFactorySuggestions(this)" onblur="hideItemSuggestionsDelayed()">
+      <div class="row2">
+        <div><label>품목</label><input id="o-item" placeholder="예: 피넛" autocomplete="off" oninput="showItemSuggestions(this)" onfocus="showItemSuggestions(this)" onblur="hideItemSuggestionsDelayed()"></div>
+        <div><label>칼라</label><input id="o-color" placeholder="예: 1번연베지" autocomplete="off" oninput="showColorSuggestions(this,'o-item')" onfocus="showColorSuggestions(this,'o-item')" onblur="hideItemSuggestionsDelayed()"></div>
       </div>
+      <label>발주수량</label>
+      <div class="row2">
+        <div><input id="o-qty" type="number" step="0.1" placeholder="예: 30"></div>
+        <div>
+          <select id="o-unit">
+            <option value="y">y (야드)</option>
+            <option value="절">절 (1절 ≈ 50~60y)</option>
+          </select>
+        </div>
+      </div>
+      <div id="o-received-wrap" class="hidden">
+        <label>처리(출고)된 마수(y) — 숫자가 잘못됐으면 여기서 바로 고치세요</label>
+        <input id="o-received" type="number" step="0.1" placeholder="예: 20">
+      </div>
+      <button onclick="openReturnFromOrderForm()" style="border:none;background:#fce8d6;color:#a15c1e;border-radius:8px;padding:9px 12px;font-size:13px;font-weight:600;margin-top:10px;width:100%;">반품/불량 등록</button>
+      <label>비고</label>
+      <input id="o-note" placeholder="선택사항">
     </div>
-    <div id="o-received-wrap" class="hidden">
-      <label>처리(출고)된 마수(y) — 숫자가 잘못됐으면 여기서 바로 고치세요</label>
-      <input id="o-received" type="number" step="0.1" placeholder="예: 20">
-    </div>
-    <button onclick="openReturnFromOrderForm()" style="border:none;background:#fce8d6;color:#a15c1e;border-radius:8px;padding:9px 12px;font-size:13px;font-weight:600;margin-top:10px;width:100%;">반품/불량 등록</button>
-    <label>비고</label>
-    <input id="o-note" placeholder="선택사항">
+
     <div class="modal-actions">
       <button class="btn-cancel" onclick="closeOrderAddModal()">취소</button>
       <button class="btn-save" onclick="saveOrderAdd()">등록</button>
@@ -1026,8 +1035,9 @@ function showSuggestionsGeneric(inputEl, candidates, labelMap) {
   box.classList.remove('hidden');
 }
 function showItemSuggestions(inputEl) { showSuggestionsGeneric(inputEl, _knownItemNames); }
-function showColorSuggestions(colorInputEl, itemInputId) {
-  const rawItemVal = String(document.getElementById(itemInputId).value || '').trim();
+function showColorSuggestions(colorInputEl, itemInputIdOrEl) {
+  const itemEl = typeof itemInputIdOrEl === 'string' ? document.getElementById(itemInputIdOrEl) : itemInputIdOrEl;
+  const rawItemVal = String((itemEl && itemEl.value) || '').trim();
   if (!rawItemVal) { document.getElementById('itemSuggestBox').classList.add('hidden'); return; }
   const itemVal = resolveInventoryItem(rawItemVal);
   const colors = Array.from(new Set(rolls.filter(r => String(r.item).trim() === itemVal).map(r => String(r.color).trim())));
@@ -1282,6 +1292,7 @@ function renderInv() {
                 <div>롤 <span class="yd">${r.qty}y</span></div>
                 <div class="btns">
                   <button class="btn-out" onclick="event.stopPropagation(); openOutModal(${r.id})">출고</button>
+                  <button class="btn-out" style="background:#eee;color:var(--text);" onclick="event.stopPropagation(); openRollEditModal(${r.id})">수정</button>
                   <button class="btn-out" style="background:#fdecea;color:var(--danger);" onclick="event.stopPropagation(); markRollDefective(${r.id})">불량</button>
                   <button class="btn-del" onclick="event.stopPropagation(); deleteRoll(${r.id})">삭제</button>
                 </div>`;
@@ -1365,6 +1376,8 @@ async function saveAdd() {
   if (entries.length === 0) { showToast('마수를 하나 이상 입력해주세요'); return; }
 
   const cat = autoDeriveCat(item);
+  // 이 컬러에 남아있던 0y짜리 자리표시용 롤은 정리 (실재고가 새로 들어오니까)
+  rolls = rolls.filter(r => !(String(r.item).trim() === item && String(r.color).trim() === color && r.qty === 0 && !r.defective));
   for (const en of entries) {
     rolls.push({ id: nextId++, cat, item, color, tang: en.tang, qty: en.qty, defective: en.defective, defectReason: en.defective ? en.reason : '' });
   }
@@ -1414,6 +1427,21 @@ async function confirmOut() {
   }
   else { r.qty = Math.round((r.qty - amt) * 100) / 100; showToast(`${amt}y 출고, 남은 마수 ${r.qty}y`); }
   await persistRolls(); closeOutModal(); render();
+}
+async function openRollEditModal(id) {
+  const r = rolls.find(x => x.id === id);
+  if (!r) return;
+  const raw = prompt(`${r.item} · ${r.color} · 탕${r.tang}\n새 마수(y)를 입력하세요 (0을 입력하면 "재고 없음"으로 처리돼요)`, String(r.qty));
+  if (raw === null) return;
+  const newQty = parseFloat(raw);
+  if (isNaN(newQty) || newQty < 0) { showToast('숫자를 확인해주세요'); return; }
+  r.qty = Math.round(newQty * 100) / 100;
+  if (r.qty === 0) {
+    cleanupDepletedRolls(r.item, r.color, [r.id]);
+  }
+  await persistRolls();
+  render();
+  showToast(r.qty === 0 ? '재고 없음으로 처리했습니다' : `마수를 ${r.qty}y로 수정했습니다`);
 }
 async function markRollDefective(id) {
   const r = rolls.find(x => x.id === id);
@@ -3191,14 +3219,64 @@ function openOrderAddModal() {
   document.getElementById('orderModalTitle').textContent = '새 발주 등록';
   document.getElementById('o-date').value = toDateInputValue(todayStr());
   document.getElementById('o-customer').value = '';
-  document.getElementById('o-factory').value = '';
-  document.getElementById('o-item').value = '';
-  document.getElementById('o-color').value = '';
-  document.getElementById('o-qty').value = '';
-  document.getElementById('o-unit').value = 'y';
-  document.getElementById('o-note').value = '';
-  document.getElementById('o-received-wrap').classList.add('hidden');
+  document.getElementById('o-multi-wrap').classList.remove('hidden');
+  document.getElementById('o-single-wrap').classList.add('hidden');
+  document.getElementById('o-multi-list').innerHTML = '';
+  addFactoryGroup();
   document.getElementById('orderAddModal').classList.add('open');
+}
+function addFactoryGroup() {
+  const listEl = document.getElementById('o-multi-list');
+  const group = document.createElement('div');
+  group.className = 'o-factory-group';
+  group.style.cssText = 'border:1px solid var(--border); border-radius:8px; padding:8px; margin-top:8px; background:#faf8f4;';
+  group.innerHTML = `
+    <div style="display:flex; gap:6px; align-items:center;">
+      <input type="text" class="o-factory-input" placeholder="공장/연락처 (예: 010-0000-0000 또는 매장)" autocomplete="off" oninput="showFactorySuggestions(this)" onfocus="showFactorySuggestions(this)" onblur="hideItemSuggestionsDelayed()" style="flex:1;">
+      <button onclick="this.closest('.o-factory-group').remove();" style="border:none;background:#fdecea;color:var(--danger);border-radius:8px;padding:0 10px;font-size:12px;flex:none;height:38px;">공장 삭제</button>
+    </div>
+    <div class="o-item-list" style="margin-top:8px;"></div>
+    <button onclick="addItemGroup(this.previousElementSibling)" style="border:none;background:#eaf3ec;color:#2f6b46;border-radius:8px;padding:6px 10px;font-size:12px;font-weight:600;margin-top:6px;">+ 이 공장에 품목 추가</button>
+  `;
+  listEl.appendChild(group);
+  addItemGroup(group.querySelector('.o-item-list'));
+}
+function addItemGroup(itemListEl) {
+  const group = document.createElement('div');
+  group.className = 'o-item-group';
+  group.style.cssText = 'border:1px solid var(--border); border-radius:8px; padding:8px; margin-top:6px; margin-left:12px; background:#fff;';
+  group.innerHTML = `
+    <div style="display:flex; gap:6px; align-items:center;">
+      <input type="text" class="o-item-input" placeholder="품목 (예: 피넛)" autocomplete="off" oninput="showItemSuggestions(this)" onfocus="showItemSuggestions(this)" onblur="hideItemSuggestionsDelayed()" style="flex:1;">
+      <button onclick="this.closest('.o-item-group').remove();" style="border:none;background:#fdecea;color:var(--danger);border-radius:8px;padding:0 10px;font-size:12px;flex:none;height:38px;">품목 삭제</button>
+    </div>
+    <div class="o-color-list" style="margin-top:6px;"></div>
+    <button onclick="addColorRow(this.previousElementSibling)" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:8px;padding:6px 10px;font-size:12px;font-weight:600;margin-top:6px;">+ 이 품목에 컬러 추가</button>
+  `;
+  itemListEl.appendChild(group);
+  addColorRow(group.querySelector('.o-color-list'));
+}
+function addColorRow(colorListEl) {
+  const row = document.createElement('div');
+  row.className = 'o-color-row';
+  row.style.cssText = 'border-top:1px dashed var(--border); padding-top:6px; margin-top:6px;';
+  row.innerHTML = `
+    <div class="row2">
+      <div><input type="text" class="o-color-input" placeholder="칼라 (예: 1번연베지)" autocomplete="off" oninput="showColorSuggestions(this, this.closest('.o-item-group').querySelector('.o-item-input'))" onfocus="showColorSuggestions(this, this.closest('.o-item-group').querySelector('.o-item-input'))" onblur="hideItemSuggestionsDelayed()"></div>
+      <div style="display:flex; gap:4px;">
+        <input type="number" step="0.1" class="o-color-qty" placeholder="수량" style="flex:1;">
+        <select class="o-color-unit" style="flex:none; width:64px;">
+          <option value="y">y</option>
+          <option value="절">절</option>
+        </select>
+      </div>
+    </div>
+    <div style="display:flex; gap:6px; align-items:center; margin-top:4px;">
+      <input type="text" class="o-color-note" placeholder="비고(선택)" style="flex:1; padding:8px; border:1px solid var(--border); border-radius:8px; font-size:13px;">
+      <button onclick="this.closest('.o-color-row').remove();" style="border:none;background:#fdecea;color:var(--danger);border-radius:8px;padding:0 10px;font-size:12px;flex:none;height:36px;">삭제</button>
+    </div>
+  `;
+  colorListEl.appendChild(row);
 }
 function openOrderEditModal(id) {
   const o = orders.find(x => x.id === id);
@@ -3207,6 +3285,8 @@ function openOrderEditModal(id) {
   document.getElementById('orderModalTitle').textContent = '발주 수정';
   document.getElementById('o-date').value = toDateInputValue(o.date) || toDateInputValue(todayStr());
   document.getElementById('o-customer').value = o.customer || '';
+  document.getElementById('o-multi-wrap').classList.add('hidden');
+  document.getElementById('o-single-wrap').classList.remove('hidden');
   document.getElementById('o-factory').value = o.factory || '';
   document.getElementById('o-item').value = o.item || '';
   document.getElementById('o-color').value = o.color || '';
@@ -3221,13 +3301,41 @@ function closeOrderAddModal() { document.getElementById('orderAddModal').classLi
 async function saveOrderAdd() {
   const date = fromDateInputValue(document.getElementById('o-date').value) || todayStr();
   const customer = document.getElementById('o-customer').value.trim();
+  if (!customer) { showToast('거래처를 확인해주세요'); return; }
+
+  if (editingOrderId === null) {
+    const factoryGroups = document.querySelectorAll('.o-factory-group');
+    const newOrders = [];
+    factoryGroups.forEach(fg => {
+      const factory = fg.querySelector('.o-factory-input').value.trim();
+      const itemGroups = fg.querySelectorAll('.o-item-group');
+      itemGroups.forEach(ig => {
+        const item = ig.querySelector('.o-item-input').value.trim();
+        if (!item) return;
+        const colorRows = ig.querySelectorAll('.o-color-row');
+        colorRows.forEach(cr => {
+          const color = cr.querySelector('.o-color-input').value.trim();
+          const orderQty = parseFloat(cr.querySelector('.o-color-qty').value) || 0;
+          const unit = cr.querySelector('.o-color-unit').value;
+          const note = cr.querySelector('.o-color-note').value.trim();
+          newOrders.push({ id: nextOrderId++, date, customer, factory, item, color, orderQty, unit, received: 0, note, done: false });
+        });
+      });
+    });
+    if (newOrders.length === 0) { showToast('품목을 하나 이상 입력해주세요'); return; }
+    orders.push(...newOrders);
+    await persistOrders(); closeOrderAddModal(); render();
+    showToast(`발주 ${newOrders.length}건 등록되었습니다`);
+    return;
+  }
+
   const factory = document.getElementById('o-factory').value.trim();
   const item = document.getElementById('o-item').value.trim();
   const color = document.getElementById('o-color').value.trim();
   const orderQty = parseFloat(document.getElementById('o-qty').value) || 0;
   const unit = document.getElementById('o-unit').value;
   const note = document.getElementById('o-note').value.trim();
-  if (!customer || !item) { showToast('거래처와 품목을 확인해주세요'); return; }
+  if (!item) { showToast('품목을 확인해주세요'); return; }
   if (editingOrderId !== null) {
     const o = orders.find(x => x.id === editingOrderId);
     const received = Math.max(0, parseFloat(document.getElementById('o-received').value) || 0);
