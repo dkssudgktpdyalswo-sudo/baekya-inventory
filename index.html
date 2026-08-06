@@ -200,10 +200,13 @@
   <div class="modal">
     <h3>새 롤 입고</h3>
     <p style="font-size:12px;color:var(--muted);margin-top:-6px;">새 품목이면 자유롭게 적어주시고, 기존 품목이면 목록에서 골라주세요.</p>
+    <label>입고날짜</label>
+    <input id="f-date" type="date">
     <label>품번</label>
-    <input id="f-item" placeholder="예: 350" autocomplete="off" oninput="showItemSuggestions(this)" onfocus="showItemSuggestions(this)" onblur="hideItemSuggestionsDelayed()">
+    <input id="f-item" placeholder="예: 350" autocomplete="off" oninput="showItemSuggestions(this); updateAddModalStockInfo();" onfocus="showItemSuggestions(this)" onblur="hideItemSuggestionsDelayed()">
     <label>칼라</label>
-    <input id="f-color" placeholder="예: 검정 (기존 컬러면 목록에서 선택)" autocomplete="off" oninput="showColorSuggestions(this,'f-item')" onfocus="showColorSuggestions(this,'f-item')" onblur="hideItemSuggestionsDelayed()">
+    <input id="f-color" placeholder="예: 검정 (기존 컬러면 목록에서 선택)" autocomplete="off" oninput="showColorSuggestions(this,'f-item'); updateAddModalStockInfo();" onfocus="showColorSuggestions(this,'f-item')" onblur="hideItemSuggestionsDelayed()">
+    <div id="f-stock-info" class="hidden" style="font-size:13px; color:var(--primary-dark); background:#eef3f8; border-radius:8px; padding:8px 10px; margin-bottom:8px;"></div>
     <label>스왓치 순번 (선택 - 지정하면 그 번호로 넣고 기존 컬러들은 자동으로 한 칸씩 밀려요)</label>
     <input id="f-swatch-order" type="number" min="1" placeholder="예: 8">
 
@@ -532,6 +535,26 @@
 <!-- 입금 처리 모달 -->
 
 <!-- 매출 수정 모달 -->
+<!-- 선수금용 명세서 편집 모달 -->
+<div class="modal-overlay" id="preShipmentModal">
+  <div class="modal" style="max-width:520px;">
+    <h3>선수금용 명세서 작성</h3>
+    <p id="pre-ship-desc" style="font-size:13px;color:var(--muted);margin-top:-6px;"></p>
+    <div id="pre-ship-rows"></div>
+    <button onclick="addPreShipRow('', '', '')" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;margin-top:6px;">+ 항목 추가 (운임비/반품/불량 등)</button>
+    <label style="display:flex;align-items:center;gap:6px;font-size:14px;color:var(--text);margin-top:12px;"><input type="checkbox" id="pre-ship-tax" style="width:auto;" onchange="updatePreShipTotals()"> 부가세 10% 포함해서 청구</label>
+    <div style="margin-top:10px; padding:10px; background:#eaf4fb; border-radius:8px; font-size:14px;">
+      공급가액 합계: <b id="pre-ship-supply-total">0</b>원<br>
+      세액: <b id="pre-ship-tax-total">0</b>원<br>
+      <span style="font-size:16px;">청구 합계: <b id="pre-ship-grand-total">0</b>원</span>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="closePreShipmentModal()">취소</button>
+      <button class="btn-save" onclick="printPreShipmentFromModal()">🖨 인쇄</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-overlay" id="saleEditModal">
   <div class="modal">
     <h3 id="sale-edit-title">매출 수정</h3>
@@ -1276,7 +1299,7 @@ function renderInv() {
                 </div>`;
             } else {
               rr.innerHTML = `
-                <div>롤 <span class="yd">${r.qty}y</span></div>
+                <div>롤 <span class="yd">${r.qty}y</span>${r.inDate ? `<span style="font-size:11px;color:var(--muted);margin-left:6px;">${esc(r.inDate)} 입고</span>` : ''}</div>
                 <div class="btns">
                   <button class="btn-out" onclick="event.stopPropagation(); openOutModal(${r.id})">출고</button>
                   <button class="btn-out" style="background:#eee;color:var(--text);" onclick="event.stopPropagation(); openRollEditModal(${r.id})">수정</button>
@@ -1304,12 +1327,32 @@ function onFItemInput(inputEl) {
 }
 
 function openRollAddModal() {
+  document.getElementById('f-date').value = toDateInputValue(todayStr());
   document.getElementById('f-item').value = '';
   document.getElementById('f-color').value = '';
   document.getElementById('f-swatch-order').value = '';
+  document.getElementById('f-stock-info').classList.add('hidden');
   document.getElementById('f-roll-list').innerHTML = '';
   addRollRow();
   document.getElementById('addModal').classList.add('open');
+}
+function updateAddModalStockInfo() {
+  const item = document.getElementById('f-item').value.trim();
+  const color = document.getElementById('f-color').value.trim();
+  const infoEl = document.getElementById('f-stock-info');
+  if (!item || !color) { infoEl.classList.add('hidden'); return; }
+  const existing = findInventoryRolls(item, color);
+  if (existing.length === 0) {
+    infoEl.textContent = '현재 이 컬러는 재고가 없어요 → 새로 넣으시면 탕1부터 시작하시면 돼요';
+    infoEl.classList.remove('hidden');
+    return;
+  }
+  const byTang = new Map();
+  for (const r of existing) byTang.set(r.tang, Math.round(((byTang.get(r.tang) || 0) + r.qty) * 100) / 100);
+  const maxTang = Math.max(...existing.map(r => r.tang));
+  const tangText = Array.from(byTang.entries()).sort((a, b) => a[0] - b[0]).map(([t, q]) => `탕${t}(${q}y)`).join(' · ');
+  infoEl.innerHTML = `현재 재고: ${tangText} — 새 탕이면 <b>탕${maxTang + 1}</b>로 입력하시면 돼요`;
+  infoEl.classList.remove('hidden');
 }
 function closeAddModal() { document.getElementById('addModal').classList.remove('open'); }
 function addRollRow() {
@@ -1350,6 +1393,7 @@ async function saveAdd() {
   const item = document.getElementById('f-item').value.trim();
   const color = document.getElementById('f-color').value.trim();
   if (!item || !color) { showToast('품번, 칼라를 확인해주세요'); return; }
+  const inDate = fromDateInputValue(document.getElementById('f-date').value) || todayStr();
 
   const rowEls = document.querySelectorAll('.f-roll-row');
   const entries = [];
@@ -1366,7 +1410,7 @@ async function saveAdd() {
   // 이 컬러에 남아있던 0y짜리 자리표시용 롤은 정리 (실재고가 새로 들어오니까)
   rolls = rolls.filter(r => !(String(r.item).trim() === item && String(r.color).trim() === color && r.qty === 0 && !r.defective));
   for (const en of entries) {
-    rolls.push({ id: nextId++, cat, item, color, tang: en.tang, qty: en.qty, defective: en.defective, defectReason: en.defective ? en.reason : '' });
+    rolls.push({ id: nextId++, cat, item, color, tang: en.tang, qty: en.qty, defective: en.defective, defectReason: en.defective ? en.reason : '', inDate });
   }
   await persistRolls();
 
@@ -2286,52 +2330,103 @@ function generateStatementFromModal() {
 }
 
 let pendingPreShipCustomer = null;
-function printPreShipmentStatement(customerName, orderIds) {
+function openPreShipmentModal(customerName, orderIds) {
   const targetOrders = orderIds.map(id => orders.find(o => o.id === id)).filter(Boolean).filter(o => !o.done);
   const t_c = String(customerName).trim();
   const extraEntries = shipmentLog.filter(e => String(e.customer).trim() === t_c && e.date === todayStr() && e.orderId == null);
-  if (targetOrders.length === 0 && extraEntries.length === 0) { showToast('명세서에 넣을 진행중인 발주나 추가 항목이 없습니다'); return; }
 
-  const rows = [];
-  let totalSupply = 0;
+  pendingPreShipCustomer = customerName;
+  document.getElementById('pre-ship-desc').textContent = `${customerName} · 발행일 ${todayStr()} — 단가·수량 고치거나 항목을 추가/삭제한 뒤 인쇄하세요.`;
+  document.getElementById('pre-ship-tax').checked = false;
+  const listEl = document.getElementById('pre-ship-rows');
+  listEl.innerHTML = '';
+
   for (const o of targetOrders) {
-    let price = findRememberedPrice(o.customer, o.item, o.color);
-    if (price == null) {
-      const raw = prompt(`${o.item} ${o.color || ''} 판매단가(원/y)를 입력해주세요 (모르면 취소 - 이 줄은 단가 없이 나가요)`, '');
-      price = (raw && parseFloat(raw) > 0) ? parseFloat(raw) : null;
-    }
     const isJeol = (o.unit || 'y') === '절';
     const yards = isJeol ? Math.round(o.orderQty * 55 * 100) / 100 : o.orderQty;
-    const supply = price != null ? Math.round(price * yards) : null;
-    if (supply != null) totalSupply += supply;
-    rows.push({
-      date: o.date, desc: `${o.item} ${o.color || ''}`,
-      qty: `${o.orderQty}${o.unit || 'y'}${isJeol ? ` (${yards}y 추정)` : ''}`,
-      unitPrice: price != null ? price.toLocaleString() : '',
-      supply, negative: false
-    });
+    const price = findRememberedPrice(o.customer, o.item, o.color);
+    addPreShipRow(`${o.item} ${o.color || ''}`, yards, price);
   }
-  // 오늘 등록된 반품/불량/추가금 항목도 같이 표시
   for (const e of extraEntries) {
     if (e.isReturn || e.isDefect) {
-      const amt = e.deductAmount != null ? -e.deductAmount : null;
-      if (amt != null) totalSupply += amt;
-      rows.push({
-        date: e.date, desc: `${e.isDefect ? '불량' : '반품'} - ${e.item} ${e.color || ''}${e.note ? ` (${e.note})` : ''}`,
-        qty: `${Math.abs(e.amount)}${e.unit || 'y'}`, unitPrice: e.unitPrice ? e.unitPrice.toLocaleString() : '',
-        supply: amt, negative: true
-      });
+      addPreShipRow(`${e.isDefect ? '불량' : '반품'} - ${e.item} ${e.color || ''}${e.note ? ` (${e.note})` : ''}`, Math.abs(e.amount), e.unitPrice, e.deductAmount != null ? -e.deductAmount : null);
     } else if (e.saleAmount != null) {
-      totalSupply += e.saleAmount;
-      rows.push({
-        date: e.date, desc: `${e.item}${e.note ? ` (${e.note})` : ''}`,
-        qty: '', unitPrice: '', supply: e.saleAmount, negative: false
-      });
+      addPreShipRow(`${e.item}${e.note ? ` (${e.note})` : ''}`, '', '', e.saleAmount);
     }
   }
+  if (targetOrders.length === 0 && extraEntries.length === 0) addPreShipRow('', '', '');
+  document.getElementById('preShipmentModal').classList.add('open');
+}
+function closePreShipmentModal() { document.getElementById('preShipmentModal').classList.remove('open'); }
+function addPreShipRow(desc, qty, price, presetAmount) {
+  const listEl = document.getElementById('pre-ship-rows');
+  const row = document.createElement('div');
+  row.className = 'pre-ship-row';
+  row.style.cssText = 'border:1px solid var(--border); border-radius:8px; padding:8px; margin-top:6px;';
+  row.innerHTML = `
+    <input type="text" class="pre-ship-desc" placeholder="예: 버블 2번진청 / 운임비 / 반품 등" value="${escAttr(desc || '')}" style="width:100%; padding:8px; border:1px solid var(--border); border-radius:8px; font-size:14px; margin-bottom:6px;">
+    <div style="display:flex; gap:6px; align-items:center;">
+      <input type="number" step="0.1" class="pre-ship-qty" placeholder="수량(y, 선택)" value="${qty != null && qty !== '' ? qty : ''}" oninput="updatePreShipTotals()" style="flex:1; padding:8px; border:1px solid var(--border); border-radius:8px; font-size:13px;">
+      <input type="number" step="1" class="pre-ship-price" placeholder="단가(원/y, 선택)" value="${price != null ? price : ''}" oninput="updatePreShipTotals()" style="flex:1; padding:8px; border:1px solid var(--border); border-radius:8px; font-size:13px;">
+      <input type="number" step="1" class="pre-ship-amount" placeholder="금액(직접 입력 가능)" oninput="this.dataset.manual='1'; updatePreShipTotals()" style="flex:1; padding:8px; border:1px solid var(--border); border-radius:8px; font-size:13px;">
+      <button onclick="this.closest('.pre-ship-row').remove(); updatePreShipTotals();" style="border:none;background:#fdecea;color:var(--danger);border-radius:8px;padding:0 10px;font-size:12px;flex:none;height:38px;">삭제</button>
+    </div>
+  `;
+  listEl.appendChild(row);
+  if (presetAmount != null) {
+    const amtInput = row.querySelector('.pre-ship-amount');
+    amtInput.value = presetAmount;
+    amtInput.dataset.manual = '1';
+  }
+  updatePreShipTotals();
+}
+function updatePreShipTotals() {
+  const rows = document.querySelectorAll('.pre-ship-row');
+  let totalSupply = 0;
+  rows.forEach(row => {
+    const qty = parseFloat(row.querySelector('.pre-ship-qty').value) || 0;
+    const price = parseFloat(row.querySelector('.pre-ship-price').value) || 0;
+    const amountInput = row.querySelector('.pre-ship-amount');
+    let amount;
+    if (amountInput.dataset.manual === '1' && amountInput.value !== '') {
+      amount = parseFloat(amountInput.value) || 0;
+    } else if (qty && price) {
+      amount = Math.round(qty * price);
+      amountInput.value = amount;
+    } else {
+      amount = parseFloat(amountInput.value) || 0;
+    }
+    totalSupply += amount;
+  });
+  const taxIncluded = document.getElementById('pre-ship-tax').checked;
+  const totalTax = taxIncluded ? Math.round(totalSupply * 0.1) : 0;
+  const grandTotal = totalSupply + totalTax;
+  document.getElementById('pre-ship-supply-total').textContent = totalSupply.toLocaleString();
+  document.getElementById('pre-ship-tax-total').textContent = totalTax.toLocaleString();
+  document.getElementById('pre-ship-grand-total').textContent = grandTotal.toLocaleString();
+}
 
-  const addTax = confirm('부가세 10% 포함해서 청구할까요? ("취소"를 누르면 부가세 없이 공급가액만 청구돼요)');
-  const totalTax = addTax ? Math.round(totalSupply * 0.1) : 0;
+function printPreShipmentFromModal() {
+  const customerName = pendingPreShipCustomer;
+  const rowEls = document.querySelectorAll('.pre-ship-row');
+  const rows = [];
+  let totalSupply = 0;
+  rowEls.forEach(row => {
+    const desc = row.querySelector('.pre-ship-desc').value.trim();
+    const qty = row.querySelector('.pre-ship-qty').value;
+    const price = row.querySelector('.pre-ship-price').value;
+    const amount = parseFloat(row.querySelector('.pre-ship-amount').value) || 0;
+    if (!desc && !amount) return;
+    totalSupply += amount;
+    rows.push({
+      date: todayStr(), desc, qty: qty ? `${qty}y` : '', unitPrice: price ? parseFloat(price).toLocaleString() : '',
+      supply: amount, negative: amount < 0
+    });
+  });
+  if (rows.length === 0) { showToast('항목을 하나 이상 입력해주세요'); return; }
+
+  const taxIncluded = document.getElementById('pre-ship-tax').checked;
+  const totalTax = taxIncluded ? Math.round(totalSupply * 0.1) : 0;
   const grandTotal = totalSupply + totalTax;
 
   const rowsHtml = rows.map(r => `
@@ -2340,55 +2435,61 @@ function printPreShipmentStatement(customerName, orderIds) {
       <td style="padding:4px;">${esc(r.desc)}</td>
       <td style="padding:4px; text-align:right;">${esc(r.qty)}</td>
       <td style="padding:4px; text-align:right;">${esc(r.unitPrice)}</td>
-      <td style="padding:4px; text-align:right;">${r.supply != null ? r.supply.toLocaleString() : '-'}</td>
+      <td style="padding:4px; text-align:right;">${r.supply.toLocaleString()}</td>
     </tr>`).join('');
 
   const b = settings;
-  const infoBox = `
-    <table style="font-size:11px; margin-bottom:8px;">
-      <tr>
-        <td style="width:50%; vertical-align:top; padding:4px;">
-          <div style="font-weight:700; background:#cfe8f7; color:#1a5f8a; padding:3px 8px; margin-bottom:3px;">공급자</div>
-          <table style="font-size:11px;"><tbody>
-            <tr><td style="width:70px;background:#eaf4fb;color:#1a5f8a;">등록번호</td><td>${esc(b.bizNumber || '')}</td></tr>
-            <tr><td style="background:#eaf4fb;color:#1a5f8a;">상호</td><td>${esc(b.bizName || '')}</td><td style="background:#eaf4fb;color:#1a5f8a;width:50px;">성명</td><td>${esc(b.bizOwner || '')}</td></tr>
-            <tr><td style="background:#eaf4fb;color:#1a5f8a;">주소</td><td colspan="3">${esc(b.bizAddress || '')}</td></tr>
-          </tbody></table>
-        </td>
-        <td style="width:50%; vertical-align:top; padding:4px;">
-          <div style="font-weight:700; background:#cfe8f7; color:#1a5f8a; padding:3px 8px; margin-bottom:3px;">공급받는자</div>
-          <table style="font-size:11px;"><tbody>
-            <tr><td style="width:70px;background:#eaf4fb;color:#1a5f8a;">상호</td><td>${esc(customerName)}</td></tr>
-          </tbody></table>
-        </td>
-      </tr>
-    </table>
-  `;
-
-  const html = `
-    <div class="ledger-print" style="padding:10mm 10mm; font-family:-apple-system,'Malgun Gothic',sans-serif;">
+  const renderCopy = (copyLabel) => `
+    <div style="padding:8mm 8mm; font-family:-apple-system,'Malgun Gothic',sans-serif; box-sizing:border-box; height:50%; overflow:hidden;">
       <div style="display:flex; justify-content:space-between; align-items:baseline; margin-bottom:6px;">
-        <h2 style="margin:0; font-size:18px; letter-spacing:2px; color:#1a5f8a;">거 래 명 세 표</h2>
-        <span style="font-size:11px; font-weight:700; border:1px solid #1a5f8a; color:#1a5f8a; padding:2px 10px; border-radius:4px;">출고 전 · 선수금용</span>
+        <h2 style="margin:0; font-size:16px; letter-spacing:2px; color:#1a5f8a;">거 래 명 세 표</h2>
+        <span style="font-size:10px; font-weight:700; border:1px solid #1a5f8a; color:#1a5f8a; padding:2px 8px; border-radius:4px;">${copyLabel} · 출고 전(선수금용)</span>
       </div>
-      <div style="color:#555; margin-bottom:8px; font-size:12px;">발행일: ${todayStr()} · 아직 출고 전인 발주 기준 예상 청구 내역이에요</div>
-      ${infoBox}
-      <table style="font-size:11px;">
+      <div style="color:#555; margin-bottom:6px; font-size:11px;">발행일: ${todayStr()} · 아직 출고 전인 발주 기준 예상 청구 내역이에요</div>
+      <table style="font-size:10px; margin-bottom:6px;">
+        <tr>
+          <td style="width:50%; vertical-align:top; padding:3px;">
+            <div style="font-weight:700; background:#cfe8f7; color:#1a5f8a; padding:2px 6px; margin-bottom:2px;">공급자</div>
+            <table style="font-size:10px;"><tbody>
+              <tr><td style="width:60px;background:#eaf4fb;color:#1a5f8a;">등록번호</td><td>${esc(b.bizNumber || '')}</td></tr>
+              <tr><td style="background:#eaf4fb;color:#1a5f8a;">상호</td><td>${esc(b.bizName || '')}</td><td style="background:#eaf4fb;color:#1a5f8a;width:40px;">성명</td><td>${esc(b.bizOwner || '')}</td></tr>
+              <tr><td style="background:#eaf4fb;color:#1a5f8a;">주소</td><td colspan="3">${esc(b.bizAddress || '')}</td></tr>
+            </tbody></table>
+          </td>
+          <td style="width:50%; vertical-align:top; padding:3px;">
+            <div style="font-weight:700; background:#cfe8f7; color:#1a5f8a; padding:2px 6px; margin-bottom:2px;">공급받는자</div>
+            <table style="font-size:10px;"><tbody>
+              <tr><td style="width:60px;background:#eaf4fb;color:#1a5f8a;">상호</td><td>${esc(customerName)}</td></tr>
+            </tbody></table>
+          </td>
+        </tr>
+      </table>
+      <table style="font-size:10px;">
         <thead><tr><th>날짜</th><th>내용</th><th>수량</th><th>단가(원)</th><th>공급가액(원)</th></tr></thead>
         <tbody>${rowsHtml}</tbody>
       </table>
-      <table style="font-size:13px; margin-top:10px;">
+      <table style="font-size:11px; margin-top:6px;">
         <tr><td style="background:#eaf4fb;color:#1a5f8a;width:25%;">공급가액 합계</td><td style="text-align:right;">${totalSupply.toLocaleString()}원</td>
             <td style="background:#eaf4fb;color:#1a5f8a;width:25%;">세액 합계</td><td style="text-align:right;">${totalTax.toLocaleString()}원</td></tr>
-        <tr><td style="background:#d3e9f7;color:#1a5f8a;font-weight:800;">청구(선수금) 금액</td><td colspan="3" style="text-align:right;font-weight:800;font-size:15px;">${grandTotal.toLocaleString()}원</td></tr>
+        <tr><td style="background:#d3e9f7;color:#1a5f8a;font-weight:800;">청구(선수금) 금액</td><td colspan="3" style="text-align:right;font-weight:800;font-size:13px;">${grandTotal.toLocaleString()}원</td></tr>
       </table>
-      ${b.bankInfo ? `<div style="margin-top:8px; font-size:12px; color:#333;">입금계좌: ${esc(b.bankInfo)}</div>` : ''}
-      ${b.noteText ? `<div style="margin-top:2px; font-size:12px; color:#555;">참고사항: ${esc(b.noteText)}</div>` : ''}
+      ${b.bankInfo ? `<div style="margin-top:6px; font-size:10px; color:#333;">입금계좌: ${esc(b.bankInfo)}</div>` : ''}
+      ${b.noteText ? `<div style="margin-top:2px; font-size:10px; color:#555;">참고사항: ${esc(b.noteText)}</div>` : ''}
+    </div>
+  `;
+
+  const html = `
+    <div style="width:100%; height:277mm; display:flex; flex-direction:column;">
+      ${renderCopy('공급자 보관용')}
+      <div style="border-top:1px dashed #999;"></div>
+      ${renderCopy('공급받는자 보관용')}
     </div>
   `;
   document.getElementById('printArea').innerHTML = html;
+  closePreShipmentModal();
   setTimeout(() => window.print(), 100);
 }
+
 function buildStatementHTML(customerName, startDate, endDate) {
   const t_c = String(customerName).trim();
   const inRange = (d) => d && d >= startDate && d <= endDate;
@@ -3016,7 +3117,7 @@ function renderCustomerBuckets(list2) {
       groupDiv.innerHTML = `
         <div class="group-head" onclick="toggleGroup('${escAttr(k)}')">
           <div class="info">
-            <div class="name">${esc(cust)} <button onclick="event.stopPropagation();openReturnForCustomer('${escAttr(cust)}')" style="border:none;background:#fce8d6;color:#a15c1e;border-radius:6px;padding:3px 9px;font-size:11px;font-weight:600;margin-left:6px;">반품/불량/추가금</button> <button onclick="event.stopPropagation();printPreShipmentStatement('${escAttr(cust)}', [${items.map(o => o.id).join(',')}])" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:6px;padding:3px 9px;font-size:11px;font-weight:600;margin-left:6px;">🖨 선수금용 명세서</button></div>
+            <div class="name">${esc(cust)} <button onclick="event.stopPropagation();openReturnForCustomer('${escAttr(cust)}')" style="border:none;background:#fce8d6;color:#a15c1e;border-radius:6px;padding:3px 9px;font-size:11px;font-weight:600;margin-left:6px;">반품/불량/추가금</button> <button onclick="event.stopPropagation();openPreShipmentModal('${escAttr(cust)}', [${items.map(o => o.id).join(',')}])" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:6px;padding:3px 9px;font-size:11px;font-weight:600;margin-left:6px;">🖨 선수금용 명세서</button></div>
             <div class="sub">전체 ${items.length}건 · 진행중 ${pendingCount}건 · ${qtyLabel}</div>
           </div>
           <div class="total"><div class="cnt">${isOpen ? '접기 ▲' : '펼치기 ▼'}</div></div>
@@ -4196,6 +4297,25 @@ async function hardResetAll(silent) {
   if (!silent) showToast(`재고 ${rolls.length}건, 스왓치 ${SWATCH_MIGRATION.swatch.length}건, 중국품번 ${ITEM_CHINA_CODES.length}건으로 새로 시작했습니다`);
 }
 
+const CARRYOVER_UNPAID = [["누스파세", 130900.0], ["광희)올", 629200.0], ["문텍스", 12144000.0], ["아이알", 710200.0], ["마우솔레움", 922350.0], ["일이2", 436590.0], ["H153", 112000.0], ["식스틴", 539000.0], ["제이룩", 706400.0], ["맥가이버2", 1972900.0], ["이블레스", 228800.0], ["콜라보영", 1057500.0], ["코지", 708000.0], ["SY디자인", 52250.0], ["호주머니", 676000.0], ["크로키", 135000.0], ["통", 6944800.0], ["준", 6105700.0], ["때깔", 1496300.0], ["파트너", 2552000.0], ["아이템", 468000.0], ["에이치투", 825000.0], ["시온", 3112580.0], ["로웰", 1206000.0], ["테이크", 748800.0], ["투플러스", 399200.0], ["짱", 10301300.0], ["유니스", 2793720.0], ["쏘페", 671200.0], ["사라(신평화)", 942600.0], ["리마쥬", 2114400.0], ["닛시", 575000.0], ["호박C", 4198500.0], ["핏하리", 907100.0], ["프로", 9965700.0], ["포미나", 10232800.0], ["틴트", 1839742.0], ["티나.M", 1764300.0], ["클래식", 42468635.0], ["카라", 975200.0], ["리치(채연)", 412400.0], ["주식회사 오션", 5174300.0], ["제작1부", 1192600.0], ["제이제이큐", 1563720.0], ["이모션", 451440.0], ["와이파이", 19910800.0], ["오토", 543380.0], ["엘림사", 634000.0], ["에이죤", 2870100.0], ["야투", 7706700.0], ["아이민", 896280.0], ["써니", 4535700.0], ["신성물산", 834240.0], ["시소", 150400.0], ["스타필드", 1836125.0], ["셀라", 1000000.0], ["삐삐", 23717500.0], ["뿌띠", 19350796.0], ["비타민", 5127490.0], ["비상", 760500.0], ["비비텍스", 1134000.0], ["백퍼센트", 691700.0], ["배동바지", 10801361.0], ["[폐업]미라보(런너패션)", 1180000.0], ["메이준", 4659000.0], ["메이 원", 6291925.0], ["마벨", 790800.0], ["마를리", 142800.0], ["루카", 11018300.0], ["레시피", 560500.0], ["디자인", 6283600.0], ["다비드", 3930200.0], ["까르르", 23714200.0], ["간지짱", 3254700.0], ["Y&B(와이앤비)", 672000.0], ["57페이지", 587600.0]]; // 2026-08-06 기준 기존 거래처 미수금 (거래처, 금액)
+
+async function applyCarryoverUnpaidIfNeeded() {
+  if (settings.carryoverUnpaidApplied) return;
+  for (const [customer, amount] of CARRYOVER_UNPAID) {
+    shipmentLog.push({
+      id: nextLogId++, date: todayStr(), orderId: null,
+      customer, factory: '', item: '이월 미수금', color: '',
+      amount: 1, unit: 'y', yardsShipped: 1, remainAfter: 0, isFullCompletion: true,
+      unitPrice: amount, supplyAmount: amount, taxAmount: 0, saleAmount: amount, paidAmount: 0,
+      note: '2026-08-06 기준 이월 미수금'
+    });
+  }
+  await persistShipmentLog();
+  settings = { ...settings, carryoverUnpaidApplied: true };
+  await persistSettings();
+  showToast(`기존 거래처 미수금 ${CARRYOVER_UNPAID.length}건을 반영했어요`);
+}
+
 async function applyDataVersionIfNeeded() {
   if (settings.dataVersion === DATA_VERSION) return; // 이미 최신
   await hardResetAll(true);
@@ -4209,6 +4329,7 @@ async function init() {
   document.getElementById('rateBar').classList.add('hidden');
   await loadAll();
   await applyDataVersionIfNeeded();
+  await applyCarryoverUnpaidIfNeeded();
   render();
 }
 </script>
