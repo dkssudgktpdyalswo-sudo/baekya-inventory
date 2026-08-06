@@ -603,6 +603,7 @@
     </div>
     <div class="modal-actions">
       <button class="btn-cancel" onclick="closePaymentModal()">취소</button>
+      <button onclick="markSampleAndClose()" style="border:none;background:#fce8d6;color:#a15c1e;border-radius:8px;padding:10px 14px;font-weight:600;">샘플 제공</button>
       <button class="btn-save" onclick="confirmPaymentModal()">저장</button>
     </div>
   </div>
@@ -2221,6 +2222,25 @@ function recordGroupPayment(entryIds) {
   document.getElementById('paymentModal').classList.add('open');
 }
 function closePaymentModal() { document.getElementById('paymentModal').classList.remove('open'); pendingPaymentEntryIds = []; }
+async function markSampleAndClose() {
+  const entryIds = pendingPaymentEntryIds;
+  const entries = entryIds.map(id => shipmentLog.find(e => e.id === id)).filter(Boolean);
+  if (entries.length === 0) return;
+  if (!confirm(`선택한 ${entries.length}건을 샘플 제공으로 처리할까요?\n매출·미수금에서 빠지고, 재고는 그대로 유지돼요.`)) return;
+  for (const entry of entries) {
+    entry.isSample = true;
+    entry.saleAmount = 0;
+    entry.supplyAmount = 0;
+    entry.taxAmount = 0;
+    entry.discount = 0;
+    entry.payments = [];
+    delete entry.paidAmount; delete entry.paid;
+  }
+  await persistShipmentLog();
+  closePaymentModal();
+  render();
+  showToast('샘플 제공으로 처리했습니다');
+}
 
 async function confirmPaymentModal() {
   const entryIds = pendingPaymentEntryIds;
