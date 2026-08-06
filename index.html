@@ -188,6 +188,7 @@
     <button onclick="showItemMonthlyStats()" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">📊 월별 품목 출고량</button>
     <button onclick="printSelectedMainStatements()" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">🖨 선택 인쇄 (메인 체크)</button>
     <button onclick="openUnpaidSummaryModal()" style="border:none;background:#fce8d6;color:#a15c1e;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">📋 거래처 미수금표</button>
+    <button onclick="showCustomerLedger()" style="border:none;background:#e8edf5;color:#3d4f6b;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">📒 거래처원장</button>
     <button onclick="openStatementModal()" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">🖨 기간별 내역서</button>
   </div>
 </div>
@@ -499,6 +500,7 @@
   <div class="modal" style="max-width:480px;">
     <h3>거래처 미수금표</h3>
     <p style="font-size:12px;color:var(--muted);margin-top:-6px;">이월 미수금 + 아직 안 받은 매출을 합친 거래처별 총 미수금이에요.</p>
+    <input id="unpaid-summary-search" placeholder="거래처 검색" oninput="renderUnpaidSummaryList()" style="margin-bottom:6px;">
     <div id="unpaid-summary-list" style="max-height:420px; overflow-y:auto;"></div>
     <div class="modal-actions">
       <button class="btn-cancel" onclick="closeUnpaidSummaryModal()">닫기</button>
@@ -708,7 +710,8 @@ let shipmentLog = []; // {id, date, customer, factory, item, color, amount, unit
 let nextLogId = 1;
 let salesAdminUnlocked = false;
 let salesViewMode = 'day'; // day | month
-let salesSpecialView = null; // null | 'itemMonthly'
+let salesSpecialView = null; // null | 'itemMonthly' | 'customerLedger'
+let ledgerCustomer = null;
 let priceBook = []; // {id, customer, item, color, unitPrice}
 let advancePayments = []; // {id, customer, date, amount, remaining, method, note}
 let nextAdvanceId = 1;
@@ -2530,7 +2533,7 @@ function buildStatementHTML(customerName, startDate, endDate) {
 
   const saleRows = []; // 매출/반품/불량 (날짜순)
   const paymentRows = []; // 입금 (날짜순, 항상 매출 아래에)
-  let totalSale = 0, totalPaid = 0, totalDiscount = 0, totalReturnDefect = 0, totalSupply = 0, totalTax = 0;
+  let totalSale = 0, totalPaid = 0, totalDiscount = 0, totalReturnDefect = 0, totalSupply = 0, totalTax = 0, carryoverAmt = 0, totalQty = 0;
 
   for (const e of custEntries) {
     if (e.isReturn || e.isDefect) {
@@ -2538,10 +2541,15 @@ function buildStatementHTML(customerName, startDate, endDate) {
       const label = e.isDefect ? '불량' : '반품';
       const amt = e.deductAmount != null ? -e.deductAmount : null;
       if (amt != null) totalReturnDefect += Math.abs(amt);
+      if (e.unit === 'y' || !e.unit) totalQty -= Math.abs(e.yardsShipped || q);
       saleRows.push({ date: e.date, desc: `${label} - ${e.item} ${e.color || ''}`, note: e.note || '', qty: `-${q}${e.unit}`, unitPrice: e.unitPrice ? e.unitPrice.toLocaleString() : '', supply: amt, tax: 0, amount: amt, color: 'red' });
       continue;
     }
     if (e.saleAmount == null) continue;
+    if (e.item === '이월 미수금') {
+      carryoverAmt += e.saleAmount; // 이월 미수금은 이번 기간 매출/공급가액에 안 섞고 별도 집계
+      continue;
+    }
     const defectAmt = e.defectYards > 0 ? Math.round(e.unitPrice * e.defectYards) : 0;
     const extraAmt = e.extraAmount || 0;
     const grossSale = e.saleAmount + defectAmt - extraAmt; // 순수 품목 매출액 (불량 차감분 복원, 추가액은 별도 행으로 뺌)
@@ -2550,9 +2558,11 @@ function buildStatementHTML(customerName, startDate, endDate) {
     totalSale += grossSale;
     totalSupply += rowSupply;
     totalTax += rowTax;
-    if (e.item !== '이월 미수금') {
-      saleRows.push({ date: e.date, desc: `${e.item} ${e.color || ''}`, note: e.note || '', qty: e.unit === '절' ? `${e.yardsShipped}y` : `${e.amount}${e.unit}`, unitPrice: e.unitPrice.toLocaleString(), supply: rowSupply, tax: rowTax, amount: grossSale, color: 'black' });
-    }
+    totalQty += (e.yardsShipped || 0);
+    const breakdownText = (e.deductBreakdown && e.deductBreakdown.length > 1) ? ` (${e.deductBreakdown.map(b => `${b.qty}y`).join('+')})` : '';
+    const swOrder = findSwatchOrderByItemColor(e.item, e.color);
+    const descWithOrder = `${e.item} ${e.color || ''}${swOrder != null ? ` (${swOrder}번)` : ''}`;
+    saleRows.push({ date: e.date, desc: descWithOrder, note: e.note || '', qty: (e.unit === '절' ? `${e.yardsShipped}y` : `${e.amount}${e.unit}`) + breakdownText, unitPrice: e.unitPrice.toLocaleString(), supply: rowSupply, tax: rowTax, amount: grossSale, color: 'black' });
 
     if (defectAmt > 0) {
       totalReturnDefect += defectAmt;
@@ -2610,7 +2620,7 @@ function buildStatementHTML(customerName, startDate, endDate) {
       </tr>`;
   }).join('');
 
-  const balance = Math.max(0, totalSale - totalDiscount - totalReturnDefect - totalPaid);
+  const balance = Math.max(0, totalSale - totalDiscount - totalReturnDefect - totalPaid + carryoverAmt);
 
   const b = settings;
   const infoBox = `
@@ -2639,28 +2649,36 @@ function buildStatementHTML(customerName, startDate, endDate) {
   `;
 
   const renderCopy = (copyLabel) => `
-    <div class="${compact ? 'compact-statement' : ''}" style="padding:${sizes.pad}; font-family:-apple-system,'Malgun Gothic',sans-serif; box-sizing:border-box; height:50%; overflow:hidden;">
-      <div style="display:flex; justify-content:space-between; align-items:baseline; margin-bottom:${sizes.titleGap};">
-        <h2 style="margin:0; font-size:${sizes.titleSize}; letter-spacing:2px; color:#1a5f8a;">거 래 명 세 표</h2>
-        <span style="font-size:${sizes.metaSize}; font-weight:700; border:1px solid #1a5f8a; color:#1a5f8a; padding:2px 10px; border-radius:4px;">${copyLabel}</span>
+    <div class="${compact ? 'compact-statement' : ''}" style="padding:${sizes.pad}; font-family:-apple-system,'Malgun Gothic',sans-serif; box-sizing:border-box; height:50%; overflow:hidden; display:flex; flex-direction:column;">
+      <div style="flex:none;">
+        <div style="display:flex; justify-content:space-between; align-items:baseline; margin-bottom:${sizes.titleGap};">
+          <h2 style="margin:0; font-size:${sizes.titleSize}; letter-spacing:2px; color:#1a5f8a;">거 래 명 세 표</h2>
+          <span style="font-size:${sizes.metaSize}; font-weight:700; border:1px solid #1a5f8a; color:#1a5f8a; padding:2px 10px; border-radius:4px;">${copyLabel}</span>
+        </div>
+        <div style="color:#555; margin-bottom:${sizes.metaGap}; font-size:${sizes.metaSize};">거래기간: ${esc(startDate)} ~ ${esc(endDate)} · 발행일: ${todayStr()}</div>
+        ${infoBox}
       </div>
-      <div style="color:#555; margin-bottom:${sizes.metaGap}; font-size:${sizes.metaSize};">거래기간: ${esc(startDate)} ~ ${esc(endDate)} · 발행일: ${todayStr()}</div>
-      ${infoBox}
-      <table style="font-size:${sizes.rowFont}; table-layout:fixed; width:100%;">
-        <thead>
-          <tr><th style="width:8%; padding:${sizes.rowPad} 4px;">날짜</th><th style="width:24%; padding:${sizes.rowPad} 4px;">내용</th><th style="width:8%; padding:${sizes.rowPad} 4px;">수량</th><th style="width:14%; padding:${sizes.rowPad} 4px;">비고</th><th style="width:9%; padding:${sizes.rowPad} 4px;">단가(원)</th><th style="width:12%; padding:${sizes.rowPad} 4px;">공급가액(원)</th><th style="width:10%; padding:${sizes.rowPad} 4px;">세액(원)</th><th style="width:12%; padding:${sizes.rowPad} 4px;">합계(원)</th></tr>
-        </thead>
-        <tbody>${rowsHtml}</tbody>
-      </table>
-      <table style="font-size:${sizes.totalsFont}; margin-top:${sizes.totalsGap};">
-        <tr><td style="background:#eaf4fb;color:#1a5f8a;width:25%;">공급가액 합계</td><td style="text-align:right;">${totalSupply.toLocaleString()}원</td>
-            <td style="background:#eaf4fb;color:#1a5f8a;width:25%;">세액 합계</td><td style="text-align:right;">${totalTax.toLocaleString()}원</td></tr>
-        ${totalReturnDefect > 0 ? `<tr><td style="background:#eaf4fb;color:#c0392b;">반품/불량 차감</td><td style="text-align:right;color:#c0392b;">-${totalReturnDefect.toLocaleString()}원</td><td style="background:#eaf4fb;color:#1a5f8a;">공제액</td><td style="text-align:right;">${totalDiscount.toLocaleString()}원</td></tr>` : (totalDiscount > 0 ? `<tr><td style="background:#eaf4fb;color:#1a5f8a;">공제액</td><td style="text-align:right;">${totalDiscount.toLocaleString()}원</td><td></td><td></td></tr>` : '')}
-        <tr><td style="background:#eaf4fb;color:#1a56db;">입금 합계</td><td style="text-align:right;color:#1a56db;">${totalPaid.toLocaleString()}원</td>
-            <td style="background:#d3e9f7;color:#1a5f8a;font-weight:800;">청구(미수)금액</td><td style="text-align:right;font-weight:800;">${balance.toLocaleString()}원</td></tr>
-      </table>
-      ${b.bankInfo ? `<div style="margin-top:${sizes.bankGap}; font-size:${sizes.bankSize}; color:#333;">입금계좌: ${esc(b.bankInfo)}</div>` : ''}
-      ${b.noteText ? `<div style="margin-top:2px; font-size:${sizes.bankSize}; color:#555;">참고사항: ${esc(b.noteText)}</div>` : ''}
+      <div style="flex:1 1 auto; overflow:hidden; min-height:0;">
+        <table style="font-size:${sizes.rowFont}; table-layout:fixed; width:100%;">
+          <thead>
+            <tr><th style="width:8%; padding:${sizes.rowPad} 4px;">날짜</th><th style="width:24%; padding:${sizes.rowPad} 4px;">내용</th><th style="width:8%; padding:${sizes.rowPad} 4px;">수량</th><th style="width:14%; padding:${sizes.rowPad} 4px;">비고</th><th style="width:9%; padding:${sizes.rowPad} 4px;">단가(원)</th><th style="width:12%; padding:${sizes.rowPad} 4px;">공급가액(원)</th><th style="width:10%; padding:${sizes.rowPad} 4px;">세액(원)</th><th style="width:12%; padding:${sizes.rowPad} 4px;">합계(원)</th></tr>
+          </thead>
+          <tbody>${rowsHtml}</tbody>
+        </table>
+      </div>
+      <div style="flex:none;">
+        <table style="font-size:${sizes.totalsFont}; margin-top:${sizes.totalsGap};">
+          <tr><td style="background:#eaf4fb;color:#1a5f8a;width:25%;">총수량</td><td style="text-align:right;">${Math.round(totalQty * 100) / 100}y</td>
+              <td style="background:#eaf4fb;color:#1a5f8a;width:25%;">공급가액 합계</td><td style="text-align:right;">${totalSupply.toLocaleString()}원</td></tr>
+          <tr><td style="background:#eaf4fb;color:#1a5f8a;">세액 합계</td><td style="text-align:right;">${totalTax.toLocaleString()}원</td>
+              ${totalReturnDefect > 0 ? `<td style="background:#eaf4fb;color:#c0392b;">반품/불량 차감</td><td style="text-align:right;color:#c0392b;">-${totalReturnDefect.toLocaleString()}원</td>` : (totalDiscount > 0 ? `<td style="background:#eaf4fb;color:#1a5f8a;">공제액</td><td style="text-align:right;">${totalDiscount.toLocaleString()}원</td>` : '<td></td><td></td>')}</tr>
+          <tr><td style="background:#eaf4fb;color:#1a56db;">입금 합계</td><td style="text-align:right;color:#1a56db;">${totalPaid.toLocaleString()}원</td>
+              ${carryoverAmt > 0 ? `<td style="background:#eaf4fb;color:#a15c1e;">이월 미수금</td><td style="text-align:right;color:#a15c1e;">${carryoverAmt.toLocaleString()}원</td>` : '<td></td><td></td>'}</tr>
+          <tr><td style="background:#d3e9f7;color:#1a5f8a;font-weight:800;">미수금액</td><td colspan="3" style="text-align:right;font-weight:800;">${balance.toLocaleString()}원</td></tr>
+        </table>
+        ${b.bankInfo ? `<div style="margin-top:${sizes.bankGap}; font-size:${sizes.bankSize}; color:#333;">입금계좌: ${esc(b.bankInfo)}</div>` : ''}
+        ${b.noteText ? `<div style="margin-top:2px; font-size:${sizes.bankSize}; color:#555;">참고사항: ${esc(b.noteText)}</div>` : ''}
+      </div>
     </div>
   `;
 
@@ -2802,7 +2820,136 @@ function getCostPerYard(item) {
   return finalCost(costMatch);
 }
 
+function showCustomerLedger(customer) {
+  salesSpecialView = 'customerLedger';
+  ledgerCustomer = customer || ledgerCustomer || '';
+  render();
+}
+function exitCustomerLedger() {
+  salesSpecialView = null;
+  ledgerCustomer = null;
+  render();
+}
+function renderCustomerLedgerView() {
+  const list = document.getElementById('list');
+  list.innerHTML = '';
+
+  const backBtn = document.createElement('button');
+  backBtn.textContent = '← 돌아가기';
+  backBtn.style.cssText = 'border:none;background:#eee;color:#555;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;margin-bottom:10px;';
+  backBtn.onclick = exitCustomerLedger;
+  list.appendChild(backBtn);
+
+  const controls = document.createElement('div');
+  controls.style.cssText = 'display:flex; gap:8px; align-items:flex-end; flex-wrap:wrap; margin-bottom:14px;';
+  controls.innerHTML = `
+    <div style="flex:1; min-width:180px;">
+      <label>거래처</label>
+      <input id="ledger-customer" placeholder="예: 클래식" autocomplete="off" value="${escAttr(ledgerCustomer || '')}" oninput="showCustomerSuggestions(this)" onfocus="showCustomerSuggestions(this)" onblur="hideItemSuggestionsDelayed()">
+    </div>
+    <div>
+      <label>시작일</label>
+      <input id="ledger-start" type="date">
+    </div>
+    <div>
+      <label>종료일</label>
+      <input id="ledger-end" type="date">
+    </div>
+    <button onclick="ledgerCustomer=document.getElementById('ledger-customer').value.trim(); renderCustomerLedgerTable();" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:8px;padding:10px 16px;font-size:13px;font-weight:600;height:38px;">조회</button>
+  `;
+  list.appendChild(controls);
+
+  const now = new Date();
+  const yearAgo = new Date(now); yearAgo.setFullYear(yearAgo.getFullYear() - 1);
+  document.getElementById('ledger-start').value = yearAgo.toISOString().slice(0, 10);
+  document.getElementById('ledger-end').value = now.toISOString().slice(0, 10);
+
+  const tableWrap = document.createElement('div');
+  tableWrap.id = 'ledger-table-wrap';
+  list.appendChild(tableWrap);
+
+  if (ledgerCustomer) renderCustomerLedgerTable();
+}
+function renderCustomerLedgerTable() {
+  const customer = (ledgerCustomer || document.getElementById('ledger-customer').value).trim();
+  const startDate = fromDateInputValue(document.getElementById('ledger-start').value);
+  const endDate = fromDateInputValue(document.getElementById('ledger-end').value);
+  const wrap = document.getElementById('ledger-table-wrap');
+  if (!customer) { wrap.innerHTML = '<div class="empty">거래처를 입력해주세요</div>'; return; }
+  const t_c = customer.trim();
+
+  // 이 거래처의 모든 사건(매출/반품·불량/입금)을 날짜순으로 하나의 흐름으로 만듦
+  const events = [];
+  for (const e of shipmentLog) {
+    if (String(e.customer || '').trim() !== t_c) continue;
+    if (e.isReturn || e.isDefect) {
+      if (e.deductAmount != null) {
+        events.push({ date: e.date, type: e.isDefect ? '불량' : '반품', desc: `${e.item} ${e.color || ''}`, detail: `${Math.abs(e.amount)}${e.unit || 'y'}${e.unitPrice ? ` × ${e.unitPrice.toLocaleString()}원/y` : ''}`, amount: -e.deductAmount });
+      }
+      continue;
+    }
+    if (e.saleAmount != null) {
+      const net = Math.round((e.saleAmount - (e.discount || 0)) * 100) / 100;
+      const isCarry = e.item === '이월 미수금';
+      const detail = isCarry ? '' : `${e.yardsShipped || e.amount}${e.unit || 'y'}${e.unitPrice ? ` × ${e.unitPrice.toLocaleString()}원/y` : ' (단가 미입력)'}`;
+      events.push({ date: e.date, type: '매출', desc: isCarry ? '이월 미수금' : `${e.item} ${e.color || ''}`, detail, amount: net });
+    }
+    for (const p of (e.payments || [])) {
+      events.push({ date: p.date, type: '입금', desc: (p.method || 'cash') === 'cash' ? '입금(현금)' : '입금(온라인)', detail: '', amount: -p.amount });
+    }
+  }
+  events.sort((a, b) => String(a.date).localeCompare(String(b.date)));
+
+  if (events.length === 0) { wrap.innerHTML = '<div class="empty">거래 내역이 없습니다</div>'; return; }
+
+  let openingBalance = 0;
+  const rowsInRange = [];
+  for (const ev of events) {
+    if (startDate && ev.date < startDate) { openingBalance += ev.amount; continue; }
+    if (endDate && ev.date > endDate) continue;
+    rowsInRange.push(ev);
+  }
+
+  let running = openingBalance;
+  const rowsHtml = rowsInRange.map(ev => {
+    running = Math.round((running + ev.amount) * 100) / 100;
+    const color = ev.type === '매출' ? '#c0392b' : (ev.type === '입금' ? '#1a56db' : '#a15c1e');
+    return `<tr>
+      <td style="padding:8px 6px; border-bottom:1px solid var(--border); font-size:13px;">${esc(ev.date)}</td>
+      <td style="padding:8px 6px; border-bottom:1px solid var(--border); font-size:13px; color:${color}; font-weight:600;">${esc(ev.type)}</td>
+      <td style="padding:8px 6px; border-bottom:1px solid var(--border); font-size:13px;">${esc(ev.desc)}${ev.detail ? `<div style="font-size:11px; color:var(--muted); margin-top:2px;">${esc(ev.detail)}</div>` : ''}</td>
+      <td style="padding:8px 6px; border-bottom:1px solid var(--border); font-size:13px; text-align:right; color:${color};">${ev.amount < 0 ? '-' : ''}${Math.abs(ev.amount).toLocaleString()}</td>
+      <td style="padding:8px 6px; border-bottom:1px solid var(--border); font-size:13px; text-align:right; font-weight:600;">${running.toLocaleString()}</td>
+    </tr>`;
+  }).join('');
+
+  wrap.innerHTML = `
+    <table style="width:100%; border-collapse:collapse;">
+      <thead>
+        <tr style="background:#f1eee7;">
+          <th style="padding:8px 6px; font-size:13px; text-align:left;">날짜</th>
+          <th style="padding:8px 6px; font-size:13px; text-align:left;">구분</th>
+          <th style="padding:8px 6px; font-size:13px; text-align:left;">내용</th>
+          <th style="padding:8px 6px; font-size:13px; text-align:right;">금액</th>
+          <th style="padding:8px 6px; font-size:13px; text-align:right;">잔액</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr style="background:#fffbe6;">
+          <td colspan="4" style="padding:8px 6px; font-size:13px; font-weight:600;">[이월]</td>
+          <td style="padding:8px 6px; font-size:13px; text-align:right; font-weight:600;">${openingBalance.toLocaleString()}</td>
+        </tr>
+        ${rowsHtml}
+      </tbody>
+    </table>
+  `;
+}
 function openUnpaidSummaryModal() {
+  document.getElementById('unpaid-summary-search').value = '';
+  renderUnpaidSummaryList();
+  document.getElementById('unpaidSummaryModal').classList.add('open');
+}
+function renderUnpaidSummaryList() {
   const custMap = new Map(); // customer -> {unpaid, carryoverId}
   for (const e of shipmentLog) {
     if (!e.customer) continue;
@@ -2813,14 +2960,17 @@ function openUnpaidSummaryModal() {
     if (e.saleAmount != null) rec.unpaid += getRemaining(e);
     else if ((e.isReturn || e.isDefect) && e.deductAmount != null) rec.unpaid -= e.deductAmount;
   }
-  const rows = Array.from(custMap.entries())
+  let rows = Array.from(custMap.entries())
     .map(([k, rec]) => ({ customer: k, unpaid: Math.max(0, Math.round(rec.unpaid)), carryoverId: rec.carryoverId }))
     .filter(r => r.unpaid > 0)
     .sort((a, b) => b.unpaid - a.unpaid);
 
+  const searchTerm2 = document.getElementById('unpaid-summary-search').value.trim().toLowerCase();
+  if (searchTerm2) rows = rows.filter(r => r.customer.toLowerCase().includes(searchTerm2));
+
   const listEl = document.getElementById('unpaid-summary-list');
   if (rows.length === 0) {
-    listEl.innerHTML = '<div class="empty">미수금이 있는 거래처가 없습니다</div>';
+    listEl.innerHTML = '<div class="empty">해당하는 거래처가 없습니다</div>';
   } else {
     const total = rows.reduce((s, r) => s + r.unpaid, 0);
     listEl.innerHTML = `
@@ -2830,29 +2980,30 @@ function openUnpaidSummaryModal() {
           <div style="font-size:14px;">${esc(r.customer)}</div>
           <div style="display:flex; align-items:center; gap:8px;">
             <span style="font-weight:700; color:var(--danger);">${r.unpaid.toLocaleString()}원</span>
-            <button onclick="adjustCarryoverBalance('${escAttr(r.customer)}', ${r.carryoverId != null ? r.carryoverId : 'null'})" style="border:none;background:#eee;color:var(--text);border-radius:6px;padding:4px 8px;font-size:11px;">이월 조정</button>
+            <button onclick="adjustCarryoverBalance('${escAttr(r.customer)}', ${r.carryoverId != null ? r.carryoverId : 'null'})" style="border:none;background:#eee;color:var(--text);border-radius:6px;padding:4px 8px;font-size:11px;">입금 반영</button>
           </div>
         </div>
       `).join('')}
     `;
   }
-  document.getElementById('unpaidSummaryModal').classList.add('open');
 }
 function closeUnpaidSummaryModal() { document.getElementById('unpaidSummaryModal').classList.remove('open'); }
 
 async function adjustCarryoverBalance(customer, entryId) {
   const current = entryId != null ? shipmentLog.find(e => e.id === entryId) : null;
-  const raw = prompt(`${customer}의 이월 미수금을 얼마로 설정할까요? (0을 입력하면 삭제돼요)`, current ? String(current.saleAmount || 0) : '');
+  const currentAmt = current ? (current.saleAmount || 0) : 0;
+  const raw = prompt(`${customer}의 이월 미수금 ${currentAmt.toLocaleString()}원 중 얼마를 받으셨나요?\n(전액 받으셨으면 ${currentAmt} 입력 / 반대로 더 추가하려면 마이너스로 입력)`, '');
   if (raw === null) return;
-  const amount = parseFloat(raw);
-  if (isNaN(amount) || amount < 0) { showToast('금액을 확인해주세요'); return; }
+  const received = parseFloat(raw);
+  if (isNaN(received)) { showToast('금액을 확인해주세요'); return; }
+  const amount = Math.max(0, Math.round((currentAmt - received) * 100) / 100);
 
   if (amount === 0) {
     if (current) {
       shipmentLog = shipmentLog.filter(e => e.id !== current.id);
       await persistShipmentLog();
       render();
-      if (document.getElementById('unpaidSummaryModal').classList.contains('open')) openUnpaidSummaryModal();
+      if (document.getElementById('unpaidSummaryModal').classList.contains('open')) renderUnpaidSummaryList();
       showToast('이월 미수금을 삭제했습니다');
     }
     return;
@@ -2873,8 +3024,8 @@ async function adjustCarryoverBalance(customer, entryId) {
   }
   await persistShipmentLog();
   render();
-  if (document.getElementById('unpaidSummaryModal').classList.contains('open')) openUnpaidSummaryModal();
-  showToast(`이월 미수금 ${amount.toLocaleString()}원으로 저장했습니다`);
+  if (document.getElementById('unpaidSummaryModal').classList.contains('open')) renderUnpaidSummaryList();
+  showToast(received !== 0 ? `${Math.abs(received).toLocaleString()}원 ${received > 0 ? '입금' : '추가'} 반영, 남은 미수금 ${amount.toLocaleString()}원` : `이월 미수금 ${amount.toLocaleString()}원`);
 }
 function renderSales() {
   document.getElementById('rateBar').classList.add('hidden');
@@ -2887,6 +3038,11 @@ function renderSales() {
   if (salesSpecialView === 'itemMonthly') {
     document.getElementById('stats').innerHTML = '';
     renderItemMonthlyStatsView();
+    return;
+  }
+  if (salesSpecialView === 'customerLedger') {
+    document.getElementById('stats').innerHTML = '';
+    renderCustomerLedgerView();
     return;
   }
 
@@ -2994,6 +3150,7 @@ function renderSales() {
               ${entries.some(e => getPaidAmount(e) > 0) ? `<button onclick="resetGroupPayment([${entries.map(e => e.id).join(',')}])" style="border:none;background:#f1eee7;color:var(--muted);border-radius:6px;padding:5px 10px;font-size:12px;margin-left:6px;">입금 취소</button>` : ''}
               <button onclick="printCustomerStatement('${escAttr(k)}', [${entries.map(e => e.id).join(',')}], '${escAttr(period)}')" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:6px;padding:5px 10px;font-size:12px;margin-left:6px;">🖨 내역서 인쇄</button>
               <button onclick="openSaleAddModal('${escAttr(k)}')" style="border:none;background:#eaf3ec;color:#2f6b46;border-radius:6px;padding:5px 10px;font-size:12px;margin-left:6px;">+ 품목 추가</button>
+              <button onclick="showCustomerLedger('${escAttr(k)}')" style="border:none;background:#e8edf5;color:#3d4f6b;border-radius:6px;padding:5px 10px;font-size:12px;margin-left:6px;">📒 원장</button>
             </div>
           </div>
         </div>
@@ -4283,6 +4440,10 @@ async function saveRate() {
 // ---------- 스왓치 순번 / 중국품번 수정 ----------
 function findExactSwatch(cat, item, color) {
   return swatchInfo.find(s => s.cat === cat && String(s.item).trim() === String(item).trim() && s.color != null && String(s.color).trim() === String(color).trim());
+}
+function findSwatchOrderByItemColor(item, color) {
+  const sw = swatchInfo.find(s => String(s.item).trim() === String(item).trim() && s.color != null && String(s.color).trim() === String(color).trim() && s.order != null);
+  return sw ? sw.order : null;
 }
 function openSwatchEditModal(cat, item, color) {
   editingSwatchKey = { cat, item, color };
