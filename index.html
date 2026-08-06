@@ -186,7 +186,8 @@
     <button id="salesViewToggleBtn" onclick="toggleSalesViewMode()" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;"></button>
     <button onclick="openBizInfoModal()" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">사업자 정보 설정</button>
     <button onclick="showItemMonthlyStats()" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">📊 월별 품목 출고량</button>
-    <button onclick="openTodayStatementModal()" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">🖨 오늘 내역서</button>
+    <button onclick="printSelectedMainStatements()" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">🖨 선택 인쇄 (메인 체크)</button>
+    <button onclick="openUnpaidSummaryModal()" style="border:none;background:#fce8d6;color:#a15c1e;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">📋 거래처 미수금표</button>
     <button onclick="openStatementModal()" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">🖨 기간별 내역서</button>
   </div>
 </div>
@@ -492,18 +493,14 @@
   </div>
 </div>
 
-<div class="modal-overlay" id="todayStatementModal">
-  <div class="modal">
-    <h3>오늘(<span id="today-stmt-date"></span>) 내역서</h3>
-    <p style="font-size:12px;color:var(--muted);margin-top:-6px;">이미 뽑아서 드린 거래처는 체크를 빼주세요.</p>
-    <div style="display:flex; gap:8px; margin-bottom:8px;">
-      <button onclick="toggleAllTodayStatement(true)" style="border:none;background:#eee;border-radius:8px;padding:6px 10px;font-size:12px;">전체 선택</button>
-      <button onclick="toggleAllTodayStatement(false)" style="border:none;background:#eee;border-radius:8px;padding:6px 10px;font-size:12px;">전체 해제</button>
-    </div>
-    <div id="today-stmt-list" style="max-height:300px; overflow-y:auto;"></div>
+<!-- 거래처 미수금표 -->
+<div class="modal-overlay" id="unpaidSummaryModal">
+  <div class="modal" style="max-width:480px;">
+    <h3>거래처 미수금표</h3>
+    <p style="font-size:12px;color:var(--muted);margin-top:-6px;">이월 미수금 + 아직 안 받은 매출을 합친 거래처별 총 미수금이에요.</p>
+    <div id="unpaid-summary-list" style="max-height:420px; overflow-y:auto;"></div>
     <div class="modal-actions">
-      <button class="btn-cancel" onclick="closeTodayStatementModal()">취소</button>
-      <button class="btn-save" onclick="printSelectedTodayStatements()">선택 거래처 인쇄</button>
+      <button class="btn-cancel" onclick="closeUnpaidSummaryModal()">닫기</button>
     </div>
   </div>
 </div>
@@ -2665,38 +2662,23 @@ function printAllCustomersStatement(startDate, endDate) {
   printCustomersStatements(customers, startDate, endDate);
 }
 
-function openTodayStatementModal() {
-  const today = todayStr();
-  document.getElementById('today-stmt-date').textContent = today;
-  const todayEntries = shipmentLog.filter(e => e.customer && e.date === today);
-  const customers = Array.from(new Set(todayEntries.map(e => String(e.customer).trim())))
-    .sort((a, b) => a.localeCompare(b, 'ko'));
-  const listEl = document.getElementById('today-stmt-list');
-  if (customers.length === 0) {
-    listEl.innerHTML = '<div class="empty">오늘 거래 내역이 없습니다</div>';
-  } else {
-    listEl.innerHTML = customers.map(c => {
-      const custEntries = todayEntries.filter(e => String(e.customer).trim() === c);
-      const isMain = custEntries.every(e => e.isMain);
-      return `
-      <label style="display:flex;align-items:center;gap:8px;padding:8px 4px;border-bottom:1px dashed var(--border);font-size:14px;">
-        <input type="checkbox" class="today-stmt-check" value="${escAttr(c)}" ${isMain ? 'checked' : ''} style="width:auto;"> ${esc(c)}
-      </label>
-    `;
-    }).join('');
-  }
-  document.getElementById('todayStatementModal').classList.add('open');
-}
-function closeTodayStatementModal() { document.getElementById('todayStatementModal').classList.remove('open'); }
-function toggleAllTodayStatement(checked) {
-  document.querySelectorAll('.today-stmt-check').forEach(cb => cb.checked = checked);
-}
-function printSelectedTodayStatements() {
-  const selected = Array.from(document.querySelectorAll('.today-stmt-check:checked')).map(cb => cb.value);
-  if (selected.length === 0) { showToast('거래처를 선택해주세요'); return; }
-  const today = todayStr();
-  closeTodayStatementModal();
-  printCustomersStatements(selected, today, today);
+function printSelectedMainStatements() {
+  const checked = document.querySelectorAll('.main-flag-checkbox:checked');
+  if (checked.length === 0) { showToast('메인으로 체크된 거래처가 없습니다'); return; }
+  const seen = new Set();
+  const blocks = [];
+  checked.forEach(cb => {
+    const key = `${cb.dataset.customer}|${cb.dataset.start}|${cb.dataset.end}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    const html = buildStatementHTML(cb.dataset.customer, cb.dataset.start, cb.dataset.end);
+    if (html) blocks.push(html);
+  });
+  if (blocks.length === 0) { showToast('인쇄할 내역이 없습니다'); return; }
+  const wrapped = blocks.map((b, i) => i < blocks.length - 1 ? `<div style="page-break-after: always;">${b}</div>` : b);
+  document.getElementById('printArea').innerHTML = wrapped.join('');
+  setTimeout(() => window.print(), 100);
+  showToast(`${blocks.length}건 인쇄합니다`);
 }
 
 function printCustomerStatement(customerName, entryIds, period) {
@@ -2785,6 +2767,44 @@ function getCostPerYard(item) {
   return finalCost(costMatch);
 }
 
+function openUnpaidSummaryModal() {
+  const custMap = new Map(); // customer -> {unpaid, carryoverId}
+  for (const e of shipmentLog) {
+    if (!e.customer) continue;
+    const k = String(e.customer).trim();
+    if (!custMap.has(k)) custMap.set(k, { unpaid: 0, carryoverId: null });
+    const rec = custMap.get(k);
+    if (e.item === '이월 미수금') rec.carryoverId = e.id;
+    if (e.saleAmount != null) rec.unpaid += getRemaining(e);
+    else if ((e.isReturn || e.isDefect) && e.deductAmount != null) rec.unpaid -= e.deductAmount;
+  }
+  const rows = Array.from(custMap.entries())
+    .map(([k, rec]) => ({ customer: k, unpaid: Math.max(0, Math.round(rec.unpaid)), carryoverId: rec.carryoverId }))
+    .filter(r => r.unpaid > 0)
+    .sort((a, b) => b.unpaid - a.unpaid);
+
+  const listEl = document.getElementById('unpaid-summary-list');
+  if (rows.length === 0) {
+    listEl.innerHTML = '<div class="empty">미수금이 있는 거래처가 없습니다</div>';
+  } else {
+    const total = rows.reduce((s, r) => s + r.unpaid, 0);
+    listEl.innerHTML = `
+      <div style="padding:8px 4px; font-weight:700; font-size:14px; border-bottom:1px solid var(--border); margin-bottom:4px;">총 미수금 ${total.toLocaleString()}원 (${rows.length}개 거래처)</div>
+      ${rows.map(r => `
+        <div style="display:flex; justify-content:space-between; align-items:center; padding:8px 4px; border-bottom:1px dashed var(--border);">
+          <div style="font-size:14px;">${esc(r.customer)}</div>
+          <div style="display:flex; align-items:center; gap:8px;">
+            <span style="font-weight:700; color:var(--danger);">${r.unpaid.toLocaleString()}원</span>
+            <button onclick="adjustCarryoverBalance('${escAttr(r.customer)}', ${r.carryoverId != null ? r.carryoverId : 'null'})" style="border:none;background:#eee;color:var(--text);border-radius:6px;padding:4px 8px;font-size:11px;">이월 조정</button>
+          </div>
+        </div>
+      `).join('')}
+    `;
+  }
+  document.getElementById('unpaidSummaryModal').classList.add('open');
+}
+function closeUnpaidSummaryModal() { document.getElementById('unpaidSummaryModal').classList.remove('open'); }
+
 async function adjustCarryoverBalance(customer, entryId) {
   const current = entryId != null ? shipmentLog.find(e => e.id === entryId) : null;
   const raw = prompt(`${customer}의 이월 미수금을 얼마로 설정할까요? (0을 입력하면 삭제돼요)`, current ? String(current.saleAmount || 0) : '');
@@ -2797,6 +2817,7 @@ async function adjustCarryoverBalance(customer, entryId) {
       shipmentLog = shipmentLog.filter(e => e.id !== current.id);
       await persistShipmentLog();
       render();
+      if (document.getElementById('unpaidSummaryModal').classList.contains('open')) openUnpaidSummaryModal();
       showToast('이월 미수금을 삭제했습니다');
     }
     return;
@@ -2817,6 +2838,7 @@ async function adjustCarryoverBalance(customer, entryId) {
   }
   await persistShipmentLog();
   render();
+  if (document.getElementById('unpaidSummaryModal').classList.contains('open')) openUnpaidSummaryModal();
   showToast(`이월 미수금 ${amount.toLocaleString()}원으로 저장했습니다`);
 }
 function renderSales() {
@@ -2833,7 +2855,7 @@ function renderSales() {
     return;
   }
 
-  let sales = shipmentLog.filter(e => e.saleAmount != null || ((e.isReturn || e.isDefect) && e.deductAmount != null));
+  let sales = shipmentLog.filter(e => (e.saleAmount != null || ((e.isReturn || e.isDefect) && e.deductAmount != null)) && e.item !== '이월 미수금');
   if (searchTerm.trim()) {
     const t = searchTerm.trim().toLowerCase();
     sales = sales.filter(e => String(e.customer).toLowerCase().includes(t) || String(e.item).toLowerCase().includes(t));
@@ -2910,7 +2932,7 @@ function renderSales() {
     const custKeys = Array.from(custGroups.keys()).sort((a, b) => a.localeCompare(b, 'ko'));
     for (const k of custKeys) {
       const entries = custGroups.get(k);
-      const custGross = entries.reduce((s, e) => s + (e.item !== '이월 미수금' ? (e.saleAmount || 0) : 0), 0);
+      const custGross = entries.reduce((s, e) => s + (e.saleAmount || 0), 0);
       const custReturnDefect = entries.reduce((s, e) => s + ((e.isReturn || e.isDefect) ? (e.deductAmount || 0) : 0), 0);
       const custTotal = custGross - custReturnDefect;
       const custProfit = entries.reduce((s, e) => {
@@ -2920,8 +2942,6 @@ function renderSales() {
       }, 0);
       const custUnpaid = Math.max(0, entries.reduce((s, e) => s + (e.saleAmount != null ? getRemaining(e) : 0), 0) - custReturnDefect);
       const isMainGroup = entries.every(e => e.isMain);
-      const carryoverEntry = entries.find(e => e.item === '이월 미수금');
-      const displayEntries = entries.filter(e => e.item !== '이월 미수금');
 
       const div = document.createElement('div');
       div.className = 'group';
@@ -2930,10 +2950,9 @@ function renderSales() {
           <div class="info">
             <div class="name">${esc(k)}</div>
             <div class="sub">${entries.length}건 · 매출 ${custTotal.toLocaleString()}원 · 순이익 ${custProfit.toLocaleString()}원${custUnpaid > 0 ? ` · <span style="color:var(--danger);font-weight:700;">미수금 ${custUnpaid.toLocaleString()}원</span>` : ''}</div>
-            <div class="sub">${carryoverEntry ? `이월 미수금 ${(carryoverEntry.saleAmount || 0).toLocaleString()}원` : ''} <span style="cursor:pointer;color:var(--primary-dark);text-decoration:underline;" onclick="adjustCarryoverBalance('${escAttr(k)}', ${carryoverEntry ? carryoverEntry.id : 'null'})">이월 미수금 조정</span></div>
             <div style="margin-top:4px;">
               <label style="display:inline-flex;align-items:center;gap:5px;font-size:12px;color:var(--muted);margin-right:8px;">
-                <input type="checkbox" ${isMainGroup ? 'checked' : ''} onchange="toggleMainFlag([${entries.map(e => e.id).join(',')}], this.checked)" style="width:auto;">
+                <input type="checkbox" class="main-flag-checkbox" data-customer="${escAttr(k)}" data-start="${escAttr(entries.reduce((a, e) => a < e.date ? a : e.date, entries[0].date))}" data-end="${escAttr(entries.reduce((a, e) => a > e.date ? a : e.date, entries[0].date))}" ${isMainGroup ? 'checked' : ''} onchange="toggleMainFlag([${entries.map(e => e.id).join(',')}], this.checked)" style="width:auto;">
                 메인(내역서 포함)
               </label>
               ${custUnpaid > 0 ? `<button onclick="recordGroupPayment([${entries.map(e => e.id).join(',')}])" style="border:none;background:#eaf3ec;color:#2f6b46;border-radius:6px;padding:5px 10px;font-size:12px;font-weight:600;">입금 처리</button>` : ''}
@@ -2945,7 +2964,7 @@ function renderSales() {
         </div>
       `;
       const inner = document.createElement('div');
-      for (const e of displayEntries) {
+      for (const e of entries) {
         const row = document.createElement('div');
         row.className = 'order-card';
         if (e.isReturn || e.isDefect) {
