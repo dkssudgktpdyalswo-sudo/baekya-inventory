@@ -184,12 +184,13 @@
   </div>
   <div id="salesTools" class="hidden" style="display:flex; gap:6px; margin-top:6px; flex-wrap:wrap;">
     <button id="salesViewToggleBtn" onclick="toggleSalesViewMode()" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;"></button>
-    <button onclick="openBizInfoModal()" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">사업자 정보 설정</button>
-    <button onclick="showItemMonthlyStats()" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">📊 월별 품목 출고량</button>
+    <button onclick="document.querySelectorAll('.main-flag-checkbox').forEach(cb=>{cb.checked=true; cb.dispatchEvent(new Event('change'));})" style="border:none;background:#eee;color:#555;border-radius:8px;padding:7px 12px;font-size:12px;">전체 선택</button>
+    <button onclick="document.querySelectorAll('.main-flag-checkbox').forEach(cb=>{cb.checked=false; cb.dispatchEvent(new Event('change'));})" style="border:none;background:#eee;color:#555;border-radius:8px;padding:7px 12px;font-size:12px;">전체 해제</button>
     <button onclick="printSelectedMainStatements()" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">🖨 선택 인쇄 (메인 체크)</button>
-    <button onclick="openUnpaidSummaryModal()" style="border:none;background:#fce8d6;color:#a15c1e;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">📋 거래처 미수금표</button>
     <button onclick="showCustomerLedger()" style="border:none;background:#e8edf5;color:#3d4f6b;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">📒 거래처원장</button>
-    <button onclick="openStatementModal()" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">🖨 기간별 내역서</button>
+    <button onclick="openUnpaidSummaryModal()" style="border:none;background:#fce8d6;color:#a15c1e;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">📋 거래처 미수금표</button>
+    <button onclick="showItemMonthlyStats()" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">📊 월별 품목 출고량</button>
+    <button onclick="openBizInfoModal()" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">사업자 정보 설정</button>
   </div>
 </div>
 
@@ -2897,6 +2898,8 @@ function renderCustomerLedgerView() {
     </div>
     <button onclick="ledgerCustomer=document.getElementById('ledger-customer').value.trim(); ledgerStartDate=document.getElementById('ledger-start').value; ledgerEndDate=document.getElementById('ledger-end').value; renderCustomerLedgerTable();" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:8px;padding:10px 16px;font-size:13px;font-weight:600;height:38px;">조회</button>
     <button onclick="printCurrentLedgerStatement()" style="border:none;background:#eaf3ec;color:#2f6b46;border-radius:8px;padding:10px 16px;font-size:13px;font-weight:600;height:38px;">🖨 명세서 인쇄</button>
+    <button onclick="document.querySelectorAll('.ledger-print-check').forEach(cb=>cb.checked=true)" style="border:none;background:#eee;color:#555;border-radius:8px;padding:10px 12px;font-size:12px;height:38px;">전체 선택</button>
+    <button onclick="document.querySelectorAll('.ledger-print-check').forEach(cb=>cb.checked=false)" style="border:none;background:#eee;color:#555;border-radius:8px;padding:10px 12px;font-size:12px;height:38px;">전체 해제</button>
   `;
   list.appendChild(controls);
 
