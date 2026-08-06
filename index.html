@@ -279,8 +279,10 @@
 <!-- 스왓치/중국품번 수정 모달 -->
 <div class="modal-overlay" id="swatchEditModal">
   <div class="modal">
-    <h3>스왓치·중국품번 수정</h3>
+    <h3>컬러 정보 수정</h3>
     <p id="sw-desc" style="font-size:13px;color:var(--muted);margin-top:-6px;"></p>
+    <label>컬러 이름</label>
+    <input id="sw-color-name" placeholder="예: #3보카밤">
     <label>스왓치 순번 (숫자만, 비우면 삭제)</label>
     <input id="sw-order" type="number" placeholder="예: 5">
     <label>중국품번(컬러북 품번, 비우면 삭제)</label>
@@ -2518,7 +2520,7 @@ function buildStatementHTML(customerName, startDate, endDate) {
     totalSale += grossSale;
     totalSupply += rowSupply;
     totalTax += rowTax;
-    saleRows.push({ date: e.date, desc: `${e.item} ${e.color || ''}`, note: e.note || '', qty: e.unit === '절' ? `${e.yardsShipped}y` : `${e.amount}${e.unit}`, unitPrice: e.unitPrice.toLocaleString(), supply: rowSupply, tax: rowTax, amount: grossSale, color: 'black' });
+    saleRows.push({ date: e.date, desc: `${e.item} ${e.color || ''}`, note: e.note || '', qty: e.item === '이월 미수금' ? '' : (e.unit === '절' ? `${e.yardsShipped}y` : `${e.amount}${e.unit}`), unitPrice: e.item === '이월 미수금' ? '' : e.unitPrice.toLocaleString(), supply: rowSupply, tax: rowTax, amount: grossSale, color: 'black' });
 
     if (defectAmt > 0) {
       totalReturnDefect += defectAmt;
@@ -2884,6 +2886,8 @@ function renderSales() {
       }, 0);
       const custUnpaid = Math.max(0, entries.reduce((s, e) => s + (e.saleAmount != null ? getRemaining(e) : 0), 0) - custReturnDefect);
       const isMainGroup = entries.every(e => e.isMain);
+      const carryoverEntry = entries.find(e => e.item === '이월 미수금');
+      const displayEntries = entries.filter(e => e.item !== '이월 미수금');
 
       const div = document.createElement('div');
       div.className = 'group';
@@ -2892,6 +2896,7 @@ function renderSales() {
           <div class="info">
             <div class="name">${esc(k)}</div>
             <div class="sub">${entries.length}건 · 매출 ${custTotal.toLocaleString()}원 · 순이익 ${custProfit.toLocaleString()}원${custUnpaid > 0 ? ` · <span style="color:var(--danger);font-weight:700;">미수금 ${custUnpaid.toLocaleString()}원</span>` : ''}</div>
+            ${carryoverEntry ? `<div class="sub" style="cursor:pointer;" onclick="openSaleEditModal(${carryoverEntry.id})">이월 미수금 ${(carryoverEntry.saleAmount || 0).toLocaleString()}원 <span style="color:var(--primary-dark);text-decoration:underline;">수정</span></div>` : ''}
             <div style="margin-top:4px;">
               <label style="display:inline-flex;align-items:center;gap:5px;font-size:12px;color:var(--muted);margin-right:8px;">
                 <input type="checkbox" ${isMainGroup ? 'checked' : ''} onchange="toggleMainFlag([${entries.map(e => e.id).join(',')}], this.checked)" style="width:auto;">
@@ -2906,7 +2911,7 @@ function renderSales() {
         </div>
       `;
       const inner = document.createElement('div');
-      for (const e of entries) {
+      for (const e of displayEntries) {
         const row = document.createElement('div');
         row.className = 'order-card';
         if (e.isReturn || e.isDefect) {
@@ -2931,7 +2936,7 @@ function renderSales() {
           <div class="order-top">
             <div>
               <div class="order-name">${esc(e.item)} ${esc(e.color || '')}</div>
-              <div class="order-sub">${e.amount}${e.unit}${e.unit === '절' ? ` (${e.yardsShipped}y${e.yardsEstimated ? ' 추정' : ''})` : ''} 출고${e.yardsEstimated ? ' <span style="color:var(--danger);">· 추정치</span>' : ''}</div>
+              <div class="order-sub">${e.item === '이월 미수금' ? `${(e.saleAmount || 0).toLocaleString()}원` : `${e.amount}${e.unit}${e.unit === '절' ? ` (${e.yardsShipped}y${e.yardsEstimated ? ' 추정' : ''})` : ''} 출고${e.yardsEstimated ? ' <span style="color:var(--danger);">· 추정치</span>' : ''}`}</div>
             </div>
             <div class="order-status ${statusClass2}">${statusLabel2}</div>
           </div>
@@ -4168,6 +4173,7 @@ function openSwatchEditModal(cat, item, color) {
   editingSwatchKey = { cat, item, color };
   const sw = findExactSwatch(cat, item, color);
   document.getElementById('sw-desc').textContent = `${item} · ${color} (분류 ${cat})`;
+  document.getElementById('sw-color-name').value = color;
   document.getElementById('sw-order').value = sw && sw.order != null ? sw.order : '';
   document.getElementById('sw-china').value = sw && sw.chinaCode ? sw.chinaCode : '';
   document.getElementById('swatchEditModal').classList.add('open');
@@ -4175,13 +4181,41 @@ function openSwatchEditModal(cat, item, color) {
 function closeSwatchEditModal() { document.getElementById('swatchEditModal').classList.remove('open'); editingSwatchKey = null; }
 async function saveSwatchEdit() {
   if (!editingSwatchKey) return;
-  const { cat, item, color } = editingSwatchKey;
+  const { cat, item } = editingSwatchKey;
+  let { color } = editingSwatchKey;
+  const newColorName = document.getElementById('sw-color-name').value.trim();
   const orderRaw = document.getElementById('sw-order').value.trim();
   const chinaRaw = document.getElementById('sw-china').value.trim();
   const order = orderRaw === '' ? null : parseInt(orderRaw);
   const chinaCode = chinaRaw === '' ? null : chinaRaw;
+
+  // 컬러 이름이 바뀌었으면 rolls/swatchInfo/priceBook 전부 새 이름으로 갱신
+  let renamed = false;
+  if (newColorName && newColorName !== color) {
+    const t_item = String(item).trim();
+    const t_oldColor = String(color).trim();
+    for (const r of rolls) {
+      if (String(r.item).trim() === t_item && String(r.color).trim() === t_oldColor) r.color = newColorName;
+    }
+    for (const s of swatchInfo) {
+      if (String(s.item).trim() === t_item && String(s.color).trim() === t_oldColor) s.color = newColorName;
+    }
+    for (const p of priceBook) {
+      if (String(p.item).trim() === t_item && String(p.color).trim() === t_oldColor) p.color = newColorName;
+    }
+    await persistRolls();
+    await persistPriceBook();
+    color = newColorName;
+    editingSwatchKey.color = newColorName;
+    renamed = true;
+  }
+
   let sw = findExactSwatch(cat, item, color);
-  if (!sw && order === null && chinaCode === null) { closeSwatchEditModal(); return; }
+  if (!sw && order === null && chinaCode === null) {
+    if (renamed) { await persistSwatchInfo(); closeSwatchEditModal(); render(); showToast('컬러 이름을 수정했습니다'); }
+    else closeSwatchEditModal();
+    return;
+  }
 
   // 같은 품목 안에서 이 번호를 이미 다른 컬러가 쓰고 있으면, 그 번호 이상인 것들을 한 칸씩 뒤로 밀기
   let conflictOccurred = false;
@@ -4203,7 +4237,7 @@ async function saveSwatchEdit() {
   sw.order = order; sw.chinaCode = chinaCode;
   swatchInfo = swatchInfo.filter(s => s.order != null || s.chinaCode != null);
   await persistSwatchInfo(); closeSwatchEditModal(); render();
-  showToast(conflictOccurred ? `${order}번으로 저장, 겹치던 컬러들은 자동으로 한 칸씩 밀렸어요` : '저장되었습니다');
+  showToast(renamed ? '컬러 이름과 정보를 저장했습니다' : (conflictOccurred ? `${order}번으로 저장, 겹치던 컬러들은 자동으로 한 칸씩 밀렸어요` : '저장되었습니다'));
 }
 
 async function fixKimoColors() {
