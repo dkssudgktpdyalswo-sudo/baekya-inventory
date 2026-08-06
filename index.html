@@ -1357,7 +1357,8 @@ function updateAddModalStockInfo() {
 function closeAddModal() { document.getElementById('addModal').classList.remove('open'); }
 function addRollRow() {
   const listEl = document.getElementById('f-roll-list');
-  const rowCount = listEl.children.length;
+  const existingRows = listEl.querySelectorAll('.f-roll-tang');
+  const lastTangVal = existingRows.length > 0 ? existingRows[existingRows.length - 1].value : '1';
   const row = document.createElement('div');
   row.className = 'f-roll-row';
   row.style.marginTop = '6px';
@@ -1366,7 +1367,7 @@ function addRollRow() {
   row.style.borderRadius = '8px';
   row.innerHTML = `
     <div style="display:flex; gap:8px; align-items:center;">
-      <input type="number" min="1" value="${rowCount + 1}" placeholder="탕번호" class="f-roll-tang" style="flex:1;">
+      <input type="number" min="1" value="${lastTangVal || 1}" placeholder="탕번호" class="f-roll-tang" style="flex:1;">
       <input type="number" step="0.1" placeholder="마수(y)" class="f-roll-qty" style="flex:1;">
       <button onclick="this.closest('.f-roll-row').remove()" style="border:none;background:#fdecea;color:var(--danger);border-radius:8px;padding:0 10px;font-size:12px;flex:none;height:38px;">삭제</button>
     </div>
@@ -3659,6 +3660,7 @@ async function saveOrderAdd() {
           const orderQty = parseFloat(cr.querySelector('.o-color-qty').value) || 0;
           const unit = cr.querySelector('.o-color-unit').value;
           const note = cr.querySelector('.o-color-note').value.trim();
+          if (!color && orderQty <= 0 && !note) return; // 아무것도 안 채운 빈 줄은 건너뜀
           newOrders.push({ id: nextOrderId++, date, customer, factory, item, color, orderQty, unit, received: 0, note, done: false });
         });
       });
