@@ -307,6 +307,7 @@
     <div id="o-multi-wrap">
       <div id="o-multi-list"></div>
       <button onclick="addFactoryGroup()" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;margin-top:6px;">+ 공장 추가</button>
+      <button onclick="openReturnFromMultiOrderForm()" style="border:none;background:#fce8d6;color:#a15c1e;border-radius:8px;padding:9px 12px;font-size:13px;font-weight:600;margin-top:10px;width:100%;">반품/불량/추가금 등록</button>
     </div>
 
     <div id="o-single-wrap" class="hidden">
@@ -330,7 +331,7 @@
         <label>처리(출고)된 마수(y) — 숫자가 잘못됐으면 여기서 바로 고치세요</label>
         <input id="o-received" type="number" step="0.1" placeholder="예: 20">
       </div>
-      <button onclick="openReturnFromOrderForm()" style="border:none;background:#fce8d6;color:#a15c1e;border-radius:8px;padding:9px 12px;font-size:13px;font-weight:600;margin-top:10px;width:100%;">추가</button>
+      <button onclick="openReturnFromOrderForm()" style="border:none;background:#fce8d6;color:#a15c1e;border-radius:8px;padding:9px 12px;font-size:13px;font-weight:600;margin-top:10px;width:100%;">반품/불량/추가금 등록</button>
       <label>비고</label>
       <input id="o-note" placeholder="선택사항">
     </div>
@@ -1921,7 +1922,14 @@ async function confirmLogEdit() {
   const restoreQtyForEdit = e.invDeductedAmount != null ? e.invDeductedAmount : e.yardsShipped;
   if (restoreQtyForEdit > 0 && hasKnownItem(e.item)) {
     const existingCat = (rolls.find(r => String(r.item).trim() === String(e.item).trim()) || {}).cat || '';
-    rolls.push({ id: nextId++, cat: existingCat, item: e.item, color: resolveInventoryColor(e.item, e.color), tang: 1, qty: restoreQtyForEdit });
+    const resolvedColorForRestore = resolveInventoryColor(e.item, e.color);
+    if (e.deductBreakdown && e.deductBreakdown.length > 0) {
+      for (const b of e.deductBreakdown) {
+        rolls.push({ id: nextId++, cat: existingCat, item: e.item, color: resolvedColorForRestore, tang: b.tang, qty: b.qty });
+      }
+    } else {
+      rolls.push({ id: nextId++, cat: existingCat, item: e.item, color: resolvedColorForRestore, tang: 1, qty: restoreQtyForEdit });
+    }
   }
   if (o) {
     o.received = Math.round(Math.max(0, o.received - e.amount) * 100) / 100;
@@ -1932,6 +1940,7 @@ async function confirmLogEdit() {
   const newYards = isJeol ? Math.round(newQty * 55 * 100) / 100 : newQty;
   const inv = deductFromInventory(e.item, e.color, newYards, null);
   e.invDeductedAmount = inv.deducted;
+  e.deductBreakdown = inv.breakdown || null;
   if (inv.ok) await persistRolls(); else await persistRolls();
 
   if (o) {
@@ -1981,9 +1990,15 @@ async function cancelShipmentLogEntry(logId) {
 
   const restoreQty0 = entry.invDeductedAmount != null ? entry.invDeductedAmount : (entry.yardsShipped != null ? entry.yardsShipped : entry.amount);
   if (!entry.manualClose && restoreQty0 > 0 && hasKnownItem(entry.item)) {
-    const restoreQty = restoreQty0;
     const existingCat = (rolls.find(r => String(r.item).trim() === String(entry.item).trim()) || {}).cat || '';
-    rolls.push({ id: nextId++, cat: existingCat, item: entry.item, color: resolveInventoryColor(entry.item, entry.color), tang: 1, qty: restoreQty });
+    const resolvedColorForRestore = resolveInventoryColor(entry.item, entry.color);
+    if (entry.deductBreakdown && entry.deductBreakdown.length > 0) {
+      for (const b of entry.deductBreakdown) {
+        rolls.push({ id: nextId++, cat: existingCat, item: entry.item, color: resolvedColorForRestore, tang: b.tang, qty: b.qty });
+      }
+    } else {
+      rolls.push({ id: nextId++, cat: existingCat, item: entry.item, color: resolvedColorForRestore, tang: 1, qty: restoreQty0 });
+    }
     await persistRolls();
   }
 
@@ -2092,7 +2107,7 @@ async function confirmSaleEdit() {
       unitPrice: priceRaw, supplyAmount, taxAmount, saleAmount, paidAmount: 0, taxIncluded,
       discount, discountReason: discount > 0 ? discountReason : '',
       extraAmount, extraReason: extraAmount > 0 ? extraReason : '',
-      note: '수동 추가', invDeductedAmount: inv.ok ? yardsRaw : 0
+      note: '수동 추가', invDeductedAmount: inv.ok ? yardsRaw : 0, deductBreakdown: inv.breakdown || null
     });
     await rememberPrice(customer, item, color, priceRaw);
     await persistShipmentLog();
@@ -3719,13 +3734,16 @@ function deductFromInventory(item, color, amount, tang) {
   if (tang !== undefined && tang !== null && tang !== '') {
     matches = matches.filter(r => r.tang === tang);
   }
-  if (matches.length === 0) return { ok: false, deducted: 0 };
+  if (matches.length === 0) return { ok: false, deducted: 0, breakdown: [] };
 
   // 탕 번호, 그다음 id 순서로 소진 (먼저 들어온 것부터 빠지는 느낌으로)
   matches.sort((a, b) => (a.tang - b.tang) || (a.id - b.id));
   let remain = amount;
+  const breakdown = [];
   for (const r of matches) {
     if (remain <= 0) break;
+    const take = Math.min(r.qty, remain);
+    if (take > 0) breakdown.push({ tang: r.tang, qty: Math.round(take * 100) / 100 });
     if (r.qty <= remain) {
       remain = Math.round((remain - r.qty) * 100) / 100;
       r.qty = 0;
@@ -3736,7 +3754,7 @@ function deductFromInventory(item, color, amount, tang) {
   }
   cleanupDepletedRolls(item, color, matches.map(r => r.id));
   const deducted = Math.round((amount - remain) * 100) / 100;
-  return { ok: true, deducted, shortBy: remain };
+  return { ok: true, deducted, shortBy: remain, breakdown };
 }
 
 let _confirmingOrderReceive = false;
@@ -3774,15 +3792,17 @@ async function confirmOrderReceiveInner(o) {
       if (allocations.length === 0) { showToast('롤별로 뺄 양을 입력해주세요'); return; }
       yardsShipped = Math.round(allocations.reduce((s, a) => s + a.amt, 0) * 100) / 100;
       raw = jeolCount;
+      const jeolBreakdown = [];
       for (const a of allocations) {
         const roll = rolls.find(r => r.id === a.rollId);
         if (!roll) continue;
         const take = Math.min(roll.qty, a.amt);
         roll.qty = Math.round((roll.qty - take) * 100) / 100;
+        if (take > 0) jeolBreakdown.push({ tang: roll.tang, qty: Math.round(take * 100) / 100 });
       }
       cleanupDepletedRolls(o.item, resolveInventoryColor(o.item, o.color), allocations.map(a => a.rollId));
       await persistRolls();
-      inv = { ok: true, deducted: yardsShipped, shortBy: 0 };
+      inv = { ok: true, deducted: yardsShipped, shortBy: 0, breakdown: jeolBreakdown };
     } else {
       const inputs = document.querySelectorAll('.or-jeol-yard-input');
       const yards = [];
@@ -3813,6 +3833,7 @@ async function confirmOrderReceiveInner(o) {
         newTangTotal += amt;
       });
       if (allocations.length === 0 && newTangTotal <= 0) { showToast('롤별로 출고할 양을 입력해주세요'); return; }
+      const breakdown = [];
       for (const a of allocations) {
         const roll = rolls.find(r => r.id === a.rollId);
         if (!roll) continue;
@@ -3820,12 +3841,13 @@ async function confirmOrderReceiveInner(o) {
         roll.qty = Math.round((roll.qty - take) * 100) / 100;
         yardsShipped += take;
         deductedFromStock += take;
+        if (take > 0) breakdown.push({ tang: roll.tang, qty: Math.round(take * 100) / 100 });
       }
       yardsShipped = Math.round((yardsShipped + newTangTotal) * 100) / 100; // 새 탕 물량은 기존 재고 차감 없이 그대로 출고량에 포함
       deductedFromStock = Math.round(deductedFromStock * 100) / 100; // 새 탕분은 여기 안 들어감 - 취소해도 복원 안 되게
       cleanupDepletedRolls(o.item, resolveInventoryColor(o.item, o.color), allocations.map(a => a.rollId));
       await persistRolls();
-      inv = { ok: true, deducted: deductedFromStock, shortBy: 0 };
+      inv = { ok: true, deducted: deductedFromStock, shortBy: 0, breakdown };
       raw = yardsShipped;
     } else {
       raw = parseFloat(document.getElementById('or-qty').value);
@@ -3876,7 +3898,7 @@ async function confirmOrderReceiveInner(o) {
     customer: o.customer, factory: o.factory, item: o.item, color: resolvedColorForLog,
     amount: raw, unit: o.unit || 'y', yardsShipped, remainAfter: remain, isFullCompletion: remain <= 0,
     unitPrice, supplyAmount, taxAmount, saleAmount, paidAmount: 0, yardsEstimated, taxIncluded: !!(supplyAmount && taxIncluded), isFlatTotal: priceMode === 'total',
-    note: shipNote, invDeductedAmount: inv.deducted
+    note: shipNote, invDeductedAmount: inv.deducted, deductBreakdown: inv.breakdown || null
   };
   shipmentLog.push(newEntry);
   await persistShipmentLog();
@@ -3946,6 +3968,20 @@ function resetReturnRows(item, color, unit, note) {
 }
 
 function openReturnForCustomer(customer) {
+  pendingReturnOrderId = null;
+  document.querySelector('input[name="ret-type"][value="return"]').checked = true;
+  document.getElementById('ret-customer').value = customer;
+  resetReturnRows('', '', 'y', '');
+  document.getElementById('ret-extra-amount').value = '';
+  document.getElementById('ret-note').value = '';
+  onReturnTypeChange();
+  document.getElementById('returnModalTitle').textContent = '반품/불량/추가금 등록';
+  document.getElementById('returnModal').classList.add('open');
+}
+function openReturnFromMultiOrderForm() {
+  const customer = document.getElementById('o-customer').value.trim();
+  closeOrderAddModal();
+
   pendingReturnOrderId = null;
   document.querySelector('input[name="ret-type"][value="return"]').checked = true;
   document.getElementById('ret-customer').value = customer;
@@ -4120,6 +4156,7 @@ async function markOrderDone(id) {
   let supplyAmount = null;
   let taxAmount = 0;
   let invDeductedAmountFlag = 0;
+  let invBreakdownFlag = null;
 
   if (remain > 0) {
     const remembered = findRememberedPrice(o.customer, o.item, o.color);
@@ -4131,6 +4168,7 @@ async function markOrderDone(id) {
     yardsShipped = isJeol ? Math.round(remain * 55 * 100) / 100 : remain;
     const inv = deductFromInventory(o.item, o.color, yardsShipped, null);
     invDeductedAmountFlag = inv.deducted;
+    invBreakdownFlag = inv.breakdown || null;
     if (inv.ok) await persistRolls();
     if (!inv.ok) showToast(`재고에서 "${o.item}·${o.color}"를 찾지 못해 재고는 자동 차감 안 됐어요`);
 
@@ -4155,7 +4193,7 @@ async function markOrderDone(id) {
     amount: remain > 0 ? remain : 0, unit: o.unit || 'y', yardsShipped, remainAfter: 0,
     isFullCompletion: true, manualClose: remain <= 0, yardsEstimated: isJeol && remain > 0, taxIncluded,
     unitPrice, supplyAmount, taxAmount, saleAmount, paidAmount: 0,
-    note: remain <= 0 ? '' : '', invDeductedAmount: invDeductedAmountFlag
+    note: remain <= 0 ? '' : '', invDeductedAmount: invDeductedAmountFlag, deductBreakdown: invBreakdownFlag
   });
   await persistShipmentLog();
   render();
