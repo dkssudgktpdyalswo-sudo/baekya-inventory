@@ -433,7 +433,7 @@
 <div class="modal-overlay" id="returnModal">
   <div class="modal">
     <h3 id="returnModalTitle">반품 처리</h3>
-    <p style="font-size:12px;color:var(--muted);margin-top:-6px;">실제 반품/불량된 품목이 다르면 아래에서 직접 고쳐주세요.</p>
+    <p style="font-size:12px;color:var(--muted);margin-top:-6px;">여러 품목·컬러를 한 번에 등록할 수 있어요.</p>
     <label>구분</label>
     <div class="row2">
       <div><label style="display:flex;align-items:center;gap:6px;font-size:14px;color:var(--text);"><input type="radio" name="ret-type" value="return" checked style="width:auto;" onchange="onReturnTypeChange()"> 반품</label></div>
@@ -442,20 +442,18 @@
     <label style="display:flex;align-items:center;gap:6px;font-size:14px;color:var(--text);margin-top:6px;"><input type="radio" name="ret-type" value="extra" style="width:auto;" onchange="onReturnTypeChange()"> 추가금 (운임비 등, 매출에 그대로 더해짐)</label>
     <label>거래처</label>
     <input id="ret-customer" placeholder="예: 메이원" autocomplete="off" oninput="showCustomerSuggestions(this)" onfocus="showCustomerSuggestions(this)" onblur="hideItemSuggestionsDelayed()">
-    <div id="ret-item-color-wrap" class="row2">
-      <div><label>품목</label><input id="ret-item" placeholder="예: 버블" autocomplete="off" oninput="showItemSuggestions(this)" onfocus="showItemSuggestions(this)" onblur="hideItemSuggestionsDelayed()"></div>
-      <div><label>칼라</label><input id="ret-color" placeholder="예: 2번진청" autocomplete="off" oninput="showColorSuggestions(this,'ret-item')" onfocus="showColorSuggestions(this,'ret-item')" onblur="hideItemSuggestionsDelayed()"></div>
+
+    <div id="ret-multi-wrap">
+      <div id="ret-multi-rows"></div>
+      <button onclick="addReturnRow()" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;margin-top:6px;">+ 항목 추가</button>
     </div>
-    <label id="ret-qty-label">반품 수량(y)</label>
-    <input id="ret-qty" type="number" step="0.1" placeholder="예: 10">
-    <label id="ret-price-label" class="hidden">판매단가(원/y) — 매출액 계산용, 모르면 비워두면 기억된 단가 사용</label>
-    <input id="ret-price" type="number" step="1" class="hidden" placeholder="예: 4500">
+
     <div id="ret-extra-amount-wrap" class="hidden">
       <label>추가 금액(원)</label>
       <input id="ret-extra-amount" type="number" step="1" placeholder="예: 30000">
+      <label>비고 (사유)</label>
+      <input id="ret-note" placeholder="예: 급송비">
     </div>
-    <label>비고 (사유)</label>
-    <input id="ret-note" placeholder="예: 색상 불일치">
 
     <div class="modal-actions">
       <button class="btn-cancel" onclick="closeReturnModal()">취소</button>
@@ -2520,7 +2518,9 @@ function buildStatementHTML(customerName, startDate, endDate) {
     totalSale += grossSale;
     totalSupply += rowSupply;
     totalTax += rowTax;
-    saleRows.push({ date: e.date, desc: `${e.item} ${e.color || ''}`, note: e.note || '', qty: e.item === '이월 미수금' ? '' : (e.unit === '절' ? `${e.yardsShipped}y` : `${e.amount}${e.unit}`), unitPrice: e.item === '이월 미수금' ? '' : e.unitPrice.toLocaleString(), supply: rowSupply, tax: rowTax, amount: grossSale, color: 'black' });
+    if (e.item !== '이월 미수금') {
+      saleRows.push({ date: e.date, desc: `${e.item} ${e.color || ''}`, note: e.note || '', qty: e.unit === '절' ? `${e.yardsShipped}y` : `${e.amount}${e.unit}`, unitPrice: e.unitPrice.toLocaleString(), supply: rowSupply, tax: rowTax, amount: grossSale, color: 'black' });
+    }
 
     if (defectAmt > 0) {
       totalReturnDefect += defectAmt;
@@ -2819,7 +2819,7 @@ function renderSales() {
     }
   }
 
-  const grossSales = sales.reduce((s, e) => s + (e.saleAmount || 0), 0);
+  const grossSales = sales.reduce((s, e) => s + (e.item !== '이월 미수금' ? (e.saleAmount || 0) : 0), 0);
   const totalReturnDefect = sales.reduce((s, e) => s + ((e.isReturn || e.isDefect) ? (e.deductAmount || 0) : 0), 0);
   const totalSales = grossSales - totalReturnDefect;
   const totalProfit = sales.reduce((s, e) => {
@@ -2852,7 +2852,7 @@ function renderSales() {
 
   for (const period of periods) {
     const periodEntries = byPeriod.get(period);
-    const periodGross = periodEntries.reduce((s, e) => s + (e.saleAmount || 0), 0);
+    const periodGross = periodEntries.reduce((s, e) => s + (e.item !== '이월 미수금' ? (e.saleAmount || 0) : 0), 0);
     const periodReturnDefect = periodEntries.reduce((s, e) => s + ((e.isReturn || e.isDefect) ? (e.deductAmount || 0) : 0), 0);
     const periodSales = periodGross - periodReturnDefect;
     const periodProfit = periodEntries.reduce((s, e) => s + (e._profit != null ? e._profit : 0), 0);
@@ -2876,7 +2876,7 @@ function renderSales() {
     const custKeys = Array.from(custGroups.keys()).sort((a, b) => a.localeCompare(b, 'ko'));
     for (const k of custKeys) {
       const entries = custGroups.get(k);
-      const custGross = entries.reduce((s, e) => s + (e.saleAmount || 0), 0);
+      const custGross = entries.reduce((s, e) => s + (e.item !== '이월 미수금' ? (e.saleAmount || 0) : 0), 0);
       const custReturnDefect = entries.reduce((s, e) => s + ((e.isReturn || e.isDefect) ? (e.deductAmount || 0) : 0), 0);
       const custTotal = custGross - custReturnDefect;
       const custProfit = entries.reduce((s, e) => {
@@ -3862,15 +3862,42 @@ function fromDateInputValue(v) {
 
 let pendingReturnOrderId = null;
 
+function addReturnRow(item, color, unit, note) {
+  const listEl = document.getElementById('ret-multi-rows');
+  const row = document.createElement('div');
+  row.className = 'ret-row';
+  row.style.cssText = 'border:1px solid var(--border); border-radius:8px; padding:8px; margin-top:8px;';
+  row.innerHTML = `
+    <div class="row2">
+      <div><input type="text" class="ret-row-item" placeholder="품목 (예: 버블)" value="${escAttr(item || '')}" autocomplete="off" oninput="showItemSuggestions(this)" onfocus="showItemSuggestions(this)" onblur="hideItemSuggestionsDelayed()"></div>
+      <div><input type="text" class="ret-row-color" placeholder="칼라 (예: 2번진청)" value="${escAttr(color || '')}" autocomplete="off" oninput="showColorSuggestions(this, this.closest('.ret-row').querySelector('.ret-row-item'))" onfocus="showColorSuggestions(this, this.closest('.ret-row').querySelector('.ret-row-item'))" onblur="hideItemSuggestionsDelayed()"></div>
+    </div>
+    <div style="display:flex; gap:6px; align-items:center; margin-top:6px;">
+      <input type="number" step="0.1" class="ret-row-qty" placeholder="수량" style="flex:1;">
+      <select class="ret-row-unit" style="flex:none; width:64px;">
+        <option value="y" ${unit !== '절' ? 'selected' : ''}>y</option>
+        <option value="절" ${unit === '절' ? 'selected' : ''}>절</option>
+      </select>
+      <input type="number" step="1" class="ret-row-price" placeholder="단가(원/y, 선택)" style="flex:1;">
+    </div>
+    <div style="display:flex; gap:6px; align-items:center; margin-top:6px;">
+      <input type="text" class="ret-row-note" placeholder="비고(사유)" value="${escAttr(note || '')}" style="flex:1; padding:8px; border:1px solid var(--border); border-radius:8px; font-size:13px;">
+      <button onclick="this.closest('.ret-row').remove();" style="border:none;background:#fdecea;color:var(--danger);border-radius:8px;padding:0 10px;font-size:12px;flex:none;height:36px;">삭제</button>
+    </div>
+  `;
+  listEl.appendChild(row);
+}
+function resetReturnRows(item, color, unit, note) {
+  document.getElementById('ret-multi-rows').innerHTML = '';
+  addReturnRow(item, color, unit, note);
+}
+
 function openReturnForCustomer(customer) {
   pendingReturnOrderId = null;
   document.querySelector('input[name="ret-type"][value="return"]').checked = true;
   document.getElementById('ret-customer').value = customer;
-  document.getElementById('ret-item').value = '';
-  document.getElementById('ret-color').value = '';
-  document.getElementById('ret-qty-label').textContent = '반품 수량(y)';
-  document.getElementById('ret-qty').value = '';
-  document.getElementById('ret-price').value = '';
+  resetReturnRows('', '', 'y', '');
+  document.getElementById('ret-extra-amount').value = '';
   document.getElementById('ret-note').value = '';
   onReturnTypeChange();
   document.getElementById('returnModalTitle').textContent = '반품/불량/추가금 등록';
@@ -3887,11 +3914,8 @@ function openReturnFromOrderForm() {
   pendingReturnOrderId = linkedOrderId;
   document.querySelector('input[name="ret-type"][value="return"]').checked = true;
   document.getElementById('ret-customer').value = customer;
-  document.getElementById('ret-item').value = item;
-  document.getElementById('ret-color').value = color;
-  document.getElementById('ret-qty-label').textContent = `반품 수량(${unit || 'y'})`;
-  document.getElementById('ret-qty').value = '';
-  document.getElementById('ret-price').value = '';
+  resetReturnRows(item, color, unit, '');
+  document.getElementById('ret-extra-amount').value = '';
   document.getElementById('ret-note').value = '';
   onReturnTypeChange();
   document.getElementById('returnModalTitle').textContent = '반품/불량/추가금 등록';
@@ -3903,11 +3927,8 @@ function processReturn(orderId) {
   pendingReturnOrderId = orderId;
   document.querySelector('input[name="ret-type"][value="return"]').checked = true;
   document.getElementById('ret-customer').value = o.customer || '';
-  document.getElementById('ret-item').value = o.item || '';
-  document.getElementById('ret-color').value = o.color || '';
-  document.getElementById('ret-qty-label').textContent = `반품 수량(${o.unit || 'y'})`;
-  document.getElementById('ret-qty').value = '';
-  document.getElementById('ret-price').value = '';
+  resetReturnRows(o.item || '', o.color || '', o.unit || 'y', '');
+  document.getElementById('ret-extra-amount').value = '';
   document.getElementById('ret-note').value = '';
   onReturnTypeChange();
   document.getElementById('returnModalTitle').textContent = '반품/불량/추가금 등록';
@@ -3917,11 +3938,8 @@ function openStandaloneReturnModal() {
   pendingReturnOrderId = null;
   document.querySelector('input[name="ret-type"][value="return"]').checked = true;
   document.getElementById('ret-customer').value = '';
-  document.getElementById('ret-item').value = '';
-  document.getElementById('ret-color').value = '';
-  document.getElementById('ret-qty-label').textContent = '반품 수량(y)';
-  document.getElementById('ret-qty').value = '';
-  document.getElementById('ret-price').value = '';
+  resetReturnRows('', '', 'y', '');
+  document.getElementById('ret-extra-amount').value = '';
   document.getElementById('ret-note').value = '';
   onReturnTypeChange();
   document.getElementById('returnModalTitle').textContent = '반품/불량/추가금 등록';
@@ -3930,35 +3948,14 @@ function openStandaloneReturnModal() {
 function closeReturnModal() { document.getElementById('returnModal').classList.remove('open'); pendingReturnOrderId = null; }
 function onReturnTypeChange() {
   const type = document.querySelector('input[name="ret-type"]:checked').value;
-  const priceLabel = document.getElementById('ret-price-label');
-  const priceInput = document.getElementById('ret-price');
-  const itemColorWrap = document.getElementById('ret-item-color-wrap');
-  const qtyLabel = document.getElementById('ret-qty-label');
-  const qtyInput = document.getElementById('ret-qty');
+  const multiWrap = document.getElementById('ret-multi-wrap');
   const extraWrap = document.getElementById('ret-extra-amount-wrap');
-
   if (type === 'extra') {
-    itemColorWrap.classList.add('hidden');
-    qtyLabel.classList.add('hidden');
-    qtyInput.classList.add('hidden');
-    priceLabel.classList.add('hidden');
-    priceInput.classList.add('hidden');
+    multiWrap.classList.add('hidden');
     extraWrap.classList.remove('hidden');
-    return;
-  }
-  itemColorWrap.classList.remove('hidden');
-  qtyLabel.classList.remove('hidden');
-  qtyInput.classList.remove('hidden');
-  extraWrap.classList.add('hidden');
-
-  if (type === 'defect') {
-    priceLabel.classList.remove('hidden');
-    priceInput.classList.remove('hidden');
-    qtyLabel.textContent = qtyLabel.textContent.replace('반품', '불량').replace('추가금', '불량');
   } else {
-    priceLabel.classList.add('hidden');
-    priceInput.classList.add('hidden');
-    qtyLabel.textContent = qtyLabel.textContent.replace('불량', '반품').replace('추가금', '반품');
+    multiWrap.classList.remove('hidden');
+    extraWrap.classList.add('hidden');
   }
 }
 
@@ -3987,66 +3984,73 @@ async function confirmReturn() {
 
   const isDefectType = type === 'defect';
   const customer = document.getElementById('ret-customer').value.trim();
-  const item = document.getElementById('ret-item').value.trim();
-  const color = document.getElementById('ret-color').value.trim();
-  const amt = parseFloat(document.getElementById('ret-qty').value);
-  const note = document.getElementById('ret-note').value.trim();
-  if (!item) { showToast('품목을 확인해주세요'); return; }
-  if (!amt || amt <= 0 || isNaN(amt)) { showToast('수량을 확인해주세요'); return; }
+  const rowEls = document.querySelectorAll('.ret-row');
+  const o0 = pendingReturnOrderId != null ? orders.find(x => x.id === pendingReturnOrderId) : null;
+  if (!customer) { showToast('거래처를 확인해주세요'); return; }
 
-  const o = pendingReturnOrderId != null ? orders.find(x => x.id === pendingReturnOrderId) : null;
-  const unit = o ? (o.unit || 'y') : 'y';
-  const isJeol = unit === '절';
-  const yardsAmount = isJeol ? Math.round(amt * 55 * 100) / 100 : amt;
+  let processedCount = 0;
+  let totalDeduct = 0;
+  let anyMissingPrice = false;
+  let anyMissingInventory = false;
 
-  // 금액 계산 (반품/불량 둘 다: 입력한 단가 우선, 없으면 기억된 단가 사용)
-  let unitPrice = null;
-  if (isDefectType) {
-    const priceRaw = parseFloat(document.getElementById('ret-price').value);
-    unitPrice = (priceRaw && priceRaw > 0) ? priceRaw : findRememberedPrice(customer, item, color);
-  } else {
-    unitPrice = findRememberedPrice(customer, item, color);
-  }
-  const deductAmount = unitPrice ? Math.round(unitPrice * yardsAmount) : null;
+  for (let i = 0; i < rowEls.length; i++) {
+    const rowEl = rowEls[i];
+    const item = rowEl.querySelector('.ret-row-item').value.trim();
+    const color = rowEl.querySelector('.ret-row-color').value.trim();
+    const amt = parseFloat(rowEl.querySelector('.ret-row-qty').value);
+    const unit = rowEl.querySelector('.ret-row-unit').value;
+    const note = rowEl.querySelector('.ret-row-note').value.trim();
+    const priceRaw = parseFloat(rowEl.querySelector('.ret-row-price').value);
+    if (!item || !amt || amt <= 0 || isNaN(amt)) continue;
 
-  // 불량은 재고를 다시 채우지 않음(못쓰는 물건), 반품만 재고에 더하기
-  let returnAddedToInventory = false;
-  if (!isDefectType) {
-    if (hasKnownItem(item)) {
-      const resolvedColor = resolveInventoryColor(item, color);
-      const existingCat = (rolls.find(r => String(r.item).trim() === String(item).trim()) || {}).cat || '';
-      rolls.push({ id: nextId++, cat: existingCat, item, color: resolvedColor, tang: 1, qty: yardsAmount });
-      await persistRolls();
-      returnAddedToInventory = true;
+    const o = (i === 0) ? o0 : null; // 발주 연동은 첫 줄에만 적용
+    const isJeol = unit === '절';
+    const yardsAmount = isJeol ? Math.round(amt * 55 * 100) / 100 : amt;
+
+    let unitPrice = (priceRaw && priceRaw > 0) ? priceRaw : findRememberedPrice(customer, item, color);
+    if (unitPrice == null) anyMissingPrice = true;
+    const deductAmount = unitPrice ? Math.round(unitPrice * yardsAmount) : null;
+    if (deductAmount != null) totalDeduct += deductAmount;
+
+    let returnAddedToInventory = false;
+    if (!isDefectType) {
+      if (hasKnownItem(item)) {
+        const resolvedColor = resolveInventoryColor(item, color);
+        const existingCat = (rolls.find(r => String(r.item).trim() === String(item).trim()) || {}).cat || '';
+        rolls.push({ id: nextId++, cat: existingCat, item, color: resolvedColor, tang: 1, qty: yardsAmount });
+        returnAddedToInventory = true;
+      } else {
+        anyMissingInventory = true;
+      }
     }
+
+    let remain = 0;
+    if (o && !isDefectType) {
+      o.received = Math.round(Math.max(0, o.received - amt) * 100) / 100;
+      if (o.done && o.received < o.orderQty) { o.done = false; o.doneDate = null; }
+      remain = (o.orderQty && o.orderQty > o.received) ? Math.round((o.orderQty - o.received) * 100) / 100 : 0;
+    }
+
+    shipmentLog.push({
+      id: nextLogId++, date: todayStr(), orderId: o ? o.id : null,
+      customer, factory: o ? o.factory : '', item, color,
+      amount: -amt, unit, yardsShipped: -yardsAmount, remainAfter: remain,
+      isFullCompletion: false, isReturn: !isDefectType, isDefect: isDefectType, note,
+      unitPrice, deductAmount, saleAmount: null, paidAmount: 0
+    });
+    processedCount++;
   }
 
-  // 연결된 주문이 있으면 진행상황도 되돌리기 (반품일 때만 - 불량은 이미 나간 물건 처리이므로 이월 수량은 안 건드림)
-  let remain = 0;
-  if (o && !isDefectType) {
-    o.received = Math.round(Math.max(0, o.received - amt) * 100) / 100;
-    if (o.done && o.received < o.orderQty) { o.done = false; o.doneDate = null; }
-    await persistOrders();
-    remain = (o.orderQty && o.orderQty > o.received) ? Math.round((o.orderQty - o.received) * 100) / 100 : 0;
-  }
+  if (processedCount === 0) { showToast('품목과 수량을 확인해주세요'); return; }
 
-  shipmentLog.push({
-    id: nextLogId++, date: todayStr(), orderId: o ? o.id : null,
-    customer, factory: o ? o.factory : '', item, color,
-    amount: -amt, unit, yardsShipped: -yardsAmount, remainAfter: remain,
-    isFullCompletion: false, isReturn: !isDefectType, isDefect: isDefectType, note,
-    unitPrice, deductAmount, saleAmount: null, paidAmount: 0
-  });
+  await persistRolls();
+  await persistOrders();
   await persistShipmentLog();
 
   closeReturnModal();
   render();
-  const priceMsg = deductAmount != null ? `, 매출 ${deductAmount.toLocaleString()}원 차감 반영` : ' (단가를 몰라 금액 계산은 안 됐어요)';
-  showToast(isDefectType
-    ? `불량 ${amt}${unit} 등록됨${priceMsg}`
-    : returnAddedToInventory
-      ? `반품 ${amt}${unit} 처리, 재고에 ${yardsAmount}y 추가됐어요${priceMsg}`
-      : `반품 ${amt}${unit} 처리${priceMsg} (재고에 없는 품목이라 자동 추가는 안 했어요, 필요하면 "+입고"로 직접 넣어주세요)`);
+  const priceMsg = anyMissingPrice ? ' (일부 단가를 몰라 금액 계산이 안 된 항목이 있어요)' : `, 매출 총 ${totalDeduct.toLocaleString()}원 차감 반영`;
+  showToast(`${isDefectType ? '불량' : '반품'} ${processedCount}건 등록됨${priceMsg}${!isDefectType && anyMissingInventory ? ' (재고에 없는 품목은 자동 추가 안 됐어요)' : ''}`);
 }
 
 async function markOrderDone(id) {
