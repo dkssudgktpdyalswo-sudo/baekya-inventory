@@ -190,6 +190,8 @@
     <button onclick="showCustomerLedger()" style="border:none;background:#e8edf5;color:#3d4f6b;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">📒 거래처원장</button>
     <button onclick="openUnpaidSummaryModal()" style="border:none;background:#fce8d6;color:#a15c1e;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">📋 거래처 미수금표</button>
     <button onclick="showItemMonthlyStats()" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">📊 월별 품목 출고량</button>
+    <button onclick="exportSalesLog()" style="border:none;background:#fff3d6;color:#a15c1e;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">📤 매출장부 내보내기</button>
+    <button onclick="archiveOldSalesLog()" style="border:none;background:#fff3d6;color:#a15c1e;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">🗑 매출장부 내보내기+정리</button>
     <button onclick="openBizInfoModal()" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">사업자 정보 설정</button>
   </div>
 </div>
@@ -4648,6 +4650,78 @@ function parseKDate(s) {
   if (parts.length < 3 || parts.some(isNaN)) return null;
   const [yy, mm, dd] = parts;
   return new Date(2000 + yy, mm - 1, dd);
+}
+async function archiveOldSalesLog() {
+  const daysStr = prompt('완전히 정산(미수금 0원) 끝난 지 며칠 지난 매출 건부터 내보내고 정리할까요? (예: 180)', '180');
+  if (daysStr === null) return;
+  const days = parseInt(daysStr);
+  if (!days || days <= 0) { showToast('숫자를 확인해주세요'); return; }
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - days);
+
+  const toArchive = shipmentLog.filter(e => {
+    const d = parseKDate(e.date);
+    if (!d || d >= cutoff) return false;
+    // 아직 돈을 다 못 받은 건(미수금 남은 매출)은 절대 정리 대상에서 제외
+    if (e.saleAmount != null && getRemaining(e) > 0) return false;
+    return true;
+  });
+  if (toArchive.length === 0) { showToast('정리할 매출 기록이 없습니다 (미수금 남은 건은 자동으로 제외돼요)'); return; }
+  if (!confirm(`${days}일 지났고 미수금 없는 매출 ${toArchive.length}건을 엑셀로 내보내고 사이트에서 삭제합니다.\n미수금이 남아있는 건은 아무리 오래됐어도 자동으로 제외돼요.\n계속할까요?`)) return;
+
+  const headers = ['날짜', '거래처', '공장', '품목', '칼라', '수량', '단위', '단가', '공급가액', '세액', '매출액', '입금액', '반품/불량', '비고'];
+  const rows = toArchive.map(e => [
+    e.date, e.customer, e.factory, e.item, e.color,
+    e.isReturn || e.isDefect ? Math.abs(e.amount) : e.amount, e.unit || 'y',
+    e.unitPrice || '', e.supplyAmount || '', e.taxAmount || '',
+    e.isReturn || e.isDefect ? -(e.deductAmount || 0) : (e.saleAmount || ''),
+    getPaidAmount(e), e.isDefect ? '불량' : (e.isReturn ? '반품' : ''), e.note || ''
+  ]);
+  const csv = [headers, ...rows].map(r => r.map(v => `"${String(v == null ? '' : v).replace(/"/g, '""')}"`).join(',')).join('\n');
+  const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = `매출장부_아카이브_${todayStr()}.csv`;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+
+  const idsToRemove = new Set(toArchive.map(e => e.id));
+  shipmentLog = shipmentLog.filter(e => !idsToRemove.has(e.id));
+  await persistShipmentLog();
+  render();
+  showToast(`${toArchive.length}건 내보내고 정리했습니다`);
+}
+function exportSalesLog() {
+  const daysStr = prompt('며칠 이내 매출까지 내보낼까요? (예: 90 = 최근 90일치, 전체 다 내보내려면 0)', '90');
+  if (daysStr === null) return;
+  const days = parseInt(daysStr);
+  if (isNaN(days) || days < 0) { showToast('숫자를 확인해주세요'); return; }
+
+  let target = shipmentLog;
+  if (days > 0) {
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - days);
+    target = shipmentLog.filter(e => { const d = parseKDate(e.date); return d && d >= cutoff; });
+  }
+  if (target.length === 0) { showToast('내보낼 매출 기록이 없습니다'); return; }
+
+  const headers = ['날짜', '거래처', '공장', '품목', '칼라', '수량', '단위', '단가', '공급가액', '세액', '매출액', '입금액', '미수금', '반품/불량', '비고'];
+  const rows = target.map(e => [
+    e.date, e.customer, e.factory, e.item, e.color,
+    e.isReturn || e.isDefect ? Math.abs(e.amount) : e.amount, e.unit || 'y',
+    e.unitPrice || '', e.supplyAmount || '', e.taxAmount || '',
+    e.isReturn || e.isDefect ? -(e.deductAmount || 0) : (e.saleAmount || ''),
+    getPaidAmount(e), e.saleAmount != null ? getRemaining(e) : '',
+    e.isDefect ? '불량' : (e.isReturn ? '반품' : ''), e.note || ''
+  ]);
+  const csv = [headers, ...rows].map(r => r.map(v => `"${String(v == null ? '' : v).replace(/"/g, '""')}"`).join(',')).join('\n');
+  const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = `매출장부_내보내기_${todayStr()}.csv`;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  showToast(`${target.length}건 내보냈습니다 (사이트 데이터는 그대로 있어요)`);
 }
 async function archiveOldCompleted() {
   const daysStr = prompt('완료된 지 며칠 지난 것부터 내보내고 정리할까요? (예: 30)', '30');
