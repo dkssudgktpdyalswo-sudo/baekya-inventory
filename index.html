@@ -562,6 +562,8 @@
   <div class="modal">
     <h3 id="sale-edit-title">매출 수정</h3>
     <p id="sale-edit-desc" style="font-size:13px;color:var(--muted);margin-top:-6px;"></p>
+    <label>거래처</label>
+    <input id="sale-edit-customer" placeholder="예: 맥가이버2" autocomplete="off" oninput="showCustomerSuggestions(this)" onfocus="showCustomerSuggestions(this)" onblur="hideItemSuggestionsDelayed()">
     <div class="row2">
       <div><label>품목</label><input id="sale-edit-item" placeholder="예: 버블" autocomplete="off" oninput="showItemSuggestions(this)" onfocus="showItemSuggestions(this)" onblur="hideItemSuggestionsDelayed()"></div>
       <div><label>칼라</label><input id="sale-edit-color" placeholder="예: 2번진청" autocomplete="off" oninput="showColorSuggestions(this,'sale-edit-item')" onfocus="showColorSuggestions(this,'sale-edit-item')" onblur="hideItemSuggestionsDelayed()"></div>
@@ -1324,15 +1326,6 @@ function renderInv() {
 
 function toggleGroup(k) { if (openGroups.has(k)) openGroups.delete(k); else openGroups.add(k); render(); }
 
-function onFItemInput(inputEl) {
-  showItemSuggestions(inputEl);
-  const t = inputEl.value.trim();
-  const match = rolls.find(r => String(r.item).trim() === t);
-  if (match) {
-    document.getElementById('f-cat').value = match.cat;
-  }
-}
-
 function openRollAddModal() {
   document.getElementById('f-date').value = toDateInputValue(todayStr());
   document.getElementById('f-item').value = '';
@@ -2042,6 +2035,7 @@ function openSaleEditModal(logId) {
   document.getElementById('sale-edit-title').textContent = '매출 수정';
   document.getElementById('sale-edit-delete-btn').classList.remove('hidden');
   document.getElementById('sale-edit-desc').textContent = `${entry.customer || ''} (${entry.date})`;
+  document.getElementById('sale-edit-customer').value = entry.customer || '';
   document.getElementById('sale-edit-item').value = entry.item || '';
   document.getElementById('sale-edit-color').value = entry.color || '';
   document.getElementById('sale-edit-yards').value = entry.yardsShipped + (entry.defectYards || 0);
@@ -2061,6 +2055,7 @@ function openSaleAddModal(customer) {
   document.getElementById('sale-edit-title').textContent = '품목 추가';
   document.getElementById('sale-edit-delete-btn').classList.add('hidden');
   document.getElementById('sale-edit-desc').textContent = `${customer} (${todayStr()}) · 이 거래처 매출에 새 품목을 추가해요`;
+  document.getElementById('sale-edit-customer').value = customer;
   document.getElementById('sale-edit-item').value = '';
   document.getElementById('sale-edit-color').value = '';
   document.getElementById('sale-edit-yards').value = '';
@@ -2085,6 +2080,7 @@ async function confirmSaleEdit() {
   const isNew = pendingSaleEditId === null;
   const entry = isNew ? null : shipmentLog.find(e => e.id === pendingSaleEditId);
   if (!isNew && !entry) return;
+  const customer = document.getElementById('sale-edit-customer').value.trim();
   const item = document.getElementById('sale-edit-item').value.trim();
   const color = document.getElementById('sale-edit-color').value.trim();
   const yardsRaw = parseFloat(document.getElementById('sale-edit-yards').value);
@@ -2094,6 +2090,7 @@ async function confirmSaleEdit() {
   const discountReason = document.getElementById('sale-edit-discount-reason').value.trim();
   const extraRaw = parseFloat(document.getElementById('sale-edit-extra').value);
   const extraReason = document.getElementById('sale-edit-extra-reason').value.trim();
+  if (!customer) { showToast('거래처를 확인해주세요'); return; }
   if (!item) { showToast('품목을 확인해주세요'); return; }
   if (!yardsRaw || yardsRaw <= 0) { showToast('출고 수량을 확인해주세요'); return; }
   if (!priceRaw || priceRaw <= 0) { showToast('판매단가를 확인해주세요'); return; }
@@ -2105,7 +2102,6 @@ async function confirmSaleEdit() {
   const saleAmount = supplyAmount + taxAmount + extraAmount;
 
   if (isNew) {
-    const customer = pendingSaleAddCustomer;
     const resolvedColor = resolveInventoryColor(item, color);
     const inv = deductFromInventory(item, color, yardsRaw, null);
     if (inv.ok) await persistRolls();
@@ -2126,6 +2122,7 @@ async function confirmSaleEdit() {
     return;
   }
 
+  entry.customer = customer;
   entry.item = item;
   entry.color = color;
   entry.yardsShipped = yardsRaw;
