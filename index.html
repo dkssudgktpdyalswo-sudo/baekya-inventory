@@ -712,6 +712,8 @@ let salesAdminUnlocked = false;
 let salesViewMode = 'day'; // day | month
 let salesSpecialView = null; // null | 'itemMonthly' | 'customerLedger'
 let ledgerCustomer = null;
+let ledgerStartDate = null;
+let ledgerEndDate = null;
 let priceBook = []; // {id, customer, item, color, unitPrice}
 let advancePayments = []; // {id, customer, date, amount, remaining, method, note}
 let nextAdvanceId = 1;
@@ -2380,7 +2382,7 @@ function openPreShipmentModal(customerName, orderIds) {
     const isJeol = (o.unit || 'y') === '절';
     const yards = isJeol ? Math.round(o.orderQty * 55 * 100) / 100 : o.orderQty;
     const price = findRememberedPrice(o.customer, o.item, o.color);
-    addPreShipRow(`${o.item} ${o.color || ''}`, yards, price);
+    addPreShipRow(`${o.item} ${o.color || ''}${o.note ? ` (${o.note})` : ''}`, yards, price);
   }
   for (const e of extraEntries) {
     if (e.isReturn || e.isDefect) {
@@ -2466,50 +2468,56 @@ function printPreShipmentFromModal() {
 
   const rowsHtml = rows.map(r => `
     <tr style="${r.negative ? 'color:#c0392b;' : ''}">
-      <td style="padding:4px;">${esc(r.date)}</td>
-      <td style="padding:4px;">${esc(r.desc)}</td>
-      <td style="padding:4px; text-align:right;">${esc(r.qty)}</td>
-      <td style="padding:4px; text-align:right;">${esc(r.unitPrice)}</td>
-      <td style="padding:4px; text-align:right;">${r.supply.toLocaleString()}</td>
+      <td style="padding:1px 4px;">${esc(r.date)}</td>
+      <td style="padding:1px 4px;">${esc(r.desc)}</td>
+      <td style="padding:1px 4px; text-align:right;">${esc(r.qty)}</td>
+      <td style="padding:1px 4px; text-align:right;">${esc(r.unitPrice)}</td>
+      <td style="padding:1px 4px; text-align:right;">${r.supply.toLocaleString()}</td>
     </tr>`).join('');
 
   const b = settings;
   const renderCopy = (copyLabel) => `
-    <div style="padding:8mm 8mm; font-family:-apple-system,'Malgun Gothic',sans-serif; box-sizing:border-box; height:50%; overflow:hidden;">
-      <div style="display:flex; justify-content:space-between; align-items:baseline; margin-bottom:6px;">
-        <h2 style="margin:0; font-size:16px; letter-spacing:2px; color:#1a5f8a;">거 래 명 세 표</h2>
-        <span style="font-size:10px; font-weight:700; border:1px solid #1a5f8a; color:#1a5f8a; padding:2px 8px; border-radius:4px;">${copyLabel} · 출고 전(선수금용)</span>
+    <div style="padding:8mm 8mm; font-family:-apple-system,'Malgun Gothic',sans-serif; box-sizing:border-box; height:50%; overflow:hidden; display:flex; flex-direction:column;">
+      <div style="flex:none;">
+        <div style="display:flex; justify-content:space-between; align-items:baseline; margin-bottom:6px;">
+          <h2 style="margin:0; font-size:16px; letter-spacing:2px; color:#1a5f8a;">거 래 명 세 표</h2>
+          <span style="font-size:10px; font-weight:700; border:1px solid #1a5f8a; color:#1a5f8a; padding:2px 8px; border-radius:4px;">${copyLabel} · 출고 전(선수금용)</span>
+        </div>
+        <div style="color:#555; margin-bottom:6px; font-size:11px;">발행일: ${todayStr()} · 아직 출고 전인 발주 기준 예상 청구 내역이에요</div>
+        <table style="font-size:10px; margin-bottom:6px;">
+          <tr>
+            <td style="width:50%; vertical-align:top; padding:2px;">
+              <div style="font-weight:700; background:#cfe8f7; color:#1a5f8a; padding:2px 6px; margin-bottom:2px;">공급자</div>
+              <table style="font-size:10px;"><tbody>
+                <tr><td style="width:60px;background:#eaf4fb;color:#1a5f8a;padding:1px 4px;">등록번호</td><td style="padding:1px 4px;">${esc(b.bizNumber || '')}</td></tr>
+                <tr><td style="background:#eaf4fb;color:#1a5f8a;padding:1px 4px;">상호</td><td style="padding:1px 4px;">${esc(b.bizName || '')}</td><td style="background:#eaf4fb;color:#1a5f8a;width:40px;padding:1px 4px;">성명</td><td style="padding:1px 4px;">${esc(b.bizOwner || '')}</td></tr>
+                <tr><td style="background:#eaf4fb;color:#1a5f8a;padding:1px 4px;">주소</td><td colspan="3" style="padding:1px 4px;">${esc(b.bizAddress || '')}</td></tr>
+              </tbody></table>
+            </td>
+            <td style="width:50%; vertical-align:top; padding:2px;">
+              <div style="font-weight:700; background:#cfe8f7; color:#1a5f8a; padding:2px 6px; margin-bottom:2px;">공급받는자</div>
+              <table style="font-size:10px;"><tbody>
+                <tr><td style="width:60px;background:#eaf4fb;color:#1a5f8a;padding:1px 4px;">상호</td><td style="padding:1px 4px;">${esc(customerName)}</td></tr>
+              </tbody></table>
+            </td>
+          </tr>
+        </table>
       </div>
-      <div style="color:#555; margin-bottom:6px; font-size:11px;">발행일: ${todayStr()} · 아직 출고 전인 발주 기준 예상 청구 내역이에요</div>
-      <table style="font-size:10px; margin-bottom:6px;">
-        <tr>
-          <td style="width:50%; vertical-align:top; padding:3px;">
-            <div style="font-weight:700; background:#cfe8f7; color:#1a5f8a; padding:2px 6px; margin-bottom:2px;">공급자</div>
-            <table style="font-size:10px;"><tbody>
-              <tr><td style="width:60px;background:#eaf4fb;color:#1a5f8a;">등록번호</td><td>${esc(b.bizNumber || '')}</td></tr>
-              <tr><td style="background:#eaf4fb;color:#1a5f8a;">상호</td><td>${esc(b.bizName || '')}</td><td style="background:#eaf4fb;color:#1a5f8a;width:40px;">성명</td><td>${esc(b.bizOwner || '')}</td></tr>
-              <tr><td style="background:#eaf4fb;color:#1a5f8a;">주소</td><td colspan="3">${esc(b.bizAddress || '')}</td></tr>
-            </tbody></table>
-          </td>
-          <td style="width:50%; vertical-align:top; padding:3px;">
-            <div style="font-weight:700; background:#cfe8f7; color:#1a5f8a; padding:2px 6px; margin-bottom:2px;">공급받는자</div>
-            <table style="font-size:10px;"><tbody>
-              <tr><td style="width:60px;background:#eaf4fb;color:#1a5f8a;">상호</td><td>${esc(customerName)}</td></tr>
-            </tbody></table>
-          </td>
-        </tr>
-      </table>
-      <table style="font-size:10px;">
-        <thead><tr><th>날짜</th><th>내용</th><th>수량</th><th>단가(원)</th><th>공급가액(원)</th></tr></thead>
-        <tbody>${rowsHtml}</tbody>
-      </table>
-      <table style="font-size:11px; margin-top:6px;">
-        <tr><td style="background:#eaf4fb;color:#1a5f8a;width:25%;">공급가액 합계</td><td style="text-align:right;">${totalSupply.toLocaleString()}원</td>
-            <td style="background:#eaf4fb;color:#1a5f8a;width:25%;">세액 합계</td><td style="text-align:right;">${totalTax.toLocaleString()}원</td></tr>
-        <tr><td style="background:#d3e9f7;color:#1a5f8a;font-weight:800;">청구(선수금) 금액</td><td colspan="3" style="text-align:right;font-weight:800;font-size:13px;">${grandTotal.toLocaleString()}원</td></tr>
-      </table>
-      ${b.bankInfo ? `<div style="margin-top:6px; font-size:10px; color:#333;">입금계좌: ${esc(b.bankInfo)}</div>` : ''}
-      ${b.noteText ? `<div style="margin-top:2px; font-size:10px; color:#555;">참고사항: ${esc(b.noteText)}</div>` : ''}
+      <div style="flex:1 1 auto; overflow:hidden; min-height:0;">
+        <table style="font-size:10px;">
+          <thead><tr><th style="padding:1px 4px;">날짜</th><th style="padding:1px 4px;">내용</th><th style="padding:1px 4px;">수량</th><th style="padding:1px 4px;">단가(원)</th><th style="padding:1px 4px;">공급가액(원)</th></tr></thead>
+          <tbody>${rowsHtml}</tbody>
+        </table>
+      </div>
+      <div style="flex:none;">
+        <table style="font-size:11px; margin-top:6px;">
+          <tr><td style="background:#eaf4fb;color:#1a5f8a;width:25%;padding:1px 4px;">공급가액 합계</td><td style="text-align:right;padding:1px 4px;">${totalSupply.toLocaleString()}원</td>
+              <td style="background:#eaf4fb;color:#1a5f8a;width:25%;padding:1px 4px;">세액 합계</td><td style="text-align:right;padding:1px 4px;">${totalTax.toLocaleString()}원</td></tr>
+          <tr><td style="background:#d3e9f7;color:#1a5f8a;font-weight:800;padding:1px 4px;">청구(선수금) 금액</td><td colspan="3" style="text-align:right;font-weight:800;font-size:13px;padding:1px 4px;">${grandTotal.toLocaleString()}원</td></tr>
+        </table>
+        ${b.bankInfo ? `<div style="margin-top:6px; font-size:10px; color:#333;">입금계좌: ${esc(b.bankInfo)}</div>` : ''}
+        ${b.noteText ? `<div style="margin-top:2px; font-size:10px; color:#555;">참고사항: ${esc(b.noteText)}</div>` : ''}
+      </div>
     </div>
   `;
 
@@ -2525,11 +2533,22 @@ function printPreShipmentFromModal() {
   setTimeout(() => window.print(), 100);
 }
 
-function buildStatementHTML(customerName, startDate, endDate) {
+function buildStatementHTML(customerName, startDate, endDate, entryIdFilter) {
   const t_c = String(customerName).trim();
   const inRange = (d) => d && d >= startDate && d <= endDate;
-  const custEntries = shipmentLog.filter(e => String(e.customer || '').trim() === t_c && inRange(e.date));
+  let custEntries;
+  if (entryIdFilter) {
+    const idSet = new Set(entryIdFilter);
+    custEntries = shipmentLog.filter(e => String(e.customer || '').trim() === t_c && idSet.has(e.id));
+  } else {
+    custEntries = shipmentLog.filter(e => String(e.customer || '').trim() === t_c && inRange(e.date));
+  }
   if (custEntries.length === 0) return null;
+  if (entryIdFilter && custEntries.length > 0) {
+    const ds = custEntries.map(e => e.date);
+    startDate = ds.reduce((a, b) => a < b ? a : b);
+    endDate = ds.reduce((a, b) => a > b ? a : b);
+  }
 
   const saleRows = []; // 매출/반품/불량 (날짜순)
   const paymentRows = []; // 입금 (날짜순, 항상 매출 아래에)
@@ -2578,7 +2597,7 @@ function buildStatementHTML(customerName, startDate, endDate) {
     }
     totalDiscount += (e.discount || 0);
 
-    const pays = (e.payments || []).filter(p => inRange(p.date));
+    const pays = entryIdFilter ? (e.payments || []) : (e.payments || []).filter(p => inRange(p.date));
     for (const p of pays) {
       totalPaid += p.amount;
       paymentRows.push({ date: p.date, desc: `입금 (${(p.method || 'cash') === 'cash' ? '현금' : '온라인'})`, note: '', qty: '', unitPrice: '', supply: null, tax: null, amount: p.amount, color: 'blue' });
@@ -2600,8 +2619,8 @@ function buildStatementHTML(customerName, startDate, endDate) {
   else { rowFontPx = 4.4; rowPadPx = 0.4; }
 
   const sizes = compact
-    ? { pad: '2mm 4mm 6mm 4mm', titleSize: '14px', titleGap: '3px', metaSize: '9px', metaGap: '3px', boxGap: '2px', boxFont: '9px', innerFont: '10px', rowFont: rowFontPx + 'px', rowPad: rowPadPx + 'px', totalsFont: '9px', totalsGap: '2px', bankSize: '9px', bankGap: '2px' }
-    : { pad: '4mm 6mm 14mm 6mm', titleSize: '20px', titleGap: '10px', metaSize: '12px', metaGap: '12px', boxGap: '8px', boxFont: '12px', innerFont: '12px', rowFont: '12px', rowPad: '6px', totalsFont: '13px', totalsGap: '10px', bankSize: '12px', bankGap: '10px' };
+    ? { pad: '2mm 4mm 3mm 4mm', titleSize: '13px', titleGap: '2px', metaSize: '8px', metaGap: '2px', boxGap: '1px', boxFont: '8px', innerFont: '8px', rowFont: rowFontPx + 'px', rowPad: rowPadPx + 'px', totalsFont: '8px', totalsGap: '1px', bankSize: '8px', bankGap: '1px' }
+    : { pad: '3mm 5mm 3mm 5mm', titleSize: '16px', titleGap: '4px', metaSize: '10px', metaGap: '4px', boxGap: '3px', boxFont: '10px', innerFont: '10px', rowFont: '10px', rowPad: '3px', totalsFont: '10px', totalsGap: '3px', bankSize: '10px', bankGap: '3px' };
 
   const rowsHtml = rows.map(r => {
     const style = r.color === 'blue' ? 'color:#1a56db;' : r.color === 'red' ? 'color:#c0392b;' : '';
@@ -2626,22 +2645,22 @@ function buildStatementHTML(customerName, startDate, endDate) {
   const infoBox = `
     <table style="font-size:${sizes.boxFont}; margin-bottom:${sizes.boxGap};">
       <tr>
-        <td style="width:50%; vertical-align:top; padding:4px;">
-          <div style="font-weight:700; background:#cfe8f7; color:#1a5f8a; padding:3px 8px; margin-bottom:3px;">공급자</div>
+        <td style="width:50%; vertical-align:top; padding:2px;">
+          <div style="font-weight:700; background:#cfe8f7; color:#1a5f8a; padding:2px 6px; margin-bottom:2px;">공급자</div>
           <table style="font-size:${sizes.innerFont};"><tbody>
-            <tr><td style="width:70px;background:#eaf4fb;color:#1a5f8a;">등록번호</td><td>${esc(b.bizNumber || '')}</td></tr>
-            <tr><td style="background:#eaf4fb;color:#1a5f8a;">상호</td><td>${esc(b.bizName || '')}</td><td style="background:#eaf4fb;color:#1a5f8a;width:50px;">성명</td><td>${esc(b.bizOwner || '')}</td></tr>
-            <tr><td style="background:#eaf4fb;color:#1a5f8a;">주소</td><td colspan="3">${esc(b.bizAddress || '')}</td></tr>
-            <tr><td style="background:#eaf4fb;color:#1a5f8a;">업태</td><td>${esc(b.bizType || '')}</td><td style="background:#eaf4fb;color:#1a5f8a;">종목</td><td>${esc(b.bizItem || '')}</td></tr>
+            <tr><td style="width:70px;background:#eaf4fb;color:#1a5f8a;padding:1px 4px;">등록번호</td><td style="padding:1px 4px;">${esc(b.bizNumber || '')}</td></tr>
+            <tr><td style="background:#eaf4fb;color:#1a5f8a;padding:1px 4px;">상호</td><td style="padding:1px 4px;">${esc(b.bizName || '')}</td><td style="background:#eaf4fb;color:#1a5f8a;width:50px;padding:1px 4px;">성명</td><td style="padding:1px 4px;">${esc(b.bizOwner || '')}</td></tr>
+            <tr><td style="background:#eaf4fb;color:#1a5f8a;padding:1px 4px;">주소</td><td colspan="3" style="padding:1px 4px;">${esc(b.bizAddress || '')}</td></tr>
+            <tr><td style="background:#eaf4fb;color:#1a5f8a;padding:1px 4px;">업태</td><td style="padding:1px 4px;">${esc(b.bizType || '')}</td><td style="background:#eaf4fb;color:#1a5f8a;padding:1px 4px;">종목</td><td style="padding:1px 4px;">${esc(b.bizItem || '')}</td></tr>
           </tbody></table>
         </td>
-        <td style="width:50%; vertical-align:top; padding:4px;">
-          <div style="font-weight:700; background:#cfe8f7; color:#1a5f8a; padding:3px 8px; margin-bottom:3px;">공급받는자</div>
+        <td style="width:50%; vertical-align:top; padding:2px;">
+          <div style="font-weight:700; background:#cfe8f7; color:#1a5f8a; padding:2px 6px; margin-bottom:2px;">공급받는자</div>
           <table style="font-size:${sizes.innerFont};"><tbody>
-            <tr><td style="width:70px;background:#eaf4fb;color:#1a5f8a;">등록번호</td><td></td></tr>
-            <tr><td style="background:#eaf4fb;color:#1a5f8a;">상호</td><td>${esc(customerName)}</td><td style="background:#eaf4fb;color:#1a5f8a;width:50px;">성명</td><td></td></tr>
-            <tr><td style="background:#eaf4fb;color:#1a5f8a;">주소</td><td colspan="3"></td></tr>
-            <tr><td style="background:#eaf4fb;color:#1a5f8a;">업태</td><td></td><td style="background:#eaf4fb;color:#1a5f8a;">종목</td><td></td></tr>
+            <tr><td style="width:70px;background:#eaf4fb;color:#1a5f8a;padding:1px 4px;">등록번호</td><td style="padding:1px 4px;"></td></tr>
+            <tr><td style="background:#eaf4fb;color:#1a5f8a;padding:1px 4px;">상호</td><td style="padding:1px 4px;">${esc(customerName)}</td><td style="background:#eaf4fb;color:#1a5f8a;width:50px;padding:1px 4px;">성명</td><td style="padding:1px 4px;"></td></tr>
+            <tr><td style="background:#eaf4fb;color:#1a5f8a;padding:1px 4px;">주소</td><td colspan="3" style="padding:1px 4px;"></td></tr>
+            <tr><td style="background:#eaf4fb;color:#1a5f8a;padding:1px 4px;">업태</td><td style="padding:1px 4px;"></td><td style="background:#eaf4fb;color:#1a5f8a;padding:1px 4px;">종목</td><td style="padding:1px 4px;"></td></tr>
           </tbody></table>
         </td>
       </tr>
@@ -2667,15 +2686,28 @@ function buildStatementHTML(customerName, startDate, endDate) {
         </table>
       </div>
       <div style="flex:none;">
-        <table style="font-size:${sizes.totalsFont}; margin-top:${sizes.totalsGap};">
-          <tr><td style="background:#eaf4fb;color:#1a5f8a;width:25%;">총수량</td><td style="text-align:right;">${Math.round(totalQty * 100) / 100}y</td>
-              <td style="background:#eaf4fb;color:#1a5f8a;width:25%;">공급가액 합계</td><td style="text-align:right;">${totalSupply.toLocaleString()}원</td></tr>
-          <tr><td style="background:#eaf4fb;color:#1a5f8a;">세액 합계</td><td style="text-align:right;">${totalTax.toLocaleString()}원</td>
-              ${totalReturnDefect > 0 ? `<td style="background:#eaf4fb;color:#c0392b;">반품/불량 차감</td><td style="text-align:right;color:#c0392b;">-${totalReturnDefect.toLocaleString()}원</td>` : (totalDiscount > 0 ? `<td style="background:#eaf4fb;color:#1a5f8a;">공제액</td><td style="text-align:right;">${totalDiscount.toLocaleString()}원</td>` : '<td></td><td></td>')}</tr>
-          <tr><td style="background:#eaf4fb;color:#1a56db;">입금 합계</td><td style="text-align:right;color:#1a56db;">${totalPaid.toLocaleString()}원</td>
-              ${carryoverAmt > 0 ? `<td style="background:#eaf4fb;color:#a15c1e;">이월 미수금</td><td style="text-align:right;color:#a15c1e;">${carryoverAmt.toLocaleString()}원</td>` : '<td></td><td></td>'}</tr>
-          <tr><td style="background:#d3e9f7;color:#1a5f8a;font-weight:800;">미수금액</td><td colspan="3" style="text-align:right;font-weight:800;">${balance.toLocaleString()}원</td></tr>
-        </table>
+        ${(() => {
+          const items = [];
+          items.push({ label: '총수량', value: `${Math.round(totalQty * 100) / 100}y`, color: '#1a5f8a' });
+          items.push({ label: '공급가액 합계', value: `${totalSupply.toLocaleString()}원`, color: '#1a5f8a' });
+          if (totalTax > 0) items.push({ label: '세액 합계', value: `${totalTax.toLocaleString()}원`, color: '#1a5f8a' });
+          if (totalReturnDefect > 0) items.push({ label: '반품/불량 차감', value: `-${totalReturnDefect.toLocaleString()}원`, color: '#c0392b' });
+          if (totalDiscount > 0) items.push({ label: '공제액', value: `${totalDiscount.toLocaleString()}원`, color: '#1a5f8a' });
+          if (totalPaid > 0) items.push({ label: '입금 합계', value: `${totalPaid.toLocaleString()}원`, color: '#1a56db' });
+          if (carryoverAmt > 0) items.push({ label: '이월 미수금', value: `${carryoverAmt.toLocaleString()}원`, color: '#a15c1e' });
+          let rowsOut = '';
+          for (let i = 0; i < items.length; i += 2) {
+            const a = items[i], c = items[i + 1];
+            rowsOut += `<tr>
+              <td style="background:#eaf4fb;color:${a.color};width:25%;padding:1px 4px;">${a.label}</td><td style="text-align:right;color:${a.color};width:25%;padding:1px 4px;">${a.value}</td>
+              ${c ? `<td style="background:#eaf4fb;color:${c.color};width:25%;padding:1px 4px;">${c.label}</td><td style="text-align:right;color:${c.color};padding:1px 4px;">${c.value}</td>` : '<td></td><td></td>'}
+            </tr>`;
+          }
+          return `<table style="font-size:${sizes.totalsFont}; margin-top:${sizes.totalsGap};">
+            ${rowsOut}
+            <tr><td style="background:#d3e9f7;color:#1a5f8a;font-weight:800;padding:1px 4px;">미수금액</td><td colspan="3" style="text-align:right;font-weight:800;padding:1px 4px;">${balance.toLocaleString()}원</td></tr>
+          </table>`;
+        })()}
         ${b.bankInfo ? `<div style="margin-top:${sizes.bankGap}; font-size:${sizes.bankSize}; color:#333;">입금계좌: ${esc(b.bankInfo)}</div>` : ''}
         ${b.noteText ? `<div style="margin-top:2px; font-size:${sizes.bankSize}; color:#555;">참고사항: ${esc(b.noteText)}</div>` : ''}
       </div>
@@ -2694,6 +2726,12 @@ function buildStatementHTML(customerName, startDate, endDate) {
 function printStatementForRange(customerName, startDate, endDate) {
   const html = buildStatementHTML(customerName, startDate, endDate);
   if (html == null) { showToast('해당 기간에 인쇄할 내역이 없습니다'); return; }
+  document.getElementById('printArea').innerHTML = html;
+  setTimeout(() => window.print(), 100);
+}
+function printStatementForEntries(customerName, entryIds) {
+  const html = buildStatementHTML(customerName, null, null, entryIds);
+  if (html == null) { showToast('선택한 내역이 없습니다'); return; }
   document.getElementById('printArea').innerHTML = html;
   setTimeout(() => window.print(), 100);
 }
@@ -2828,6 +2866,8 @@ function showCustomerLedger(customer) {
 function exitCustomerLedger() {
   salesSpecialView = null;
   ledgerCustomer = null;
+  ledgerStartDate = null;
+  ledgerEndDate = null;
   render();
 }
 function renderCustomerLedgerView() {
@@ -2855,20 +2895,66 @@ function renderCustomerLedgerView() {
       <label>종료일</label>
       <input id="ledger-end" type="date">
     </div>
-    <button onclick="ledgerCustomer=document.getElementById('ledger-customer').value.trim(); renderCustomerLedgerTable();" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:8px;padding:10px 16px;font-size:13px;font-weight:600;height:38px;">조회</button>
+    <button onclick="ledgerCustomer=document.getElementById('ledger-customer').value.trim(); ledgerStartDate=document.getElementById('ledger-start').value; ledgerEndDate=document.getElementById('ledger-end').value; renderCustomerLedgerTable();" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:8px;padding:10px 16px;font-size:13px;font-weight:600;height:38px;">조회</button>
+    <button onclick="printCurrentLedgerStatement()" style="border:none;background:#eaf3ec;color:#2f6b46;border-radius:8px;padding:10px 16px;font-size:13px;font-weight:600;height:38px;">🖨 명세서 인쇄</button>
   `;
   list.appendChild(controls);
 
-  const now = new Date();
-  const yearAgo = new Date(now); yearAgo.setFullYear(yearAgo.getFullYear() - 1);
-  document.getElementById('ledger-start').value = yearAgo.toISOString().slice(0, 10);
-  document.getElementById('ledger-end').value = now.toISOString().slice(0, 10);
+  if (!ledgerStartDate || !ledgerEndDate) {
+    const now = new Date();
+    const yearAgo = new Date(now); yearAgo.setFullYear(yearAgo.getFullYear() - 1);
+    ledgerStartDate = yearAgo.toISOString().slice(0, 10);
+    ledgerEndDate = now.toISOString().slice(0, 10);
+  }
+  document.getElementById('ledger-start').value = ledgerStartDate;
+  document.getElementById('ledger-end').value = ledgerEndDate;
 
   const tableWrap = document.createElement('div');
   tableWrap.id = 'ledger-table-wrap';
   list.appendChild(tableWrap);
 
   if (ledgerCustomer) renderCustomerLedgerTable();
+}
+async function quickEditPayment(entryId, idx) {
+  const e = shipmentLog.find(x => x.id === entryId);
+  if (!e || !e.payments || !e.payments[idx]) return;
+  const p = e.payments[idx];
+  const raw = prompt(`입금액을 수정합니다 (0을 입력하면 이 입금 기록이 삭제돼요)`, String(p.amount));
+  if (raw === null) return;
+  const amt = parseFloat(raw);
+  if (isNaN(amt) || amt < 0) { showToast('금액을 확인해주세요'); return; }
+  if (amt === 0) {
+    e.payments.splice(idx, 1);
+  } else {
+    p.amount = amt;
+  }
+  delete e.paidAmount; delete e.paid;
+  await persistShipmentLog();
+  render();
+  if (salesSpecialView === 'customerLedger') renderCustomerLedgerTable();
+  showToast('입금 내역을 수정했습니다');
+}
+async function quickEditReturnDefect(id) {
+  const e = shipmentLog.find(x => x.id === id);
+  if (!e) return;
+  const raw = prompt(`${e.item} ${e.color || ''} (${e.isDefect ? '불량' : '반품'}) 판매단가(원/y)를 수정합니다`, e.unitPrice != null ? String(e.unitPrice) : '');
+  if (raw === null) return;
+  const price = parseFloat(raw);
+  if (isNaN(price) || price <= 0) { showToast('단가를 확인해주세요'); return; }
+  e.unitPrice = price;
+  e.deductAmount = Math.round(price * Math.abs(e.amount));
+  await persistShipmentLog();
+  render();
+  if (salesSpecialView === 'customerLedger') renderCustomerLedgerTable();
+  showToast('수정했습니다');
+}
+function printCurrentLedgerStatement() {
+  const customer = (ledgerCustomer || document.getElementById('ledger-customer').value).trim();
+  if (!customer) { showToast('거래처를 입력해주세요'); return; }
+  const checked = document.querySelectorAll('.ledger-print-check:checked');
+  if (checked.length === 0) { showToast('인쇄할 항목을 체크해주세요'); return; }
+  const entryIds = Array.from(new Set(Array.from(checked).map(cb => parseInt(cb.dataset.entryId))));
+  printStatementForEntries(customer, entryIds);
 }
 function renderCustomerLedgerTable() {
   const customer = (ledgerCustomer || document.getElementById('ledger-customer').value).trim();
@@ -2884,7 +2970,7 @@ function renderCustomerLedgerTable() {
     if (String(e.customer || '').trim() !== t_c) continue;
     if (e.isReturn || e.isDefect) {
       if (e.deductAmount != null) {
-        events.push({ date: e.date, type: e.isDefect ? '불량' : '반품', desc: `${e.item} ${e.color || ''}`, detail: `${Math.abs(e.amount)}${e.unit || 'y'}${e.unitPrice ? ` × ${e.unitPrice.toLocaleString()}원/y` : ''}`, amount: -e.deductAmount });
+        events.push({ id: e.id, date: e.date, type: e.isDefect ? '불량' : '반품', desc: `${e.item} ${e.color || ''}`, detail: `${Math.abs(e.amount)}${e.unit || 'y'}${e.unitPrice ? ` × ${e.unitPrice.toLocaleString()}원/y` : ''}`, amount: -e.deductAmount });
       }
       continue;
     }
@@ -2892,11 +2978,11 @@ function renderCustomerLedgerTable() {
       const net = Math.round((e.saleAmount - (e.discount || 0)) * 100) / 100;
       const isCarry = e.item === '이월 미수금';
       const detail = isCarry ? '' : `${e.yardsShipped || e.amount}${e.unit || 'y'}${e.unitPrice ? ` × ${e.unitPrice.toLocaleString()}원/y` : ' (단가 미입력)'}`;
-      events.push({ date: e.date, type: '매출', desc: isCarry ? '이월 미수금' : `${e.item} ${e.color || ''}`, detail, amount: net });
+      events.push({ id: e.id, date: e.date, type: '매출', desc: isCarry ? '이월 미수금' : `${e.item} ${e.color || ''}`, detail, amount: net, isCarry });
     }
-    for (const p of (e.payments || [])) {
-      events.push({ date: p.date, type: '입금', desc: (p.method || 'cash') === 'cash' ? '입금(현금)' : '입금(온라인)', detail: '', amount: -p.amount });
-    }
+    (e.payments || []).forEach((p, idx) => {
+      events.push({ id: null, entryId: e.id, paymentIdx: idx, date: p.date, type: '입금', desc: (p.method || 'cash') === 'cash' ? '입금(현금)' : '입금(온라인)', detail: '', amount: -p.amount });
+    });
   }
   events.sort((a, b) => String(a.date).localeCompare(String(b.date)));
 
@@ -2914,10 +3000,18 @@ function renderCustomerLedgerTable() {
   const rowsHtml = rowsInRange.map(ev => {
     running = Math.round((running + ev.amount) * 100) / 100;
     const color = ev.type === '매출' ? '#c0392b' : (ev.type === '입금' ? '#1a56db' : '#a15c1e');
-    return `<tr>
+    const clickable = ev.id != null || ev.entryId != null;
+    let clickHandler = '';
+    if (ev.type === '매출') clickHandler = `openSaleEditModal(${ev.id})`;
+    else if (ev.type === '입금') clickHandler = `quickEditPayment(${ev.entryId}, ${ev.paymentIdx})`;
+    else clickHandler = `quickEditReturnDefect(${ev.id})`;
+    const clickAttr = clickable ? `onclick="${clickHandler}" style="cursor:pointer;"` : '';
+    const printable = ev.id != null; // 매출/반품/불량만 체크로 인쇄 포함 여부 선택 (입금은 해당 매출을 따라감)
+    return `<tr ${clickAttr}>
+      <td style="padding:8px 4px; border-bottom:1px solid var(--border);" onclick="event.stopPropagation();">${printable ? `<input type="checkbox" class="ledger-print-check" data-entry-id="${ev.id}" checked style="width:auto;">` : ''}</td>
       <td style="padding:8px 6px; border-bottom:1px solid var(--border); font-size:13px;">${esc(ev.date)}</td>
       <td style="padding:8px 6px; border-bottom:1px solid var(--border); font-size:13px; color:${color}; font-weight:600;">${esc(ev.type)}</td>
-      <td style="padding:8px 6px; border-bottom:1px solid var(--border); font-size:13px;">${esc(ev.desc)}${ev.detail ? `<div style="font-size:11px; color:var(--muted); margin-top:2px;">${esc(ev.detail)}</div>` : ''}</td>
+      <td style="padding:8px 6px; border-bottom:1px solid var(--border); font-size:13px;">${esc(ev.desc)}${ev.detail ? `<div style="font-size:11px; color:var(--muted); margin-top:2px;">${esc(ev.detail)}</div>` : ''}${clickable ? ' <span style="font-size:10px;color:var(--primary-dark);text-decoration:underline;">수정</span>' : ''}</td>
       <td style="padding:8px 6px; border-bottom:1px solid var(--border); font-size:13px; text-align:right; color:${color};">${ev.amount < 0 ? '-' : ''}${Math.abs(ev.amount).toLocaleString()}</td>
       <td style="padding:8px 6px; border-bottom:1px solid var(--border); font-size:13px; text-align:right; font-weight:600;">${running.toLocaleString()}</td>
     </tr>`;
@@ -2927,6 +3021,7 @@ function renderCustomerLedgerTable() {
     <table style="width:100%; border-collapse:collapse;">
       <thead>
         <tr style="background:#f1eee7;">
+          <th style="padding:8px 4px; font-size:13px; text-align:center;"><input type="checkbox" checked onchange="document.querySelectorAll('.ledger-print-check').forEach(cb=>cb.checked=this.checked)" style="width:auto;"></th>
           <th style="padding:8px 6px; font-size:13px; text-align:left;">날짜</th>
           <th style="padding:8px 6px; font-size:13px; text-align:left;">구분</th>
           <th style="padding:8px 6px; font-size:13px; text-align:left;">내용</th>
@@ -2936,7 +3031,7 @@ function renderCustomerLedgerTable() {
       </thead>
       <tbody>
         <tr style="background:#fffbe6;">
-          <td colspan="4" style="padding:8px 6px; font-size:13px; font-weight:600;">[이월]</td>
+          <td colspan="5" style="padding:8px 6px; font-size:13px; font-weight:600;">[이월]</td>
           <td style="padding:8px 6px; font-size:13px; text-align:right; font-weight:600;">${openingBalance.toLocaleString()}</td>
         </tr>
         ${rowsHtml}
@@ -3133,28 +3228,33 @@ function renderSales() {
       }, 0);
       const custUnpaid = Math.max(0, entries.reduce((s, e) => s + (e.saleAmount != null ? getRemaining(e) : 0), 0) - custReturnDefect);
       const isMainGroup = entries.every(e => e.isMain);
+      const custGroupKey = `sales:${period}:${k}`;
+      const custOpen = openGroups.has(custGroupKey);
 
       const div = document.createElement('div');
       div.className = 'group';
       div.innerHTML = `
-        <div class="group-head" style="cursor:default;">
+        <div class="group-head" onclick="toggleGroup('${escAttr(custGroupKey)}')">
           <div class="info">
             <div class="name">${esc(k)}</div>
             <div class="sub">${entries.length}건 · 매출 ${custTotal.toLocaleString()}원 · 순이익 ${custProfit.toLocaleString()}원${custUnpaid > 0 ? ` · <span style="color:var(--danger);font-weight:700;">미수금 ${custUnpaid.toLocaleString()}원</span>` : ''}</div>
-            <div style="margin-top:4px;">
+            <div style="margin-top:4px;" onclick="event.stopPropagation();">
               <label style="display:inline-flex;align-items:center;gap:5px;font-size:12px;color:var(--muted);margin-right:8px;">
                 <input type="checkbox" class="main-flag-checkbox" data-customer="${escAttr(k)}" data-start="${escAttr(entries.reduce((a, e) => a < e.date ? a : e.date, entries[0].date))}" data-end="${escAttr(entries.reduce((a, e) => a > e.date ? a : e.date, entries[0].date))}" ${isMainGroup ? 'checked' : ''} onchange="toggleMainFlag([${entries.map(e => e.id).join(',')}], this.checked)" style="width:auto;">
                 메인(내역서 포함)
               </label>
               ${custUnpaid > 0 ? `<button onclick="recordGroupPayment([${entries.map(e => e.id).join(',')}])" style="border:none;background:#eaf3ec;color:#2f6b46;border-radius:6px;padding:5px 10px;font-size:12px;font-weight:600;">입금 처리</button>` : ''}
               ${entries.some(e => getPaidAmount(e) > 0) ? `<button onclick="resetGroupPayment([${entries.map(e => e.id).join(',')}])" style="border:none;background:#f1eee7;color:var(--muted);border-radius:6px;padding:5px 10px;font-size:12px;margin-left:6px;">입금 취소</button>` : ''}
-              <button onclick="printCustomerStatement('${escAttr(k)}', [${entries.map(e => e.id).join(',')}], '${escAttr(period)}')" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:6px;padding:5px 10px;font-size:12px;margin-left:6px;">🖨 내역서 인쇄</button>
               <button onclick="openSaleAddModal('${escAttr(k)}')" style="border:none;background:#eaf3ec;color:#2f6b46;border-radius:6px;padding:5px 10px;font-size:12px;margin-left:6px;">+ 품목 추가</button>
               <button onclick="showCustomerLedger('${escAttr(k)}')" style="border:none;background:#e8edf5;color:#3d4f6b;border-radius:6px;padding:5px 10px;font-size:12px;margin-left:6px;">📒 원장</button>
             </div>
           </div>
+          <div class="total">
+            <div class="cnt">${custOpen ? '접기 ▲' : '펼치기 ▼'}</div>
+          </div>
         </div>
       `;
+      if (!custOpen) { list.appendChild(div); continue; }
       const inner = document.createElement('div');
       for (const e of entries) {
         const row = document.createElement('div');
@@ -3291,7 +3391,7 @@ function renderShipmentLog() {
 function factoryPriority(factory) {
   const f = String(factory || '').trim();
   if (f.includes('택배')) return 3;
-  if (/동\s*\d|신관|구관|호별|층/.test(f)) return 2;
+  if (/[A-Za-z0-9]\s*동|신관|구관|호별|층/.test(f)) return 2;
   if (f === '매장' || (f.includes('매장') && !f.includes('택배'))) return 4;
   return 1; // 공장번호(전화번호 등) 및 기타는 기본적으로 맨 위
 }
@@ -3709,7 +3809,7 @@ function openOrderReceiveModal(id) {
   const remembered = findRememberedPrice(o.customer, o.item, o.color);
   document.getElementById('or-price').value = remembered != null ? remembered : '';
   document.getElementById('or-tax').checked = false;
-  document.getElementById('or-note').value = '';
+  document.getElementById('or-note').value = o.note || '';
   document.querySelector('input[name="or-price-mode"][value="unit"]').checked = true;
   onPriceModeChange();
 
