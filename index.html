@@ -2785,6 +2785,40 @@ function getCostPerYard(item) {
   return finalCost(costMatch);
 }
 
+async function adjustCarryoverBalance(customer, entryId) {
+  const current = entryId != null ? shipmentLog.find(e => e.id === entryId) : null;
+  const raw = prompt(`${customer}의 이월 미수금을 얼마로 설정할까요? (0을 입력하면 삭제돼요)`, current ? String(current.saleAmount || 0) : '');
+  if (raw === null) return;
+  const amount = parseFloat(raw);
+  if (isNaN(amount) || amount < 0) { showToast('금액을 확인해주세요'); return; }
+
+  if (amount === 0) {
+    if (current) {
+      shipmentLog = shipmentLog.filter(e => e.id !== current.id);
+      await persistShipmentLog();
+      render();
+      showToast('이월 미수금을 삭제했습니다');
+    }
+    return;
+  }
+
+  if (current) {
+    current.unitPrice = amount;
+    current.supplyAmount = amount;
+    current.saleAmount = amount;
+  } else {
+    shipmentLog.push({
+      id: nextLogId++, date: todayStr(), orderId: null,
+      customer, factory: '', item: '이월 미수금', color: '',
+      amount: 1, unit: 'y', yardsShipped: 1, remainAfter: 0, isFullCompletion: true,
+      unitPrice: amount, supplyAmount: amount, taxAmount: 0, saleAmount: amount, paidAmount: 0,
+      note: '수동 조정'
+    });
+  }
+  await persistShipmentLog();
+  render();
+  showToast(`이월 미수금 ${amount.toLocaleString()}원으로 저장했습니다`);
+}
 function renderSales() {
   document.getElementById('rateBar').classList.add('hidden');
   document.getElementById('invTools').classList.add('hidden');
@@ -2896,7 +2930,7 @@ function renderSales() {
           <div class="info">
             <div class="name">${esc(k)}</div>
             <div class="sub">${entries.length}건 · 매출 ${custTotal.toLocaleString()}원 · 순이익 ${custProfit.toLocaleString()}원${custUnpaid > 0 ? ` · <span style="color:var(--danger);font-weight:700;">미수금 ${custUnpaid.toLocaleString()}원</span>` : ''}</div>
-            ${carryoverEntry ? `<div class="sub" style="cursor:pointer;" onclick="openSaleEditModal(${carryoverEntry.id})">이월 미수금 ${(carryoverEntry.saleAmount || 0).toLocaleString()}원 <span style="color:var(--primary-dark);text-decoration:underline;">수정</span></div>` : ''}
+            <div class="sub">${carryoverEntry ? `이월 미수금 ${(carryoverEntry.saleAmount || 0).toLocaleString()}원` : ''} <span style="cursor:pointer;color:var(--primary-dark);text-decoration:underline;" onclick="adjustCarryoverBalance('${escAttr(k)}', ${carryoverEntry ? carryoverEntry.id : 'null'})">이월 미수금 조정</span></div>
             <div style="margin-top:4px;">
               <label style="display:inline-flex;align-items:center;gap:5px;font-size:12px;color:var(--muted);margin-right:8px;">
                 <input type="checkbox" ${isMainGroup ? 'checked' : ''} onchange="toggleMainFlag([${entries.map(e => e.id).join(',')}], this.checked)" style="width:auto;">
@@ -4335,10 +4369,13 @@ async function hardResetAll(silent) {
   if (!silent) showToast(`재고 ${rolls.length}건, 스왓치 ${SWATCH_MIGRATION.swatch.length}건, 중국품번 ${ITEM_CHINA_CODES.length}건으로 새로 시작했습니다`);
 }
 
-const CARRYOVER_UNPAID = [["누스파세", 130900.0], ["광희)올", 629200.0], ["문텍스", 12144000.0], ["아이알", 710200.0], ["마우솔레움", 922350.0], ["일이2", 436590.0], ["H153", 112000.0], ["식스틴", 539000.0], ["제이룩", 706400.0], ["맥가이버2", 1972900.0], ["이블레스", 228800.0], ["콜라보영", 1057500.0], ["코지", 708000.0], ["SY디자인", 52250.0], ["호주머니", 676000.0], ["크로키", 135000.0], ["통", 6944800.0], ["준", 6105700.0], ["때깔", 1496300.0], ["파트너", 2552000.0], ["아이템", 468000.0], ["에이치투", 825000.0], ["시온", 3112580.0], ["로웰", 1206000.0], ["테이크", 748800.0], ["투플러스", 399200.0], ["짱", 10301300.0], ["유니스", 2793720.0], ["쏘페", 671200.0], ["사라(신평화)", 942600.0], ["리마쥬", 2114400.0], ["닛시", 575000.0], ["호박C", 4198500.0], ["핏하리", 907100.0], ["프로", 9965700.0], ["포미나", 10232800.0], ["틴트", 1839742.0], ["티나.M", 1764300.0], ["클래식", 42468635.0], ["카라", 975200.0], ["리치(채연)", 412400.0], ["주식회사 오션", 5174300.0], ["제작1부", 1192600.0], ["제이제이큐", 1563720.0], ["이모션", 451440.0], ["와이파이", 19910800.0], ["오토", 543380.0], ["엘림사", 634000.0], ["에이죤", 2870100.0], ["야투", 7706700.0], ["아이민", 896280.0], ["써니", 4535700.0], ["신성물산", 834240.0], ["시소", 150400.0], ["스타필드", 1836125.0], ["셀라", 1000000.0], ["삐삐", 23717500.0], ["뿌띠", 19350796.0], ["비타민", 5127490.0], ["비상", 760500.0], ["비비텍스", 1134000.0], ["백퍼센트", 691700.0], ["배동바지", 10801361.0], ["[폐업]미라보(런너패션)", 1180000.0], ["메이준", 4659000.0], ["메이 원", 6291925.0], ["마벨", 790800.0], ["마를리", 142800.0], ["루카", 11018300.0], ["레시피", 560500.0], ["디자인", 6283600.0], ["다비드", 3930200.0], ["까르르", 23714200.0], ["간지짱", 3254700.0], ["Y&B(와이앤비)", 672000.0], ["57페이지", 587600.0]]; // 2026-08-06 기준 기존 거래처 미수금 (거래처, 금액)
+const CARRYOVER_UNPAID = [["누스파세", 130900.0], ["광희)올", 629200.0], ["문텍스", 12144000.0], ["아이알", 710200.0], ["마우솔레움", 922350.0], ["일이2", 436590.0], ["H153", 112000.0], ["식스틴", 539000.0], ["제이룩", 706400.0], ["맥가이버2", 1972900.0], ["이블레스", 228800.0], ["콜라보영", 1057500.0], ["코지", 708000.0], ["SY디자인", 52250.0], ["호주머니", 676000.0], ["크로키", 135000.0], ["통", 6944800.0], ["준", 6105700.0], ["때깔", 1496300.0], ["파트너", 2552000.0], ["아이템", 468000.0], ["에이치투", 825000.0], ["시온", 3112580.0], ["로웰", 1206000.0], ["테이크", 748800.0], ["투플러스", 399200.0], ["짱", 10301300.0], ["유니스", 2793720.0], ["쏘페", 671200.0], ["사라(신평화)", 942600.0], ["리마쥬", 2114400.0], ["닛시", 575000.0], ["호박C", 4198500.0], ["핏하리", 907100.0], ["프로", 9965700.0], ["포미나", 10232800.0], ["틴트", 1839742.0], ["티나.M", 1764300.0], ["클래식", 42468635.0], ["카라", 975200.0], ["리치(채연)", 412400.0], ["주식회사 오션", 5174300.0], ["제작1부", 1192600.0], ["제이제이큐", 1563720.0], ["이모션", 451440.0], ["와이파이", 19910800.0], ["오토", 543380.0], ["엘림사", 634000.0], ["에이죤", 2870100.0], ["야투", 7706700.0], ["아이민", 896280.0], ["써니", 4535700.0], ["신성물산", 834240.0], ["시소", 150400.0], ["스타필드", 1836125.0], ["셀라", 1000000.0], ["삐삐", 23717500.0], ["뿌띠", 19350796.0], ["비타민", 5127490.0], ["비상", 760500.0], ["비비텍스", 1134000.0], ["백퍼센트", 691700.0], ["배동바지", 10801361.0], ["[폐업]미라보(런너패션)", 1180000.0], ["메이준", 4659000.0], ["메이원", 6291925.0], ["마벨", 790800.0], ["마를리", 142800.0], ["루카", 11018300.0], ["레시피", 560500.0], ["디자인", 6283600.0], ["다비드", 3930200.0], ["까르르", 23714200.0], ["간지짱", 3254700.0], ["Y&B(와이앤비)", 672000.0], ["57페이지", 587600.0]]; // 2026-08-06 기준 기존 거래처 미수금 (거래처, 금액)
 
 async function applyCarryoverUnpaidIfNeeded() {
-  if (settings.carryoverUnpaidApplied) return;
+  if (settings.carryoverUnpaidApplied) {
+    await fixMeiWonNameIfNeeded();
+    return;
+  }
   for (const [customer, amount] of CARRYOVER_UNPAID) {
     shipmentLog.push({
       id: nextLogId++, date: todayStr(), orderId: null,
@@ -4352,6 +4389,19 @@ async function applyCarryoverUnpaidIfNeeded() {
   settings = { ...settings, carryoverUnpaidApplied: true };
   await persistSettings();
   showToast(`기존 거래처 미수금 ${CARRYOVER_UNPAID.length}건을 반영했어요`);
+}
+async function fixMeiWonNameIfNeeded() {
+  if (settings.meiWonNameFixed) return;
+  let changed = false;
+  for (const e of shipmentLog) {
+    if (e.item === '이월 미수금' && String(e.customer).trim() === '메이 원') {
+      e.customer = '메이원';
+      changed = true;
+    }
+  }
+  if (changed) await persistShipmentLog();
+  settings = { ...settings, meiWonNameFixed: true };
+  await persistSettings();
 }
 
 async function applyDataVersionIfNeeded() {
