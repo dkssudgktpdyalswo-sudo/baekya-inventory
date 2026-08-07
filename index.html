@@ -1643,10 +1643,20 @@ async function bulkCompleteOldOrders() {
   showToast(`${toComplete.length}건 완료 처리했습니다 (${maxDate}만 진행중으로 남음)`);
 }
 
+function getWeekdayKorean(kdate) {
+  const parts = String(kdate || '').split('.').map(s => parseInt(s.trim()));
+  if (parts.length < 3 || parts.some(isNaN)) return '';
+  const [yy, mm, dd] = parts;
+  const d = new Date(2000 + yy, mm - 1, dd);
+  if (isNaN(d.getTime())) return '';
+  return ['일', '월', '화', '수', '목', '금', '토'][d.getDay()];
+}
 function renderOrderCard(o, showItemAsTitle) {
   const s = orderStatus(o);
   const remain = (o.orderQty && o.orderQty > o.received) ? Math.round((o.orderQty - o.received) * 100) / 100 : 0;
-  const title = showItemAsTitle ? `${esc(o.item)} ${esc(o.color || '')}` : esc(o.customer || '');
+  const wd = getWeekdayKorean(o.date);
+  const dateTag = o.date ? `<span style="font-weight:400;font-size:11px;color:var(--muted);margin-left:6px;">${esc(o.date)}${wd ? `(${wd})` : ''}</span>` : '';
+  const title = showItemAsTitle ? `${esc(o.item)} ${esc(o.color || '')}` : `${esc(o.customer || '')}${dateTag}`;
   const sub = showItemAsTitle
     ? `${esc(o.date || '')} · 공장/연락처 ${esc(o.factory || '-')}`
     : `${esc(o.date || '')} · 공장/연락처 ${esc(o.factory || '-')}`;
