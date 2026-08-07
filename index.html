@@ -2063,10 +2063,10 @@ async function confirmLogEdit() {
     const resolvedColorForRestore = resolveInventoryColor(e.item, e.color);
     if (e.deductBreakdown && e.deductBreakdown.length > 0) {
       for (const b of e.deductBreakdown) {
-        rolls.push({ id: nextId++, cat: existingCat, item: e.item, color: resolvedColorForRestore, tang: b.tang, qty: b.qty });
+        restoreToInventory(e.item, resolvedColorForRestore, existingCat, b.tang, b.qty);
       }
     } else {
-      rolls.push({ id: nextId++, cat: existingCat, item: e.item, color: resolvedColorForRestore, tang: 1, qty: restoreQtyForEdit });
+      restoreToInventory(e.item, resolvedColorForRestore, existingCat, 1, restoreQtyForEdit);
     }
   }
   if (o) {
@@ -2103,6 +2103,22 @@ async function confirmLogEdit() {
   showToast('수정되었습니다 (재고·이월장부도 같이 반영됐어요)');
 }
 
+function restoreToInventory(item, color, cat, tang, qty) {
+  const t_item = String(item).trim();
+  const t_color = String(color).trim();
+  const existing = rolls.find(r => String(r.item).trim() === t_item && String(r.color).trim() === t_color && r.tang === tang && !r.defective && r.qty > 0);
+  if (existing) {
+    existing.qty = Math.round((existing.qty + qty) * 100) / 100;
+  } else {
+    // qty=0짜리 자리표시 롤이 있으면 그걸 재활용
+    const placeholder = rolls.find(r => String(r.item).trim() === t_item && String(r.color).trim() === t_color && r.tang === tang && !r.defective && r.qty === 0);
+    if (placeholder) {
+      placeholder.qty = qty;
+    } else {
+      rolls.push({ id: nextId++, cat, item, color, tang, qty });
+    }
+  }
+}
 async function cancelShipmentLogEntry(logId) {
   const entry = shipmentLog.find(e => e.id === logId);
   if (!entry) return;
@@ -2132,10 +2148,10 @@ async function cancelShipmentLogEntry(logId) {
     const resolvedColorForRestore = resolveInventoryColor(entry.item, entry.color);
     if (entry.deductBreakdown && entry.deductBreakdown.length > 0) {
       for (const b of entry.deductBreakdown) {
-        rolls.push({ id: nextId++, cat: existingCat, item: entry.item, color: resolvedColorForRestore, tang: b.tang, qty: b.qty });
+        restoreToInventory(entry.item, resolvedColorForRestore, existingCat, b.tang, b.qty);
       }
     } else {
-      rolls.push({ id: nextId++, cat: existingCat, item: entry.item, color: resolvedColorForRestore, tang: 1, qty: restoreQty0 });
+      restoreToInventory(entry.item, resolvedColorForRestore, existingCat, 1, restoreQty0);
     }
     await persistRolls();
   }
