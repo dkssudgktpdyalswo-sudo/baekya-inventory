@@ -102,6 +102,7 @@
   .fab { position: fixed; right: 18px; bottom: 22px; background: var(--primary); color: white; border: none; border-radius: 30px; padding: 14px 20px; font-size: 15px; font-weight: 700; box-shadow: 0 6px 18px rgba(0,0,0,0.25); z-index: 20; }
   .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.4); display: none; align-items: flex-end; justify-content: center; z-index: 30; }
   .modal-overlay.open { display: flex; }
+  #orderReceiveModal.open { z-index: 40; }
   .modal { background: white; width: 100%; max-width: 420px; border-radius: 16px 16px 0 0; padding: 20px; max-height: 85vh; overflow-y: auto; }
   .modal h3 { margin: 0 0 14px; font-size: 16px; }
   .modal label { font-size: 12px; color: var(--muted); display: block; margin: 10px 0 4px; }
@@ -194,7 +195,8 @@
     <button onclick="printSelectedMainStatements()" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">🖨 선택 인쇄 (메인 체크)</button>
     <button onclick="showCustomerLedger()" style="border:none;background:#e8edf5;color:#3d4f6b;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">📒 거래처원장</button>
     <button onclick="openUnpaidSummaryModal()" style="border:none;background:#fce8d6;color:#a15c1e;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">📋 거래처 미수금표</button>
-    <button onclick="showItemMonthlyStats()" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">📊 월별 품목 출고량</button>
+    <button onclick="showItemMonthlyStats()" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">📊 품목출고량</button>
+    <button onclick="openExpenseModal()" style="border:none;background:#fdecea;color:var(--danger);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">💸 지출 내역</button>
     <button onclick="exportSalesLog()" style="border:none;background:#fff3d6;color:#a15c1e;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">📤 매출장부 내보내기</button>
     <button onclick="archiveOldSalesLog()" style="border:none;background:#fff3d6;color:#a15c1e;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">🗑 매출장부 내보내기+정리</button>
     <button onclick="openBizInfoModal()" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">사업자 정보 설정</button>
@@ -503,6 +505,39 @@
   </div>
 </div>
 
+
+<!-- 거래처 출고 목록(묶음 처리) -->
+<div class="modal-overlay" id="customerShipListModal">
+  <div class="modal" style="max-width:520px;">
+    <h3 id="customer-ship-list-title">출고 처리</h3>
+    <p style="font-size:12px;color:var(--muted);margin-top:-6px;">발주 하나씩 "출고" 눌러서 처리하세요. 처리할 때마다 이 목록에서 자동으로 빠지고, 창은 안 닫혀요.</p>
+    <div id="customer-ship-list-rows" style="max-height:420px; overflow-y:auto;"></div>
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="closeCustomerShipList()">닫기</button>
+    </div>
+  </div>
+</div>
+
+<!-- 지출 내역 -->
+<div class="modal-overlay" id="expenseModal">
+  <div class="modal" style="max-width:480px;">
+    <h3>💸 지출 내역</h3>
+    <div class="row2">
+      <div><label>날짜</label><input id="exp-date" type="date"></div>
+      <div><label>금액(원)</label><input id="exp-amount" type="number" step="1" placeholder="예: 8000"></div>
+    </div>
+    <label>항목</label>
+    <input id="exp-title" placeholder="예: 식대, 퀵비, 비품비">
+    <label>비고(선택)</label>
+    <input id="exp-note" placeholder="예: 점심 - 김밥천국">
+    <button onclick="addExpense()" style="border:none;background:#eaf3ec;color:#2f6b46;border-radius:8px;padding:9px 14px;font-size:13px;font-weight:600;margin-top:8px;width:100%;">+ 추가</button>
+    <div id="expense-list" style="margin-top:12px; max-height:340px; overflow-y:auto;"></div>
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="closeExpenseModal()">닫기</button>
+    </div>
+  </div>
+</div>
+
 <!-- 거래처 미수금표 -->
 <div class="modal-overlay" id="unpaidSummaryModal">
   <div class="modal" style="max-width:480px;">
@@ -721,6 +756,7 @@ let nextLogId = 1;
 let salesAdminUnlocked = false;
 let salesViewMode = 'day'; // day | month
 let salesDayFilter = todayStr(); // null이면 전체 스크롤, 날짜 지정하면 그날만 (기본은 오늘)
+let itemStatsViewMode = 'month'; // day | month
 let salesSpecialView = null; // null | 'itemMonthly' | 'customerLedger'
 let ledgerCustomer = null;
 let ledgerStartDate = null;
@@ -728,6 +764,8 @@ let ledgerEndDate = null;
 let depositMemos = []; // {id, customer, date, text} - 계산에 안 섞이는 단순 기록용
 let nextMemoId = 1;
 let customerList = []; // 거래 기록이 아직 없어도 미리 등록해두는 거래처 이름 목록
+let expenses = []; // {id, date, title, amount, note} - 식대/퀵비/비품비 등 지출 기록
+let nextExpenseId = 1;
 let priceBook = []; // {id, customer, item, color, unitPrice}
 let nextPriceId = 1;
 let searchTerm = "";
@@ -769,8 +807,8 @@ function showToast(msg) {
 async function loadAll() {
   if (useFirebase) {
     return new Promise((resolve) => {
-      let loaded = { rolls: false, costs: false, settings: false, orders: false, swatch: false, log: false, price: false, advance: false, custList: false };
-      const checkDone = () => { if (loaded.rolls && loaded.costs && loaded.settings && loaded.orders && loaded.swatch && loaded.log && loaded.price && loaded.advance && loaded.custList) resolve(); };
+      let loaded = { rolls: false, costs: false, settings: false, orders: false, swatch: false, log: false, price: false, advance: false, custList: false, expenses: false };
+      const checkDone = () => { if (loaded.rolls && loaded.costs && loaded.settings && loaded.orders && loaded.swatch && loaded.log && loaded.price && loaded.advance && loaded.custList && loaded.expenses) resolve(); };
 
       db.collection('inventory').doc('rolls').onSnapshot((doc) => {
         if (doc.exists && doc.data().data) {
@@ -854,6 +892,14 @@ async function loadAll() {
         }
         loaded.custList = true; render(); checkDone();
       });
+
+      db.collection('inventory').doc('expenses').onSnapshot((doc) => {
+        if (doc.exists && doc.data().data) {
+          expenses = JSON.parse(doc.data().data);
+          nextExpenseId = expenses.reduce((m, r) => Math.max(m, r.id), 0) + 1;
+        }
+        loaded.expenses = true; render(); checkDone();
+      });
     });
   }
   return fallbackLoadAll();
@@ -927,6 +973,13 @@ async function fallbackLoadAll() {
   } catch (e) {
     customerList = [];
   }
+  try {
+    const res = await safeStorage.get('expenses', true);
+    expenses = JSON.parse(res.value);
+    nextExpenseId = expenses.reduce((m, r) => Math.max(m, r.id), 0) + 1;
+  } catch (e) {
+    expenses = [];
+  }
   if (usingFallbackStorage) showToast('이 화면에서는 임시저장만 됩니다 (새로고침 시 초기화)');
   updateRateBar();
 }
@@ -966,6 +1019,10 @@ async function persistDepositMemos() {
 async function persistCustomerList() {
   if (useFirebase) { try { await db.collection('inventory').doc('customerList').set({ data: JSON.stringify(customerList) }); } catch(e){ showToast('저장 오류'); } return; }
   await safeStorage.set('customerList', JSON.stringify(customerList), true);
+}
+async function persistExpenses() {
+  if (useFirebase) { try { await db.collection('inventory').doc('expenses').set({ data: JSON.stringify(expenses) }); } catch(e){ showToast('저장 오류'); } return; }
+  await safeStorage.set('expenses', JSON.stringify(expenses), true);
 }
 
 // ---------- 원가 계산 ----------
@@ -1720,6 +1777,38 @@ function renderOrderCard(o, showItemAsTitle) {
   return div;
 }
 
+let pendingShipListCustomer = null;
+function openCustomerShipList(customer) {
+  pendingShipListCustomer = customer;
+  renderCustomerShipList();
+  document.getElementById('customerShipListModal').classList.add('open');
+}
+function closeCustomerShipList() {
+  document.getElementById('customerShipListModal').classList.remove('open');
+  pendingShipListCustomer = null;
+}
+function renderCustomerShipList() {
+  const customer = pendingShipListCustomer;
+  const listEl = document.getElementById('customer-ship-list-rows');
+  const targetOrders = orders.filter(o => !o.done && String(o.customer).trim() === String(customer).trim());
+  document.getElementById('customer-ship-list-title').textContent = `${customer} · 출고 처리 (${targetOrders.length}건 남음)`;
+  if (targetOrders.length === 0) {
+    listEl.innerHTML = '<div class="empty">진행중인 발주가 없습니다</div>';
+    return;
+  }
+  listEl.innerHTML = targetOrders.map(o => {
+    const remain = (o.orderQty && o.orderQty > o.received) ? Math.round((o.orderQty - o.received) * 100) / 100 : 0;
+    return `
+      <div style="display:flex; justify-content:space-between; align-items:center; padding:10px 4px; border-bottom:1px dashed var(--border);">
+        <div>
+          <div style="font-weight:600; font-size:14px;">${esc(o.item)} ${esc(o.color || '')}</div>
+          <div style="font-size:12px; color:var(--muted);">${o.date ? esc(o.date) + ' · ' : ''}이월 ${remain}${o.unit || 'y'} (발주 ${o.orderQty || 0}${o.unit || 'y'} 중 ${o.received}${o.unit || 'y'} 처리)</div>
+        </div>
+        <button class="btn-receive" onclick="openOrderReceiveModal(${o.id})">출고</button>
+      </div>
+    `;
+  }).join('');
+}
 function printOrderLedger() {
   let list2 = orders.filter(o => !o.done);
   if (searchTerm.trim()) {
@@ -2628,11 +2717,11 @@ function buildStatementHTML(customerName, startDate, endDate, entryIdFilter) {
     totalSale += grossSale;
     totalSupply += rowSupply;
     totalTax += rowTax;
-    totalQty += (e.yardsShipped || 0);
+    if (!e.isFee) totalQty += (e.yardsShipped || 0); // 추가금(운임비 등)은 원단이 아니므로 총수량에서 제외
     const breakdownText = (e.deductBreakdown && e.deductBreakdown.length > 1) ? ` (${e.deductBreakdown.map(b => `${b.qty}y`).join('+')})` : '';
     const swOrder = findSwatchOrderByItemColor(e.item, e.color);
-    const descWithOrder = `${e.item} ${e.color || ''}${swOrder != null ? ` (${swOrder}번)` : ''}`;
-    saleRows.push({ date: e.date, desc: descWithOrder, note: e.note || '', qty: (e.unit === '절' ? `${e.yardsShipped}y` : `${e.amount}${e.unit}`) + breakdownText, unitPrice: e.unitPrice.toLocaleString(), supply: rowSupply, tax: rowTax, amount: grossSale, color: 'black' });
+    const descWithOrder = e.isFee ? `추가금${e.note ? ` - ${e.note}` : ''}` : `${e.item} ${e.color || ''}${swOrder != null ? ` (${swOrder}번)` : ''}`;
+    saleRows.push({ date: e.date, desc: descWithOrder, note: e.isFee ? '' : (e.note || ''), qty: e.isFee ? '' : ((e.unit === '절' ? `${e.yardsShipped}y` : `${e.amount}${e.unit}`) + breakdownText), unitPrice: e.isFee ? '' : e.unitPrice.toLocaleString(), supply: rowSupply, tax: rowTax, amount: grossSale, color: 'black' });
 
     if (defectAmt > 0) {
       totalReturnDefect += defectAmt;
@@ -2843,11 +2932,19 @@ function renderItemMonthlyStatsView() {
   const list = document.getElementById('list');
   list.innerHTML = '';
 
+  const topBar = document.createElement('div');
+  topBar.style.cssText = 'display:flex; gap:8px; margin-bottom:10px; flex-wrap:wrap;';
   const backBtn = document.createElement('button');
   backBtn.textContent = '← 돌아가기';
-  backBtn.style.cssText = 'border:none;background:#eee;color:#555;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;margin-bottom:10px;';
+  backBtn.style.cssText = 'border:none;background:#eee;color:#555;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;';
   backBtn.onclick = exitItemMonthlyStats;
-  list.appendChild(backBtn);
+  topBar.appendChild(backBtn);
+  const toggleBtn = document.createElement('button');
+  toggleBtn.textContent = itemStatsViewMode === 'month' ? '일별로 보기' : '월별로 보기';
+  toggleBtn.style.cssText = 'border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;';
+  toggleBtn.onclick = () => { itemStatsViewMode = itemStatsViewMode === 'month' ? 'day' : 'month'; render(); };
+  topBar.appendChild(toggleBtn);
+  list.appendChild(topBar);
 
   // 실제 출고량 기준(가격 유무 상관없이) - 정상 출고만 집계, 반품/불량/수동종료 제외
   const shipments = shipmentLog.filter(e => !e.isReturn && !e.isDefect && !e.manualClose && e.yardsShipped > 0);
@@ -2858,37 +2955,45 @@ function renderItemMonthlyStatsView() {
   }
   if (filtered.length === 0) { list.innerHTML += '<div class="empty">출고 기록이 없습니다</div>'; return; }
 
-  const byMonth = new Map();
+  const byPeriod = new Map();
   for (const e of filtered) {
-    const month = String(e.date).slice(0, 5); // "YY.MM"
-    if (!byMonth.has(month)) byMonth.set(month, new Map());
-    const itemMap = byMonth.get(month);
-    const key = resolveInventoryItem(e.item);
-    itemMap.set(key, Math.round(((itemMap.get(key) || 0) + e.yardsShipped) * 100) / 100);
+    const key = itemStatsViewMode === 'month' ? String(e.date).slice(0, 5) : e.date; // "YY.MM" or "YY.MM.DD"
+    if (!byPeriod.has(key)) byPeriod.set(key, new Map()); // item -> {total, colors:Map(color->yards)}
+    const itemMap = byPeriod.get(key);
+    const itemKey = resolveInventoryItem(e.item);
+    const color = e.color || '(컬러 없음)';
+    if (!itemMap.has(itemKey)) itemMap.set(itemKey, { total: 0, colors: new Map() });
+    const rec = itemMap.get(itemKey);
+    rec.total = Math.round((rec.total + e.yardsShipped) * 100) / 100;
+    rec.colors.set(color, Math.round(((rec.colors.get(color) || 0) + e.yardsShipped) * 100) / 100);
   }
-  const months = Array.from(byMonth.keys()).sort((a, b) => b.localeCompare(a));
+  const periods = Array.from(byPeriod.keys()).sort((a, b) => b.localeCompare(a));
 
-  for (const month of months) {
-    const itemMap = byMonth.get(month);
-    const items = Array.from(itemMap.entries()).sort((a, b) => b[1] - a[1]);
-    const monthTotal = items.reduce((s, [, y]) => s + y, 0);
+  for (const period of periods) {
+    const itemMap = byPeriod.get(period);
+    const items = Array.from(itemMap.entries()).sort((a, b) => b[1].total - a[1].total);
+    const periodTotal = items.reduce((s, [, rec]) => s + rec.total, 0);
 
     const banner = document.createElement('div');
     banner.className = 'factory-divider';
     banner.style.background = 'var(--primary-dark)';
-    banner.textContent = `${month} 월간 총 출고 ${monthTotal.toLocaleString()}y (품목 ${items.length}종)`;
+    banner.textContent = `${period} 총 출고 ${periodTotal.toLocaleString()}y (품목 ${items.length}종)`;
     list.appendChild(banner);
 
     const div = document.createElement('div');
     div.className = 'group';
     const inner = document.createElement('div');
-    for (const [item, yards] of items) {
+    for (const [item, rec] of items) {
       const row = document.createElement('div');
       row.className = 'order-card';
+      const colorRows = Array.from(rec.colors.entries()).sort((a, b) => b[1] - a[1]);
       row.innerHTML = `
         <div class="order-top">
           <div><div class="order-name">${esc(item)}</div></div>
-          <div class="order-status status-done">${yards.toLocaleString()}y</div>
+          <div class="order-status status-done">${rec.total.toLocaleString()}y</div>
+        </div>
+        <div style="margin-top:4px; padding-left:4px; border-left:2px solid var(--border);">
+          ${colorRows.map(([c, y]) => `<div style="display:flex; justify-content:space-between; font-size:12px; color:var(--muted); padding:2px 0;"><span>${esc(c)}</span><span>${y.toLocaleString()}y</span></div>`).join('')}
         </div>
       `;
       inner.appendChild(row);
@@ -3034,8 +3139,8 @@ function printLedgerPeriod() {
     if (e.saleAmount != null) {
       const net = Math.round((e.saleAmount - (e.discount || 0)) * 100) / 100;
       const isCarry = e.item === '이월 미수금';
-      const detail = isCarry ? '' : `${e.yardsShipped || e.amount}${e.unit || 'y'}${e.unitPrice ? ` × ${e.unitPrice.toLocaleString()}원/y` : ' (단가 미입력)'}`;
-      events.push({ date: e.date, type: '매출', desc: isCarry ? '이월 미수금' : `${e.item} ${e.color || ''}`, detail, amount: net });
+      const detail = (isCarry || e.isFee) ? '' : `${e.yardsShipped || e.amount}${e.unit || 'y'}${e.unitPrice ? ` × ${e.unitPrice.toLocaleString()}원/y` : ' (단가 미입력)'}`;
+      events.push({ date: e.date, type: '매출', desc: isCarry ? '이월 미수금' : (e.isFee ? `추가금${e.note ? ` - ${e.note}` : ''}` : `${e.item} ${e.color || ''}`), detail, amount: net });
     }
     (e.payments || []).forEach(p => {
       events.push({ date: p.date, type: '입금', desc: (p.method || 'cash') === 'cash' ? '입금(현금)' : '입금(온라인)', detail: '', amount: -p.amount });
@@ -3122,8 +3227,8 @@ function renderCustomerLedgerTable() {
     if (e.saleAmount != null) {
       const net = Math.round((e.saleAmount - (e.discount || 0)) * 100) / 100;
       const isCarry = e.item === '이월 미수금';
-      const detail = isCarry ? '' : `${e.yardsShipped || e.amount}${e.unit || 'y'}${e.unitPrice ? ` × ${e.unitPrice.toLocaleString()}원/y` : ' (단가 미입력)'}`;
-      events.push({ id: e.id, date: e.date, type: '매출', desc: isCarry ? '이월 미수금' : `${e.item} ${e.color || ''}`, detail, amount: net, isCarry });
+      const detail = (isCarry || e.isFee) ? '' : `${e.yardsShipped || e.amount}${e.unit || 'y'}${e.unitPrice ? ` × ${e.unitPrice.toLocaleString()}원/y` : ' (단가 미입력)'}`;
+      events.push({ id: e.id, date: e.date, type: '매출', desc: isCarry ? '이월 미수금' : (e.isFee ? `추가금${e.note ? ` - ${e.note}` : ''}` : `${e.item} ${e.color || ''}`), detail, amount: net, isCarry });
     }
     (e.payments || []).forEach((p, idx) => {
       events.push({ id: null, entryId: e.id, paymentIdx: idx, date: p.date, type: '입금', desc: (p.method || 'cash') === 'cash' ? '입금(현금)' : '입금(온라인)', detail: '', amount: -p.amount });
@@ -3183,6 +3288,63 @@ function renderCustomerLedgerTable() {
       </tbody>
     </table>
   `;
+}
+function openExpenseModal() {
+  document.getElementById('exp-date').value = toDateInputValue(todayStr());
+  document.getElementById('exp-amount').value = '';
+  document.getElementById('exp-title').value = '';
+  document.getElementById('exp-note').value = '';
+  renderExpenseList();
+  document.getElementById('expenseModal').classList.add('open');
+}
+function closeExpenseModal() { document.getElementById('expenseModal').classList.remove('open'); }
+async function addExpense() {
+  const date = fromDateInputValue(document.getElementById('exp-date').value) || todayStr();
+  const amount = parseFloat(document.getElementById('exp-amount').value);
+  const title = document.getElementById('exp-title').value.trim();
+  const note = document.getElementById('exp-note').value.trim();
+  if (!title) { showToast('항목을 적어주세요'); return; }
+  if (!amount || amount <= 0) { showToast('금액을 확인해주세요'); return; }
+  expenses.push({ id: nextExpenseId++, date, title, amount, note });
+  await persistExpenses();
+  document.getElementById('exp-amount').value = '';
+  document.getElementById('exp-title').value = '';
+  document.getElementById('exp-note').value = '';
+  renderExpenseList();
+  showToast('지출 등록했습니다');
+}
+async function deleteExpense(id) {
+  if (!confirm('이 지출 항목을 삭제할까요?')) return;
+  expenses = expenses.filter(e => e.id !== id);
+  await persistExpenses();
+  renderExpenseList();
+}
+function renderExpenseList() {
+  const listEl = document.getElementById('expense-list');
+  const sorted = expenses.slice().sort((a, b) => b.date.localeCompare(a.date) || b.id - a.id);
+  if (sorted.length === 0) { listEl.innerHTML = '<div class="empty">지출 기록이 없습니다</div>'; return; }
+
+  const byDate = new Map();
+  for (const e of sorted) {
+    if (!byDate.has(e.date)) byDate.set(e.date, []);
+    byDate.get(e.date).push(e);
+  }
+  const totalAll = sorted.reduce((s, e) => s + e.amount, 0);
+  let html = `<div style="padding:6px 4px; font-weight:700; font-size:13px; border-bottom:1px solid var(--border); margin-bottom:6px;">전체 지출 합계 ${totalAll.toLocaleString()}원</div>`;
+  for (const [date, list] of byDate) {
+    const dayTotal = list.reduce((s, e) => s + e.amount, 0);
+    html += `<div style="font-size:12px; color:var(--muted); font-weight:600; margin-top:8px;">${esc(date)} · ${dayTotal.toLocaleString()}원</div>`;
+    html += list.map(e => `
+      <div style="display:flex; justify-content:space-between; align-items:center; padding:6px 4px; border-bottom:1px dashed var(--border);">
+        <div style="font-size:13px;">${esc(e.title)}${e.note ? ` <span style="color:var(--muted); font-size:11px;">(${esc(e.note)})</span>` : ''}</div>
+        <div style="display:flex; align-items:center; gap:8px;">
+          <span style="font-weight:600;">${e.amount.toLocaleString()}원</span>
+          <button onclick="deleteExpense(${e.id})" style="border:none;background:none;color:var(--muted);font-size:11px;">삭제</button>
+        </div>
+      </div>
+    `).join('');
+  }
+  listEl.innerHTML = html;
 }
 function openUnpaidSummaryModal() {
   document.getElementById('unpaid-summary-search').value = '';
@@ -3407,11 +3569,14 @@ function renderSales() {
   for (const e of sales) {
     if (e.isReturn || e.isDefect) { e._cost = null; e._profit = null; e._margin = null; continue; }
     const costPerY = getCostPerYard(e.item);
-    const effectiveRevenue = (e.supplyAmount != null ? e.supplyAmount : e.saleAmount) - (e.discount || 0);
+    const effectiveRevenue = (e.supplyAmount != null ? e.supplyAmount : e.saleAmount) - (e.discount || 0) + (e.extraAmount || 0); // 추가금(운임비 등)은 원가 없이 그대로 순이익에 더해짐
     if (costPerY != null && effectiveRevenue > 0) {
       e._cost = Math.round(costPerY * e.yardsShipped);
       e._profit = effectiveRevenue - e._cost;
       e._margin = Math.round((e._profit / effectiveRevenue) * 1000) / 10;
+    } else if (costPerY == null && !hasKnownItem(e.item) && effectiveRevenue > 0) {
+      // 원단 품목이 아닌 수수료성 항목(운임비 단독 등록, 추가금 등) - 원가 개념이 없으니 받은 금액 전부가 순이익
+      e._cost = 0; e._profit = effectiveRevenue; e._margin = 100;
     } else {
       e._cost = null; e._profit = null; e._margin = null;
     }
@@ -3426,7 +3591,16 @@ function renderSales() {
     return s + (e._profit != null ? e._profit : 0);
   }, 0);
   const unpaid = Math.max(0, sales.reduce((s, e) => s + (e.saleAmount != null ? getRemaining(e) : 0), 0) - totalReturnDefect);
-  document.getElementById('stats').innerHTML = `<span>매출 ${totalSales.toLocaleString()}원</span><span>총순이익 ${totalProfit.toLocaleString()}원</span><span>미수금 ${unpaid.toLocaleString()}원</span>`;
+
+  // 지금 보고 있는 기간(날짜 필터)에 맞춰 지출도 같이 집계해서 순이익에서 뺌
+  let relevantExpenses = expenses;
+  if (salesDayFilter) {
+    const filterKey2 = salesViewMode === 'month' ? salesDayFilter.slice(0, 5) : salesDayFilter;
+    relevantExpenses = expenses.filter(e => (salesViewMode === 'month' ? String(e.date).slice(0, 5) : e.date) === filterKey2);
+  }
+  const totalExpense = relevantExpenses.reduce((s, e) => s + e.amount, 0);
+  const netProfit = totalProfit - totalExpense;
+  document.getElementById('stats').innerHTML = `<span>매출 ${totalSales.toLocaleString()}원</span><span>총순이익 ${netProfit.toLocaleString()}원${totalExpense > 0 ? ` (지출 -${totalExpense.toLocaleString()}원 반영)` : ''}</span><span>미수금 ${unpaid.toLocaleString()}원</span>`;
 
   const list = document.getElementById('list');
   list.innerHTML = '';
@@ -3588,6 +3762,29 @@ function renderSales() {
           inner.appendChild(row);
           continue;
         }
+        if (e.isFee) {
+          row.style.background = '#fff8e8';
+          const paidAmtFee = getPaidAmount(e);
+          const remainingFee = getRemaining(e);
+          const statusLabelFee = remainingFee <= 0 ? '입금완료' : (paidAmtFee > 0 ? '일부입금' : '미수금');
+          const statusClassFee = remainingFee <= 0 ? 'status-done' : (paidAmtFee > 0 ? 'status-partial' : 'status-wait');
+          row.innerHTML = `
+            <div class="order-top">
+              <div>
+                <div class="order-name" style="color:#a15c1e;">💸 추가금${e.note ? ` - ${esc(e.note)}` : ''}</div>
+                <div class="order-sub">${(e.saleAmount || 0).toLocaleString()}원</div>
+              </div>
+              <div class="order-status ${statusClassFee}">${statusLabelFee}</div>
+            </div>
+            <div class="order-btns">
+              ${remainingFee > 0 ? `<button onclick="recordPayment(${e.id})" style="border:none;background:#eaf3ec;color:#2f6b46;border-radius:6px;padding:4px 8px;font-size:11px;">입금 처리</button>` : ''}
+              ${paidAmtFee > 0 ? `<button onclick="resetPayment(${e.id})" style="border:none;background:#f1eee7;color:var(--muted);border-radius:6px;padding:4px 8px;font-size:11px;">입금 취소</button>` : ''}
+              <button onclick="openSaleEditModal(${e.id})" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:6px;padding:4px 8px;font-size:11px;">수정</button>
+            </div>
+          `;
+          inner.appendChild(row);
+          continue;
+        }
         const paidAmt = getPaidAmount(e);
         const remaining = getRemaining(e);
         const statusLabel2 = remaining <= 0 ? '입금완료' : (paidAmt > 0 ? '일부입금' : '미수금');
@@ -3741,61 +3938,52 @@ function renderOrdersByCustomer(list2) {
 }
 function renderCustomerBuckets(list2) {
   const list = document.getElementById('list');
-  for (let p = 1; p <= 4; p++) {
-    const bucket = list2.filter(o => factoryPriority(o.factory) === p);
-    if (bucket.length === 0) continue;
 
-    const banner = document.createElement('div');
-    banner.className = 'factory-divider';
-    banner.textContent = `${factoryPriorityLabel(p)} (${bucket.length}건)`;
-    list.appendChild(banner);
+  const groups = new Map();
+  for (const o of list2) {
+    const key = o.customer || '(거래처 미입력)';
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(o);
+  }
+  const custYardTotal = (cust) => groups.get(cust).reduce((s, o) => {
+    const q = o.orderQty || 0;
+    return s + (o.unit === '절' ? q * 55 : q);
+  }, 0);
+  const custNames = Array.from(groups.keys()).sort((a, b) => {
+    const diff = custYardTotal(b) - custYardTotal(a);
+    if (diff !== 0) return diff;
+    return a.localeCompare(b, 'ko');
+  });
 
-    const groups = new Map();
-    for (const o of bucket) {
-      const key = o.customer || '(거래처 미입력)';
-      if (!groups.has(key)) groups.set(key, []);
-      groups.get(key).push(o);
+  for (const cust of custNames) {
+    const items = sortOrdersForDisplay(groups.get(cust));
+    const pendingCount = items.filter(o => !o.done).length;
+    const qtyByUnit = {};
+    for (const o of items) {
+      const u = o.unit || 'y';
+      qtyByUnit[u] = Math.round(((qtyByUnit[u] || 0) + (o.orderQty || 0)) * 100) / 100;
     }
-    const custYardTotal = (cust) => groups.get(cust).reduce((s, o) => {
-      const q = o.orderQty || 0;
-      return s + (o.unit === '절' ? q * 55 : q);
-    }, 0);
-    const custNames = Array.from(groups.keys()).sort((a, b) => {
-      const diff = custYardTotal(b) - custYardTotal(a);
-      if (diff !== 0) return diff;
-      return a.localeCompare(b, 'ko');
-    });
+    const qtyLabel = Object.entries(qtyByUnit).map(([u, v]) => `${v}${u}`).join(' + ');
+    const k = 'cust:' + cust;
+    const isOpen = openGroups.has(k);
 
-    for (const cust of custNames) {
-      const items = sortOrdersForDisplay(groups.get(cust));
-      const pendingCount = items.filter(o => !o.done).length;
-      const qtyByUnit = {};
-      for (const o of items) {
-        const u = o.unit || 'y';
-        qtyByUnit[u] = Math.round(((qtyByUnit[u] || 0) + (o.orderQty || 0)) * 100) / 100;
-      }
-      const qtyLabel = Object.entries(qtyByUnit).map(([u, v]) => `${v}${u}`).join(' + ');
-      const k = 'cust:' + p + ':' + cust;
-      const isOpen = openGroups.has(k);
-
-      const groupDiv = document.createElement('div');
-      groupDiv.className = 'group';
-      groupDiv.innerHTML = `
-        <div class="group-head" onclick="toggleGroup('${escAttr(k)}')">
-          <div class="info">
-            <div class="name">${esc(cust)} <button onclick="event.stopPropagation();openReturnForCustomer('${escAttr(cust)}')" style="border:none;background:#fce8d6;color:#a15c1e;border-radius:6px;padding:3px 9px;font-size:11px;font-weight:600;margin-left:6px;">반품/불량/추가금</button> <button onclick="event.stopPropagation();openPreShipmentModal('${escAttr(cust)}', [${items.map(o => o.id).join(',')}])" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:6px;padding:3px 9px;font-size:11px;font-weight:600;margin-left:6px;">🖨 선수금용 명세서</button></div>
-            <div class="sub">전체 ${items.length}건 · 진행중 ${pendingCount}건 · ${qtyLabel}</div>
-          </div>
-          <div class="total"><div class="cnt">${isOpen ? '접기 ▲' : '펼치기 ▼'}</div></div>
+    const groupDiv = document.createElement('div');
+    groupDiv.className = 'group';
+    groupDiv.innerHTML = `
+      <div class="group-head" onclick="toggleGroup('${escAttr(k)}')">
+        <div class="info">
+          <div class="name">${esc(cust)} <button onclick="event.stopPropagation();openReturnForCustomer('${escAttr(cust)}')" style="border:none;background:#fce8d6;color:#a15c1e;border-radius:6px;padding:3px 9px;font-size:11px;font-weight:600;margin-left:6px;">반품/불량/추가금</button> <button onclick="event.stopPropagation();openPreShipmentModal('${escAttr(cust)}', [${items.map(o => o.id).join(',')}])" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:6px;padding:3px 9px;font-size:11px;font-weight:600;margin-left:6px;">🖨 선수금용 명세서</button> ${pendingCount > 0 ? `<button onclick="event.stopPropagation();openCustomerShipList('${escAttr(cust)}')" style="border:none;background:#eaf3ec;color:#2f6b46;border-radius:6px;padding:3px 9px;font-size:11px;font-weight:600;margin-left:6px;">📦 출고 처리</button>` : ''}</div>
+          <div class="sub">전체 ${items.length}건 · 진행중 ${pendingCount}건 · ${qtyLabel}</div>
         </div>
-      `;
-      list.appendChild(groupDiv);
-      if (isOpen) {
-        const inner = document.createElement('div');
-        inner.style.padding = '0 0 4px';
-        for (const o of items) inner.appendChild(renderOrderCard(o, true));
-        groupDiv.appendChild(inner);
-      }
+        <div class="total"><div class="cnt">${isOpen ? '접기 ▲' : '펼치기 ▼'}</div></div>
+      </div>
+    `;
+    list.appendChild(groupDiv);
+    if (isOpen) {
+      const inner = document.createElement('div');
+      inner.style.padding = '0 0 4px';
+      for (const o of items) inner.appendChild(renderOrderCard(o, true));
+      groupDiv.appendChild(inner);
     }
   }
 }
@@ -4308,7 +4496,14 @@ function autoFillOrderRolls() {
   updateOrderRollsTotal();
 }
 
-function closeOrderReceiveModal() { document.getElementById('orderReceiveModal').classList.remove('open'); pendingReceiveOrderId = null; }
+function closeOrderReceiveModal() {
+  document.getElementById('orderReceiveModal').classList.remove('open');
+  pendingReceiveOrderId = null;
+  if (pendingShipListCustomer) {
+    renderCustomerShipList();
+    document.getElementById('customerShipListModal').classList.add('open');
+  }
+}
 function cleanupDepletedRolls(item, color, touchedRollIds) {
   // 이번 거래로 재고 0이 된 롤들을 정리하되, 그 품목·컬러가 화면에서 완전히 사라지지 않게 1줄은 남김
   const t_item = String(item).trim();
@@ -4653,10 +4848,10 @@ async function confirmReturn() {
     if (!amount || amount <= 0) { showToast('금액을 확인해주세요'); return; }
     shipmentLog.push({
       id: nextLogId++, date: todayStr(), orderId: null,
-      customer, factory: '', item: note || '추가금', color: '',
+      customer, factory: '', item: '추가금', color: '', isFee: true,
       amount: 1, unit: 'y', yardsShipped: 1, remainAfter: 0, isFullCompletion: true,
       unitPrice: amount, supplyAmount: amount, taxAmount: 0, saleAmount: amount, paidAmount: 0,
-      note: note || '추가금(운임비 등)'
+      note: note || ''
     });
     await persistShipmentLog();
     closeReturnModal();
