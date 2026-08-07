@@ -466,6 +466,8 @@
       <input id="ret-extra-amount" type="number" step="1" placeholder="예: 30000">
       <label>비고 (사유)</label>
       <input id="ret-note" placeholder="예: 급송비">
+      <label>공장/연락처 (선택 - 어느 건으로 나가는지 헷갈릴 수 있으면 적어주세요)</label>
+      <input id="ret-extra-factory" placeholder="예: 010-0000-0000 또는 매장">
     </div>
 
     <div class="modal-actions">
@@ -2501,6 +2503,12 @@ function generateStatementFromModal() {
 }
 
 let pendingPreShipCustomer = null;
+function printPreShipmentSelected(customerName) {
+  const checked = document.querySelectorAll('.preship-item-check:checked');
+  if (checked.length === 0) { showToast('선수금 명세서에 포함할 항목을 체크해주세요'); return; }
+  const orderIds = Array.from(checked).map(cb => parseInt(cb.dataset.id));
+  openPreShipmentModal(customerName, orderIds);
+}
 function openPreShipmentModal(customerName, orderIds) {
   const targetOrders = orderIds.map(id => orders.find(o => o.id === id)).filter(Boolean).filter(o => !o.done);
   const t_c = String(customerName).trim();
@@ -3860,6 +3868,7 @@ function renderShipmentLog() {
         const entries = groups.get(k);
         const totalByUnit = {};
         for (const e of entries) {
+          if (e.isFee) continue;
           totalByUnit[e.unit] = Math.round(((totalByUnit[e.unit] || 0) + e.amount) * 100) / 100;
         }
         const totalLabel = Object.entries(totalByUnit).map(([u, v]) => `${v}${u}`).join(' + ');
@@ -3881,12 +3890,12 @@ function renderShipmentLog() {
           row.innerHTML = `
             <div class="order-top">
               <div>
-                <div class="order-name">${orderGroupMode === 'customer' ? esc(e.item) + ' ' + esc(e.color || '') : esc(e.customer || '')}</div>
+                <div class="order-name">${e.isFee ? `💸 추가금` : (orderGroupMode === 'customer' ? esc(e.item) + ' ' + esc(e.color || '') : esc(e.customer || ''))}</div>
                 <div class="order-sub">공장/연락처 ${esc(e.factory || '-')}</div>
               </div>
               <div class="order-status ${(e.isReturn || e.isDefect) ? 'status-wait' : (e.isFullCompletion ? 'status-done' : 'status-partial')}">${e.isDefect ? '불량' : e.isReturn ? '반품' : (e.isFullCompletion ? '전량완료' : '부분출고')}</div>
             </div>
-            <div class="order-progress">${(e.isReturn || e.isDefect) ? `<span style="color:var(--danger);font-weight:700;">${e.isDefect ? '불량' : '반품'} ${Math.abs(e.amount)}${e.unit}${e.deductAmount != null ? ` (-${e.deductAmount.toLocaleString()}원)` : ''}</span>${e.note ? ` · ${esc(e.note)}` : ''}` : e.manualClose ? `수동 완료 처리${e.note ? ' · ' + esc(e.note) : ''}` : `출고 ${e.amount}${e.unit}${e.unit === '절' && e.yardsShipped ? ` (${e.yardsShipped}y${e.yardsEstimated ? ' 추정' : ''})` : ''}${e.remainAfter > 0 ? ` <span style="color:var(--muted);font-size:12px;">(잔여 ${e.remainAfter}${e.unit})</span>` : ''}${e.note ? ` · ${esc(e.note)}` : ''}`}</div>
+            <div class="order-progress">${(e.isReturn || e.isDefect) ? `<span style="color:var(--danger);font-weight:700;">${e.isDefect ? '불량' : '반품'} ${Math.abs(e.amount)}${e.unit}${e.deductAmount != null ? ` (-${e.deductAmount.toLocaleString()}원)` : ''}</span>${e.note ? ` · ${esc(e.note)}` : ''}` : e.isFee ? `${(e.saleAmount || 0).toLocaleString()}원${e.note ? ` · ${esc(e.note)}` : ''}` : e.manualClose ? `수동 완료 처리${e.note ? ' · ' + esc(e.note) : ''}` : `출고 ${e.amount}${e.unit}${e.unit === '절' && e.yardsShipped ? ` (${e.yardsShipped}y${e.yardsEstimated ? ' 추정' : ''})` : ''}${e.remainAfter > 0 ? ` <span style="color:var(--muted);font-size:12px;">(잔여 ${e.remainAfter}${e.unit})</span>` : ''}${e.note ? ` · ${esc(e.note)}` : ''}`}</div>
             <div class="order-btns">
               <button class="btn-out" onclick="openLogEditModal(${e.id})">수정</button>
               <button class="btn-del" onclick="cancelShipmentLogEntry(${e.id})">이 출고 취소</button>
@@ -3972,7 +3981,7 @@ function renderCustomerBuckets(list2) {
     groupDiv.innerHTML = `
       <div class="group-head" onclick="toggleGroup('${escAttr(k)}')">
         <div class="info">
-          <div class="name">${esc(cust)} <button onclick="event.stopPropagation();openReturnForCustomer('${escAttr(cust)}')" style="border:none;background:#fce8d6;color:#a15c1e;border-radius:6px;padding:3px 9px;font-size:11px;font-weight:600;margin-left:6px;">반품/불량/추가금</button> <button onclick="event.stopPropagation();openPreShipmentModal('${escAttr(cust)}', [${items.map(o => o.id).join(',')}])" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:6px;padding:3px 9px;font-size:11px;font-weight:600;margin-left:6px;">🖨 선수금용 명세서</button> ${pendingCount > 0 ? `<button onclick="event.stopPropagation();openCustomerShipList('${escAttr(cust)}')" style="border:none;background:#eaf3ec;color:#2f6b46;border-radius:6px;padding:3px 9px;font-size:11px;font-weight:600;margin-left:6px;">📦 출고 처리</button>` : ''}</div>
+          <div class="name">${esc(cust)} <button onclick="event.stopPropagation();openReturnForCustomer('${escAttr(cust)}')" style="border:none;background:#fce8d6;color:#a15c1e;border-radius:6px;padding:3px 9px;font-size:11px;font-weight:600;margin-left:6px;">반품/불량/추가금</button> <button onclick="event.stopPropagation();printPreShipmentSelected('${escAttr(cust)}')" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:6px;padding:3px 9px;font-size:11px;font-weight:600;margin-left:6px;">🖨 선수금용 명세서(체크한 것만)</button> ${pendingCount > 0 ? `<button onclick="event.stopPropagation();openCustomerShipList('${escAttr(cust)}')" style="border:none;background:#eaf3ec;color:#2f6b46;border-radius:6px;padding:3px 9px;font-size:11px;font-weight:600;margin-left:6px;">📦 출고 처리</button>` : ''}</div>
           <div class="sub">전체 ${items.length}건 · 진행중 ${pendingCount}건 · ${qtyLabel}</div>
         </div>
         <div class="total"><div class="cnt">${isOpen ? '접기 ▲' : '펼치기 ▼'}</div></div>
@@ -3982,7 +3991,33 @@ function renderCustomerBuckets(list2) {
     if (isOpen) {
       const inner = document.createElement('div');
       inner.style.padding = '0 0 4px';
-      for (const o of items) inner.appendChild(renderOrderCard(o, true));
+      // 공장/연락처(장기)별로 소그룹화 - 체크박스로 원하는 것만 골라서 선수금 명세서를 뽑을 수 있게
+      const byFactory = new Map();
+      for (const o of items) {
+        const fkey = o.factory || '(연락처 미입력)';
+        if (!byFactory.has(fkey)) byFactory.set(fkey, []);
+        byFactory.get(fkey).push(o);
+      }
+      for (const [fkey, fItems] of byFactory) {
+        const notDoneIds = fItems.filter(o => !o.done).map(o => o.id);
+        const factoryHead = document.createElement('div');
+        factoryHead.style.cssText = 'display:flex; align-items:center; gap:6px; padding:6px 4px; font-size:12px; color:var(--muted); border-top:1px dashed var(--border); margin-top:4px;';
+        factoryHead.innerHTML = notDoneIds.length > 0 ? `
+          <input type="checkbox" class="preship-group-check" data-ids="${notDoneIds.join(',')}" onchange="this.dataset.ids.split(',').forEach(id => { const cb = document.querySelector('.preship-item-check[data-id=\\'' + id + '\\']'); if (cb) cb.checked = this.checked; })" style="width:auto;">
+          <span>${esc(fkey)} (이 그룹 전체 선택)</span>
+        ` : `<span>${esc(fkey)}</span>`;
+        inner.appendChild(factoryHead);
+        for (const o of fItems) {
+          const card = renderOrderCard(o, true);
+          if (!o.done) {
+            const checkWrap = document.createElement('label');
+            checkWrap.style.cssText = 'display:flex; align-items:center; gap:6px; padding:2px 4px 0;';
+            checkWrap.innerHTML = `<input type="checkbox" class="preship-item-check" data-id="${o.id}" style="width:auto;"> <span style="font-size:11px; color:var(--muted);">선수금 명세서에 포함</span>`;
+            card.appendChild(checkWrap);
+          }
+          inner.appendChild(card);
+        }
+      }
       groupDiv.appendChild(inner);
     }
   }
@@ -4762,6 +4797,7 @@ function openReturnForCustomer(customer) {
   document.getElementById('ret-customer').value = customer;
   resetReturnRows('', '', 'y', '');
   document.getElementById('ret-extra-amount').value = '';
+  document.getElementById('ret-extra-factory').value = '';
   document.getElementById('ret-note').value = '';
   onReturnTypeChange();
   document.getElementById('returnModalTitle').textContent = '반품/불량/추가금 등록';
@@ -4776,6 +4812,7 @@ function openReturnFromMultiOrderForm() {
   document.getElementById('ret-customer').value = customer;
   resetReturnRows('', '', 'y', '');
   document.getElementById('ret-extra-amount').value = '';
+  document.getElementById('ret-extra-factory').value = '';
   document.getElementById('ret-note').value = '';
   onReturnTypeChange();
   document.getElementById('returnModalTitle').textContent = '반품/불량/추가금 등록';
@@ -4786,6 +4823,7 @@ function openReturnFromOrderForm() {
   const item = document.getElementById('o-item').value.trim();
   const color = document.getElementById('o-color').value.trim();
   const unit = document.getElementById('o-unit').value;
+  const factoryVal = document.getElementById('o-factory') ? document.getElementById('o-factory').value.trim() : '';
   const linkedOrderId = editingOrderId; // 수정 중이던 발주가 있으면 연결, 새 등록이면 null
   closeOrderAddModal();
 
@@ -4794,6 +4832,7 @@ function openReturnFromOrderForm() {
   document.getElementById('ret-customer').value = customer;
   resetReturnRows(item, color, unit, '');
   document.getElementById('ret-extra-amount').value = '';
+  document.getElementById('ret-extra-factory').value = factoryVal;
   document.getElementById('ret-note').value = '';
   onReturnTypeChange();
   document.getElementById('returnModalTitle').textContent = '반품/불량/추가금 등록';
@@ -4807,6 +4846,7 @@ function processReturn(orderId) {
   document.getElementById('ret-customer').value = o.customer || '';
   resetReturnRows(o.item || '', o.color || '', o.unit || 'y', '');
   document.getElementById('ret-extra-amount').value = '';
+  document.getElementById('ret-extra-factory').value = o.factory || '';
   document.getElementById('ret-note').value = '';
   onReturnTypeChange();
   document.getElementById('returnModalTitle').textContent = '반품/불량/추가금 등록';
@@ -4818,6 +4858,7 @@ function openStandaloneReturnModal() {
   document.getElementById('ret-customer').value = '';
   resetReturnRows('', '', 'y', '');
   document.getElementById('ret-extra-amount').value = '';
+  document.getElementById('ret-extra-factory').value = '';
   document.getElementById('ret-note').value = '';
   onReturnTypeChange();
   document.getElementById('returnModalTitle').textContent = '반품/불량/추가금 등록';
@@ -4844,11 +4885,12 @@ async function confirmReturn() {
     const customer = document.getElementById('ret-customer').value.trim();
     const amount = parseFloat(document.getElementById('ret-extra-amount').value);
     const note = document.getElementById('ret-note').value.trim();
+    const extraFactory = document.getElementById('ret-extra-factory').value.trim();
     if (!customer) { showToast('거래처를 확인해주세요'); return; }
     if (!amount || amount <= 0) { showToast('금액을 확인해주세요'); return; }
     shipmentLog.push({
       id: nextLogId++, date: todayStr(), orderId: null,
-      customer, factory: '', item: '추가금', color: '', isFee: true,
+      customer, factory: extraFactory, item: '추가금', color: '', isFee: true,
       amount: 1, unit: 'y', yardsShipped: 1, remainAfter: 0, isFullCompletion: true,
       unitPrice: amount, supplyAmount: amount, taxAmount: 0, saleAmount: amount, paidAmount: 0,
       note: note || ''
@@ -5335,11 +5377,34 @@ async function applyDataVersionIfNeeded() {
   showToast('최신 재고·이월장부 파일로 자동 업데이트됐어요');
 }
 
+async function fixLegacyFeeEntriesIfNeeded() {
+  if (settings.feeEntriesFixed) return;
+  let changed = false;
+  for (const e of shipmentLog) {
+    if (e.isFee) continue;
+    if (e.isReturn || e.isDefect) continue;
+    if (e.item === '이월 미수금') continue;
+    // "1y짜리" 특징(운임비 등을 억지로 1y로 등록한 옛날 방식)을 가진, 재고에 없는 품목명은 추가금으로 간주
+    if (e.amount === 1 && e.unit === 'y' && e.yardsShipped === 1 && e.saleAmount != null && !hasKnownItem(e.item)) {
+      if (e.item !== '추가금') {
+        e.note = e.note ? `${e.item} · ${e.note}` : e.item;
+        e.item = '추가금';
+      }
+      e.isFee = true;
+      changed = true;
+    }
+  }
+  if (changed) await persistShipmentLog();
+  settings = { ...settings, feeEntriesFixed: true };
+  await persistSettings();
+}
+
 async function init() {
   document.getElementById('rateBar').classList.add('hidden');
   await loadAll();
   await applyDataVersionIfNeeded();
   await applyCarryoverUnpaidIfNeeded();
+  await fixLegacyFeeEntriesIfNeeded();
   render();
 }
 </script>
