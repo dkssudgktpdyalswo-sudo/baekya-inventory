@@ -3888,17 +3888,22 @@ function renderShipmentLog() {
           totalByUnit[e.unit] = Math.round(((totalByUnit[e.unit] || 0) + e.amount) * 100) / 100;
         }
         const totalLabel = Object.entries(totalByUnit).map(([u, v]) => `${v}${u}`).join(' + ');
+        const gk = 'shiplog:' + d + ':' + p + ':' + k;
+        const isOpen = openGroups.has(gk);
 
         const div = document.createElement('div');
         div.className = 'group';
         div.innerHTML = `
-          <div class="group-head" style="cursor:default;">
+          <div class="group-head" onclick="toggleGroup('${escAttr(gk)}')">
             <div class="info">
               <div class="name">${esc(k)}</div>
               <div class="sub">${entries.length}건 · 출고 ${totalLabel}</div>
             </div>
+            <div class="total"><div class="cnt">${isOpen ? '접기 ▲' : '펼치기 ▼'}</div></div>
           </div>
         `;
+        list.appendChild(div);
+        if (!isOpen) continue;
         const inner = document.createElement('div');
         for (const e of entries) {
           const row = document.createElement('div');
@@ -3920,7 +3925,6 @@ function renderShipmentLog() {
           inner.appendChild(row);
         }
         div.appendChild(inner);
-        list.appendChild(div);
       }
     }
   }
