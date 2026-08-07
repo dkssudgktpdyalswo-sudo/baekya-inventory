@@ -3078,7 +3078,8 @@ function renderUnpaidSummaryList() {
           <div style="font-size:14px;">${esc(r.customer)}</div>
           <div style="display:flex; align-items:center; gap:8px;">
             <span style="font-weight:700; color:var(--danger);">${r.unpaid.toLocaleString()}원</span>
-            <button onclick="adjustCarryoverBalance('${escAttr(r.customer)}', ${r.carryoverId != null ? r.carryoverId : 'null'})" style="border:none;background:#eee;color:var(--text);border-radius:6px;padding:4px 8px;font-size:11px;">입금 반영</button>
+            <button onclick="payCarryoverBalance('${escAttr(r.customer)}', ${r.carryoverId != null ? r.carryoverId : 'null'})" style="border:none;background:#eaf3ec;color:#2f6b46;border-radius:6px;padding:4px 8px;font-size:11px;">입금 처리</button>
+            <button onclick="editCarryoverBalance('${escAttr(r.customer)}', ${r.carryoverId != null ? r.carryoverId : 'null'})" style="border:none;background:#eee;color:var(--text);border-radius:6px;padding:4px 8px;font-size:11px;">직접 수정</button>
           </div>
         </div>
       `).join('')}
@@ -3087,14 +3088,27 @@ function renderUnpaidSummaryList() {
 }
 function closeUnpaidSummaryModal() { document.getElementById('unpaidSummaryModal').classList.remove('open'); }
 
-async function adjustCarryoverBalance(customer, entryId) {
+async function payCarryoverBalance(customer, entryId) {
+  const current = entryId != null ? shipmentLog.find(e => e.id === entryId) : null;
+  if (!current) { showToast('먼저 "직접 수정"으로 이월 미수금을 등록해주세요'); return; }
+  const remaining = getRemaining(current);
+  const raw = prompt(`${customer}의 남은 미수금 ${remaining.toLocaleString()}원 중 얼마를 입금받으셨나요?`, remaining ? String(remaining) : '');
+  if (raw === null) return;
+  const amount = parseFloat(raw);
+  if (isNaN(amount) || amount <= 0) { showToast('금액을 확인해주세요'); return; }
+  addPaymentEvent(current, amount, 'cash');
+  await persistShipmentLog();
+  render();
+  if (document.getElementById('unpaidSummaryModal').classList.contains('open')) renderUnpaidSummaryList();
+  showToast(`${amount.toLocaleString()}원 입금 처리했습니다 (원장·내역서에도 표시돼요)`);
+}
+async function editCarryoverBalance(customer, entryId) {
   const current = entryId != null ? shipmentLog.find(e => e.id === entryId) : null;
   const currentAmt = current ? (current.saleAmount || 0) : 0;
-  const raw = prompt(`${customer}의 이월 미수금 ${currentAmt.toLocaleString()}원 중 얼마를 받으셨나요?\n(전액 받으셨으면 ${currentAmt} 입력 / 반대로 더 추가하려면 마이너스로 입력)`, '');
+  const raw = prompt(`${customer}의 이월 미수금 자체를 얼마로 고칠까요? (지금: ${currentAmt.toLocaleString()}원, 0을 입력하면 삭제돼요)\n※ 이건 입금 기록이 아니라 빚 금액 자체를 바로 고치는 거예요.`, String(currentAmt));
   if (raw === null) return;
-  const received = parseFloat(raw);
-  if (isNaN(received)) { showToast('금액을 확인해주세요'); return; }
-  const amount = Math.max(0, Math.round((currentAmt - received) * 100) / 100);
+  const amount = parseFloat(raw);
+  if (isNaN(amount) || amount < 0) { showToast('금액을 확인해주세요'); return; }
 
   if (amount === 0) {
     if (current) {
@@ -3123,7 +3137,7 @@ async function adjustCarryoverBalance(customer, entryId) {
   await persistShipmentLog();
   render();
   if (document.getElementById('unpaidSummaryModal').classList.contains('open')) renderUnpaidSummaryList();
-  showToast(received !== 0 ? `${Math.abs(received).toLocaleString()}원 ${received > 0 ? '입금' : '추가'} 반영, 남은 미수금 ${amount.toLocaleString()}원` : `이월 미수금 ${amount.toLocaleString()}원`);
+  showToast(`이월 미수금을 ${amount.toLocaleString()}원으로 수정했습니다`);
 }
 function renderSales() {
   document.getElementById('rateBar').classList.add('hidden');
