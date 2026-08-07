@@ -1086,7 +1086,13 @@ function showColorSuggestions(colorInputEl, itemInputIdOrEl) {
   const colors = Array.from(new Set(rolls.filter(r => String(r.item).trim() === itemVal).map(r => String(r.color).trim())));
   const orderOf = (color) => {
     const sw = swatchInfo.find(s => String(s.item).trim() === itemVal && s.color != null && String(s.color).trim() === color && s.order != null);
-    return sw ? sw.order : Infinity;
+    if (sw) return sw.order;
+    if (color.endsWith(' 기모')) {
+      const base = color.slice(0, -3).trim();
+      const baseSw = swatchInfo.find(s => String(s.item).trim() === itemVal && s.color != null && String(s.color).trim() === base && s.order != null);
+      if (baseSw) return baseSw.order + 0.5; // 무지 바로 다음에 오도록
+    }
+    return Infinity;
   };
   colors.sort((a, b) => {
     const oa = orderOf(a), ob = orderOf(b);
@@ -1096,8 +1102,8 @@ function showColorSuggestions(colorInputEl, itemInputIdOrEl) {
   if (colors.length === 0) { document.getElementById('itemSuggestBox').classList.add('hidden'); return; }
   const labelMap = {};
   for (const c of colors) {
-    const o = orderOf(c);
-    if (o !== Infinity) labelMap[c] = o;
+    const sw = swatchInfo.find(s => String(s.item).trim() === itemVal && s.color != null && String(s.color).trim() === c && s.order != null);
+    if (sw) labelMap[c] = sw.order;
   }
   showSuggestionsGeneric(colorInputEl, colors, labelMap);
 }
