@@ -2936,6 +2936,8 @@ function renderCustomerLedgerView() {
     </div>
     <button onclick="ledgerCustomer=document.getElementById('ledger-customer').value.trim(); ledgerStartDate=document.getElementById('ledger-start').value; ledgerEndDate=document.getElementById('ledger-end').value; renderCustomerLedgerTable();" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:8px;padding:10px 16px;font-size:13px;font-weight:600;height:38px;">조회</button>
     <button onclick="printCurrentLedgerStatement()" style="border:none;background:#eaf3ec;color:#2f6b46;border-radius:8px;padding:10px 16px;font-size:13px;font-weight:600;height:38px;">🖨 명세서 인쇄</button>
+    <button onclick="printLedgerPeriod()" style="border:none;background:#e8edf5;color:#3d4f6b;border-radius:8px;padding:10px 16px;font-size:13px;font-weight:600;height:38px;">🖨 기간별 원장 인쇄</button>
+    <button onclick="if(ledgerCustomer) renameCustomer(ledgerCustomer)" style="border:none;background:#eee;color:#555;border-radius:8px;padding:10px 12px;font-size:12px;height:38px;">이름 수정</button>
     <button onclick="document.querySelectorAll('.ledger-print-check').forEach(cb=>cb.checked=true)" style="border:none;background:#eee;color:#555;border-radius:8px;padding:10px 12px;font-size:12px;height:38px;">전체 선택</button>
     <button onclick="document.querySelectorAll('.ledger-print-check').forEach(cb=>cb.checked=false)" style="border:none;background:#eee;color:#555;border-radius:8px;padding:10px 12px;font-size:12px;height:38px;">전체 해제</button>
   `;
@@ -3000,6 +3002,73 @@ function printCurrentLedgerStatement() {
   if (checked.length === 0) { showToast('인쇄할 항목을 체크해주세요'); return; }
   const entryIds = Array.from(new Set(Array.from(checked).map(cb => parseInt(cb.dataset.entryId))));
   printStatementForEntries(customer, entryIds);
+}
+function printLedgerPeriod() {
+  const customer = (ledgerCustomer || document.getElementById('ledger-customer').value).trim();
+  const startDate = fromDateInputValue(document.getElementById('ledger-start').value);
+  const endDate = fromDateInputValue(document.getElementById('ledger-end').value);
+  if (!customer) { showToast('거래처를 입력해주세요'); return; }
+  const t_c = customer.trim();
+
+  const events = [];
+  for (const e of shipmentLog) {
+    if (String(e.customer || '').trim() !== t_c) continue;
+    if (e.isReturn || e.isDefect) {
+      if (e.deductAmount != null) {
+        events.push({ date: e.date, type: e.isDefect ? '불량' : '반품', desc: `${e.item} ${e.color || ''}`, detail: `${Math.abs(e.amount)}${e.unit || 'y'}${e.unitPrice ? ` × ${e.unitPrice.toLocaleString()}원/y` : ''}`, amount: -e.deductAmount });
+      }
+      continue;
+    }
+    if (e.saleAmount != null) {
+      const net = Math.round((e.saleAmount - (e.discount || 0)) * 100) / 100;
+      const isCarry = e.item === '이월 미수금';
+      const detail = isCarry ? '' : `${e.yardsShipped || e.amount}${e.unit || 'y'}${e.unitPrice ? ` × ${e.unitPrice.toLocaleString()}원/y` : ' (단가 미입력)'}`;
+      events.push({ date: e.date, type: '매출', desc: isCarry ? '이월 미수금' : `${e.item} ${e.color || ''}`, detail, amount: net });
+    }
+    (e.payments || []).forEach(p => {
+      events.push({ date: p.date, type: '입금', desc: (p.method || 'cash') === 'cash' ? '입금(현금)' : '입금(온라인)', detail: '', amount: -p.amount });
+    });
+  }
+  events.sort((a, b) => String(a.date).localeCompare(String(b.date)));
+  if (events.length === 0) { showToast('인쇄할 내역이 없습니다'); return; }
+
+  let openingBalance = 0;
+  const rowsInRange = [];
+  for (const ev of events) {
+    if (startDate && ev.date < startDate) { openingBalance += ev.amount; continue; }
+    if (endDate && ev.date > endDate) continue;
+    rowsInRange.push(ev);
+  }
+
+  let running = openingBalance;
+  const rowsHtml = rowsInRange.map(ev => {
+    running = Math.round((running + ev.amount) * 100) / 100;
+    return `<tr>
+      <td>${esc(ev.date)}</td>
+      <td>${esc(ev.type)}</td>
+      <td>${esc(ev.desc)}${ev.detail ? ` (${esc(ev.detail)})` : ''}</td>
+      <td style="text-align:right;">${ev.amount < 0 ? '-' : ''}${Math.abs(ev.amount).toLocaleString()}</td>
+      <td style="text-align:right;">${running.toLocaleString()}</td>
+    </tr>`;
+  }).join('');
+
+  const html = `
+    <div class="ledger-print" style="padding:14mm 12mm; font-family:-apple-system,'Malgun Gothic',sans-serif;">
+      <h2 style="margin:0 0 4px;">거래처원장 - ${esc(customer)}</h2>
+      <div style="color:#555; margin-bottom:10px; font-size:13px;">기간: ${esc(startDate || '')} ~ ${esc(endDate || '')} · 발행일: ${todayStr()}</div>
+      <table style="width:100%; border-collapse:collapse;">
+        <thead>
+          <tr><th>날짜</th><th>구분</th><th>내용</th><th>금액</th><th>잔액</th></tr>
+        </thead>
+        <tbody>
+          <tr><td colspan="4"><b>[이월]</b></td><td style="text-align:right;"><b>${openingBalance.toLocaleString()}</b></td></tr>
+          ${rowsHtml}
+        </tbody>
+      </table>
+    </div>
+  `;
+  document.getElementById('printArea').innerHTML = html;
+  setTimeout(() => window.print(), 100);
 }
 function renderCustomerLedgerTable() {
   const customer = (ledgerCustomer || document.getElementById('ledger-customer').value).trim();
@@ -3243,6 +3312,33 @@ async function editCarryoverBalance(customer, entryId) {
   if (document.getElementById('unpaidSummaryModal').classList.contains('open')) renderUnpaidSummaryList();
   showToast(`이월 미수금을 ${amount.toLocaleString()}원으로 수정했습니다`);
 }
+async function renameCustomer(oldName) {
+  const raw = prompt(`"${oldName}"의 이름을 무엇으로 바꿀까요?`, oldName);
+  if (raw === null || !raw.trim()) return;
+  const newName = raw.trim();
+  if (newName === oldName) return;
+  const t_old = String(oldName).trim();
+
+  let changed = 0;
+  for (const o of orders) { if (String(o.customer).trim() === t_old) { o.customer = newName; changed++; } }
+  for (const e of shipmentLog) { if (String(e.customer || '').trim() === t_old) { e.customer = newName; changed++; } }
+  for (const p of priceBook) { if (String(p.customer).trim() === t_old) { p.customer = newName; } }
+  for (const m of depositMemos) { if (String(m.customer).trim() === t_old) { m.customer = newName; } }
+  let listChanged = false;
+  customerList = customerList.map(c => { if (String(c).trim() === t_old) { listChanged = true; return newName; } return c; });
+  if (!customerList.some(c => String(c).trim() === newName) && !listChanged && changed === 0) {
+    showToast('해당 거래처를 찾을 수 없습니다'); return;
+  }
+  if (String(ledgerCustomer || '').trim() === t_old) ledgerCustomer = newName;
+
+  await persistOrders();
+  await persistShipmentLog();
+  await persistPriceBook();
+  await persistDepositMemos();
+  await persistCustomerList();
+  render();
+  showToast(`"${oldName}" → "${newName}"(으)로 이름을 바꿨습니다`);
+}
 async function addCustomerName() {
   const raw = prompt('새 거래처 이름을 입력해주세요', '');
   if (raw === null || !raw.trim()) return;
@@ -3322,7 +3418,40 @@ function renderSales() {
 
   const list = document.getElementById('list');
   list.innerHTML = '';
-  if (sales.length === 0) { list.innerHTML = '<div class="empty">매출 기록이 없습니다 (출고 시 판매단가를 입력하면 여기 기록돼요)</div>'; return; }
+
+  // 검색 중이면, 거래 기록이 전혀 없는 등록된 거래처도 검색 결과에 카드로 같이 보여줌
+  let emptyCustomerMatches = [];
+  if (searchTerm.trim()) {
+    const t2 = searchTerm.trim().toLowerCase();
+    const withHistory = new Set([
+      ...shipmentLog.map(e => String(e.customer || '').trim()),
+      ...orders.map(o => String(o.customer || '').trim())
+    ]);
+    emptyCustomerMatches = customerList.filter(c => String(c).toLowerCase().includes(t2) && !withHistory.has(String(c).trim()));
+  }
+  for (const name of emptyCustomerMatches) {
+    const div = document.createElement('div');
+    div.className = 'group';
+    div.innerHTML = `
+      <div class="group-head" style="cursor:default;">
+        <div class="info">
+          <div class="name">${esc(name)}</div>
+          <div class="sub">거래 기록이 아직 없어요</div>
+          <div style="margin-top:4px;">
+            <button onclick="openSaleAddModal('${escAttr(name)}')" style="border:none;background:#eaf3ec;color:#2f6b46;border-radius:6px;padding:5px 10px;font-size:12px;">+ 품목 추가</button>
+            <button onclick="showCustomerLedger('${escAttr(name)}')" style="border:none;background:#e8edf5;color:#3d4f6b;border-radius:6px;padding:5px 10px;font-size:12px;margin-left:6px;">📒 원장</button>
+            <button onclick="renameCustomer('${escAttr(name)}')" style="border:none;background:#eee;color:#555;border-radius:6px;padding:5px 10px;font-size:12px;margin-left:6px;">이름 수정</button>
+          </div>
+        </div>
+      </div>
+    `;
+    list.appendChild(div);
+  }
+
+  if (sales.length === 0) {
+    if (emptyCustomerMatches.length === 0) list.innerHTML = '<div class="empty">매출 기록이 없습니다 (출고 시 판매단가를 입력하면 여기 기록돼요)</div>';
+    return;
+  }
 
   const byPeriod = new Map();
   for (const e of sales) {
@@ -3395,6 +3524,7 @@ function renderSales() {
               ${entries.some(e => getPaidAmount(e) > 0) ? `<button onclick="resetGroupPayment([${entries.map(e => e.id).join(',')}])" style="border:none;background:#f1eee7;color:var(--muted);border-radius:6px;padding:5px 10px;font-size:12px;margin-left:6px;">입금 취소</button>` : ''}
               <button onclick="openSaleAddModal('${escAttr(k)}')" style="border:none;background:#eaf3ec;color:#2f6b46;border-radius:6px;padding:5px 10px;font-size:12px;margin-left:6px;">+ 품목 추가</button>
               <button onclick="showCustomerLedger('${escAttr(k)}')" style="border:none;background:#e8edf5;color:#3d4f6b;border-radius:6px;padding:5px 10px;font-size:12px;margin-left:6px;">📒 원장</button>
+              <button onclick="renameCustomer('${escAttr(k)}')" style="border:none;background:#eee;color:#555;border-radius:6px;padding:5px 10px;font-size:12px;margin-left:6px;">이름 수정</button>
             </div>
           </div>
           <div class="total">
