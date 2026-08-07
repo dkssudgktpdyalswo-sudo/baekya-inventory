@@ -2588,12 +2588,18 @@ function buildStatementHTML(customerName, startDate, endDate, entryIdFilter) {
   } else {
     custEntries = shipmentLog.filter(e => String(e.customer || '').trim() === t_c && inRange(e.date));
   }
-  if (custEntries.length === 0) return null;
+  if (custEntries.length === 0 && !entryIdFilter) return null;
   if (entryIdFilter && custEntries.length > 0) {
     const ds = custEntries.map(e => e.date);
     startDate = ds.reduce((a, b) => a < b ? a : b);
     endDate = ds.reduce((a, b) => a > b ? a : b);
   }
+  // 이월 미수금은 날짜 범위/체크 여부와 상관없이 항상 청구액에 포함 (기간 거래가 아니라 누적 잔액이므로, 거래기간 표시에는 영향 안 줌)
+  const carryoverEntry = shipmentLog.find(e => String(e.customer || '').trim() === t_c && e.item === '이월 미수금');
+  if (carryoverEntry && !custEntries.some(e => e.id === carryoverEntry.id)) {
+    custEntries = [...custEntries, carryoverEntry];
+  }
+  if (custEntries.length === 0) return null;
 
   const saleRows = []; // 매출/반품/불량 (날짜순)
   const paymentRows = []; // 입금 (날짜순, 항상 매출 아래에)
