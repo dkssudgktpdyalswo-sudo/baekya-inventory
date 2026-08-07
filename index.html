@@ -188,6 +188,7 @@
     <input id="sales-day-picker" type="date" onchange="salesDayFilter=fromDateInputValue(this.value); render();" style="padding:6px 8px; border:1px solid var(--border); border-radius:8px; font-size:12px; width:auto;">
     <button onclick="shiftSalesDayFilter(1)" style="border:none;background:#eee;color:#555;border-radius:8px;padding:7px 10px;font-size:12px;">▶</button>
     <button onclick="salesDayFilter=null; render();" style="border:none;background:#eee;color:#555;border-radius:8px;padding:7px 12px;font-size:12px;">전체 보기</button>
+    <button onclick="addCustomerName()" style="border:none;background:#eaf3ec;color:#2f6b46;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">+ 거래처 추가</button>
     <button onclick="document.querySelectorAll('.main-flag-checkbox').forEach(cb=>{cb.checked=true; cb.dispatchEvent(new Event('change'));})" style="border:none;background:#eee;color:#555;border-radius:8px;padding:7px 12px;font-size:12px;">전체 선택</button>
     <button onclick="document.querySelectorAll('.main-flag-checkbox').forEach(cb=>{cb.checked=false; cb.dispatchEvent(new Event('change'));})" style="border:none;background:#eee;color:#555;border-radius:8px;padding:7px 12px;font-size:12px;">전체 해제</button>
     <button onclick="printSelectedMainStatements()" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">🖨 선택 인쇄 (메인 체크)</button>
@@ -726,6 +727,7 @@ let ledgerStartDate = null;
 let ledgerEndDate = null;
 let depositMemos = []; // {id, customer, date, text} - 계산에 안 섞이는 단순 기록용
 let nextMemoId = 1;
+let customerList = []; // 거래 기록이 아직 없어도 미리 등록해두는 거래처 이름 목록
 let priceBook = []; // {id, customer, item, color, unitPrice}
 let nextPriceId = 1;
 let searchTerm = "";
@@ -767,8 +769,8 @@ function showToast(msg) {
 async function loadAll() {
   if (useFirebase) {
     return new Promise((resolve) => {
-      let loaded = { rolls: false, costs: false, settings: false, orders: false, swatch: false, log: false, price: false, advance: false };
-      const checkDone = () => { if (loaded.rolls && loaded.costs && loaded.settings && loaded.orders && loaded.swatch && loaded.log && loaded.price && loaded.advance) resolve(); };
+      let loaded = { rolls: false, costs: false, settings: false, orders: false, swatch: false, log: false, price: false, advance: false, custList: false };
+      const checkDone = () => { if (loaded.rolls && loaded.costs && loaded.settings && loaded.orders && loaded.swatch && loaded.log && loaded.price && loaded.advance && loaded.custList) resolve(); };
 
       db.collection('inventory').doc('rolls').onSnapshot((doc) => {
         if (doc.exists && doc.data().data) {
@@ -845,6 +847,13 @@ async function loadAll() {
         }
         loaded.advance = true; render(); checkDone();
       });
+
+      db.collection('inventory').doc('customerList').onSnapshot((doc) => {
+        if (doc.exists && doc.data().data) {
+          customerList = JSON.parse(doc.data().data);
+        }
+        loaded.custList = true; render(); checkDone();
+      });
     });
   }
   return fallbackLoadAll();
@@ -912,6 +921,12 @@ async function fallbackLoadAll() {
   } catch (e) {
     depositMemos = [];
   }
+  try {
+    const res = await safeStorage.get('customerList', true);
+    customerList = JSON.parse(res.value);
+  } catch (e) {
+    customerList = [];
+  }
   if (usingFallbackStorage) showToast('이 화면에서는 임시저장만 됩니다 (새로고침 시 초기화)');
   updateRateBar();
 }
@@ -947,6 +962,10 @@ async function persistPriceBook() {
 async function persistDepositMemos() {
   if (useFirebase) { try { await db.collection('inventory').doc('depositMemos').set({ data: JSON.stringify(depositMemos) }); } catch(e){ showToast('저장 오류'); } return; }
   await safeStorage.set('depositMemos', JSON.stringify(depositMemos), true);
+}
+async function persistCustomerList() {
+  if (useFirebase) { try { await db.collection('inventory').doc('customerList').set({ data: JSON.stringify(customerList) }); } catch(e){ showToast('저장 오류'); } return; }
+  await safeStorage.set('customerList', JSON.stringify(customerList), true);
 }
 
 // ---------- 원가 계산 ----------
@@ -1083,7 +1102,11 @@ function showColorSuggestions(colorInputEl, itemInputIdOrEl) {
   showSuggestionsGeneric(colorInputEl, colors, labelMap);
 }
 function showCustomerSuggestions(inputEl) {
-  const names = Array.from(new Set(orders.map(o => String(o.customer).trim()).filter(Boolean))).sort((a, b) => a.localeCompare(b, 'ko'));
+  const names = Array.from(new Set([
+    ...orders.map(o => String(o.customer).trim()),
+    ...shipmentLog.map(e => String(e.customer || '').trim()),
+    ...customerList.map(c => String(c).trim())
+  ].filter(Boolean))).sort((a, b) => a.localeCompare(b, 'ko'));
   showSuggestionsGeneric(inputEl, names);
 }
 function showFactorySuggestions(inputEl) {
@@ -3219,6 +3242,18 @@ async function editCarryoverBalance(customer, entryId) {
   render();
   if (document.getElementById('unpaidSummaryModal').classList.contains('open')) renderUnpaidSummaryList();
   showToast(`이월 미수금을 ${amount.toLocaleString()}원으로 수정했습니다`);
+}
+async function addCustomerName() {
+  const raw = prompt('새 거래처 이름을 입력해주세요', '');
+  if (raw === null || !raw.trim()) return;
+  const name = raw.trim();
+  const exists = orders.some(o => String(o.customer).trim() === name)
+    || shipmentLog.some(e => String(e.customer || '').trim() === name)
+    || customerList.some(c => String(c).trim() === name);
+  if (exists) { showToast('이미 있는 거래처예요'); return; }
+  customerList.push(name);
+  await persistCustomerList();
+  showToast(`"${name}" 거래처를 등록했습니다`);
 }
 function shiftSalesDayFilter(delta) {
   const base = salesDayFilter ? parseKDate(salesDayFilter) : new Date();
