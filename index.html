@@ -181,7 +181,6 @@
   <div id="orderTools" class="hidden" style="display:flex; gap:6px; margin-top:6px; flex-wrap:wrap;">
     <button id="orderGroupToggleBtn" onclick="toggleOrderGroupMode()" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;"></button>
     <button onclick="printOrderLedger()" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">🖨 이월장부 인쇄</button>
-    <button onclick="repairOrdersFromShipmentLog()" style="border:none;background:#fdecea;color:var(--danger);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">🔧 진행량 복구(매출기록 기준)</button>
     <button onclick="archiveOldCompleted()" style="border:none;background:#fff3d6;color:#a15c1e;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">오래된 완료건 내보내기+정리</button>
   </div>
   <div id="salesTools" class="hidden" style="display:flex; gap:6px; margin-top:6px; flex-wrap:wrap;">
@@ -5316,6 +5315,49 @@ function exportSalesLog() {
   document.body.appendChild(a); a.click(); document.body.removeChild(a);
   URL.revokeObjectURL(url);
   showToast(`${target.length}건 내보냈습니다 (사이트 데이터는 그대로 있어요)`);
+}
+async function repairInventoryFromShipmentLog() {
+  const cutoff = prompt('언제 이후의 출고/반품 기록을 재고에 다시 반영할까요? (YYYY-MM-DD)', '2026-08-07');
+  if (!cutoff) return;
+  if (!confirm(`${cutoff} 이후의 출고/반품 기록을 재고에서 다시 빼고(또는 반품은 다시 채우고) 반영할게요.\n\n※ 지금 재고가 ${cutoff} 이전(또는 그 근처) 상태로 되돌아가 있다는 전제로 진행하는 거예요. 이미 정상인데 또 누르면 이중으로 빠질 수 있으니 주의하세요.\n※ 불량은 원래도 재고 변동이 없어서 안 건드려요.\n※ 이 기간에 새로 "입고"하신 게 있다면, 그건 이 기능으로 복구가 안 돼서 직접 다시 입력해주셔야 해요.\n\n계속할까요?`)) return;
+
+  const relevant = shipmentLog
+    .filter(e => e.date >= cutoff && !e.isFee && hasKnownItem(e.item))
+    .slice().sort((a, b) => a.date.localeCompare(b.date) || a.id - b.id);
+
+  let appliedCount = 0, shortfallCount = 0;
+  const lines = [];
+  for (const e of relevant) {
+    if (e.isDefect) continue; // 불량은 재고 변동 없음(원래 그대로)
+    const resolvedColor = resolveInventoryColor(e.item, e.color);
+    const existingCat = (rolls.find(r => String(r.item).trim() === String(e.item).trim()) || {}).cat || '';
+    if (e.isReturn) {
+      restoreToInventory(e.item, resolvedColor, existingCat, 1, Math.abs(e.amount));
+      appliedCount++;
+      lines.push(`${e.date} ${e.customer} · ${e.item} ${e.color || ''}: 반품 재입고 +${Math.abs(e.amount)}${e.unit}`);
+      continue;
+    }
+    const deductQty = e.invDeductedAmount != null ? e.invDeductedAmount : e.yardsShipped;
+    if (!deductQty || deductQty <= 0) continue;
+    let shortfall = false;
+    if (e.deductBreakdown && e.deductBreakdown.length > 0) {
+      for (const b of e.deductBreakdown) {
+        const r = deductFromInventory(e.item, e.color, b.qty, b.tang);
+        if (!r.ok || r.shortBy > 0.01) shortfall = true;
+      }
+    } else {
+      const r = deductFromInventory(e.item, e.color, deductQty, null);
+      if (!r.ok || r.shortBy > 0.01) shortfall = true;
+    }
+    appliedCount++;
+    if (shortfall) shortfallCount++;
+    lines.push(`${e.date} ${e.customer} · ${e.item} ${e.color || ''}: 출고 -${deductQty}${e.unit === '절' ? 'y' : e.unit}${shortfall ? ' (⚠️재고 부족)' : ''}`);
+  }
+
+  if (appliedCount === 0) { showToast('그 기간에 반영할 출고/반품 기록이 없어요'); return; }
+  await persistRolls();
+  render();
+  alert(`${appliedCount}건 반영했어요${shortfallCount > 0 ? `\n(이 중 ${shortfallCount}건은 재고가 부족해서 일부만 빠졌어요 - 확인 필요)` : ''}\n\n${lines.slice(0, 40).join('\n')}${lines.length > 40 ? `\n...외 ${lines.length - 40}건` : ''}\n\n※ 이 기간에 새로 입고하신 게 있다면, 그건 직접 다시 입고 처리해주세요.`);
 }
 async function repairOrdersFromShipmentLog() {
   if (!confirm('매출/출고 기록을 기준으로, 실제로 나간 것보다 이월장부 진행량이 적게 잡혀있는 발주들을 찾아서 다시 채워넣을게요.\n(줄이는 방향으로는 절대 안 건드려요) 진행할까요?')) return;
