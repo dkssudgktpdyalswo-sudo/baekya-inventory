@@ -195,7 +195,7 @@
     <button onclick="printSelectedMainStatements()" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">🖨 선택 인쇄 (메인 체크)</button>
     <button onclick="showCustomerLedger()" style="border:none;background:#e8edf5;color:#3d4f6b;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">📒 거래처원장</button>
     <button onclick="showPaymentLedger()" style="border:none;background:#e6f0fa;color:#1a56db;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">💰 입금장부</button>
-    <button onclick="openUnpaidSummaryModal()" style="border:none;background:#fce8d6;color:#a15c1e;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">📋 거래처 미수금표</button>
+    <button onclick="showUnpaidSummary()" style="border:none;background:#fce8d6;color:#a15c1e;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">📋 거래처 미수금표</button>
     <button onclick="showItemMonthlyStats()" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">📊 품목출고량</button>
     <button onclick="openExpenseModal()" style="border:none;background:#fdecea;color:var(--danger);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">💸 지출 내역</button>
     <button onclick="exportSalesLog()" style="border:none;background:#fff3d6;color:#a15c1e;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">📤 매출장부 내보내기</button>
@@ -542,17 +542,8 @@
 </div>
 
 <!-- 거래처 미수금표 -->
-<div class="modal-overlay" id="unpaidSummaryModal">
-  <div class="modal" style="max-width:480px;">
-    <h3>거래처 미수금표</h3>
-    <p style="font-size:12px;color:var(--muted);margin-top:-6px;">이월 미수금 + 아직 안 받은 매출을 합친 거래처별 총 미수금이에요.</p>
-    <input id="unpaid-summary-search" placeholder="거래처 검색" oninput="renderUnpaidSummaryList()" style="margin-bottom:6px;">
-    <div id="unpaid-summary-list" style="max-height:420px; overflow-y:auto;"></div>
-    <div class="modal-actions">
-      <button class="btn-cancel" onclick="closeUnpaidSummaryModal()">닫기</button>
-    </div>
-  </div>
-</div>
+
+
 
 <div class="modal-overlay" id="statementModal">
   <div class="modal">
@@ -2471,7 +2462,7 @@ function recordGroupPayment(entryIds) {
 function closePaymentModal() {
   document.getElementById('paymentModal').classList.remove('open');
   pendingPaymentEntryIds = [];
-  if (document.getElementById('unpaidSummaryModal').classList.contains('open')) renderUnpaidSummaryList();
+  if (salesSpecialView === 'unpaidSummary') renderUnpaidSummaryList();
 }
 async function markSampleAndClose() {
   const entryIds = pendingPaymentEntryIds;
@@ -3619,10 +3610,29 @@ function renderExpenseList() {
   }
   listEl.innerHTML = html;
 }
-function openUnpaidSummaryModal() {
-  document.getElementById('unpaid-summary-search').value = '';
+function showUnpaidSummary() {
+  salesSpecialView = 'unpaidSummary';
+  render();
+}
+function exitUnpaidSummary() {
+  salesSpecialView = null;
+  render();
+}
+function renderUnpaidSummaryView() {
+  const list = document.getElementById('list');
+  list.innerHTML = '';
+
+  const backBtn = document.createElement('button');
+  backBtn.textContent = '← 돌아가기';
+  backBtn.style.cssText = 'border:none;background:#eee;color:#555;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;margin-bottom:10px;';
+  backBtn.onclick = exitUnpaidSummary;
+  list.appendChild(backBtn);
+
+  const contentWrap = document.createElement('div');
+  contentWrap.id = 'unpaid-summary-list';
+  list.appendChild(contentWrap);
+
   renderUnpaidSummaryList();
-  document.getElementById('unpaidSummaryModal').classList.add('open');
 }
 function renderUnpaidSummaryList() {
   const custMap = new Map(); // customer -> {unpaid, carryoverId}
@@ -3640,10 +3650,11 @@ function renderUnpaidSummaryList() {
     .filter(r => r.unpaid > 0)
     .sort((a, b) => b.unpaid - a.unpaid);
 
-  const searchTerm2 = document.getElementById('unpaid-summary-search').value.trim().toLowerCase();
+  const searchTerm2 = searchTerm.trim().toLowerCase();
   if (searchTerm2) rows = rows.filter(r => r.customer.toLowerCase().includes(searchTerm2));
 
   const listEl = document.getElementById('unpaid-summary-list');
+  if (!listEl) return;
   const memoSection = `
     <div style="padding:8px 4px; border-bottom:1px solid var(--border); margin-bottom:6px;">
       <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
@@ -3665,19 +3676,18 @@ function renderUnpaidSummaryList() {
     listEl.innerHTML = memoSection + `
       <div style="padding:8px 4px; font-weight:700; font-size:14px; border-bottom:1px solid var(--border); margin-bottom:4px;">총 미수금 ${total.toLocaleString()}원 (${rows.length}개 거래처)</div>
       ${rows.map(r => `
-        <div style="display:flex; justify-content:space-between; align-items:center; padding:8px 4px; border-bottom:1px dashed var(--border);">
-          <div style="font-size:14px;">${esc(r.customer)}</div>
-          <div style="display:flex; align-items:center; gap:8px;">
-            <span style="font-weight:700; color:var(--danger);">${r.unpaid.toLocaleString()}원</span>
-            <button onclick="payCustomerUnpaid('${escAttr(r.customer)}')" style="border:none;background:#eaf3ec;color:#2f6b46;border-radius:6px;padding:4px 8px;font-size:11px;">입금 처리</button>
-            <button onclick="editCarryoverBalance('${escAttr(r.customer)}', ${r.carryoverId != null ? r.carryoverId : 'null'})" style="border:none;background:#eee;color:var(--text);border-radius:6px;padding:4px 8px;font-size:11px;">직접 수정</button>
+        <div style="display:flex; justify-content:space-between; align-items:center; padding:12px 6px; border-bottom:1px dashed var(--border);">
+          <div style="font-size:15px; font-weight:600;">${esc(r.customer)}</div>
+          <div style="display:flex; align-items:center; gap:10px;">
+            <span style="font-weight:700; font-size:15px; color:var(--danger);">${r.unpaid.toLocaleString()}원</span>
+            <button onclick="payCustomerUnpaid('${escAttr(r.customer)}')" style="border:none;background:#eaf3ec;color:#2f6b46;border-radius:6px;padding:6px 10px;font-size:12px;">입금 처리</button>
+            <button onclick="editCarryoverBalance('${escAttr(r.customer)}', ${r.carryoverId != null ? r.carryoverId : 'null'})" style="border:none;background:#eee;color:var(--text);border-radius:6px;padding:6px 10px;font-size:12px;">직접 수정</button>
           </div>
         </div>
       `).join('')}
     `;
   }
 }
-function closeUnpaidSummaryModal() { document.getElementById('unpaidSummaryModal').classList.remove('open'); }
 
 async function toggleEntryTax(ids, checked) {
   for (const id of ids) {
@@ -3697,7 +3707,7 @@ async function addDepositMemo(customer) {
   depositMemos.push({ id: nextMemoId++, customer, date: todayStr(), text: raw.trim() });
   await persistDepositMemos();
   render();
-  if (document.getElementById('unpaidSummaryModal').classList.contains('open')) renderUnpaidSummaryList();
+  if (salesSpecialView === 'unpaidSummary') renderUnpaidSummaryList();
   showToast('메모를 남겼습니다');
 }
 async function deleteDepositMemo(id) {
@@ -3705,7 +3715,7 @@ async function deleteDepositMemo(id) {
   depositMemos = depositMemos.filter(m => m.id !== id);
   await persistDepositMemos();
   render();
-  if (document.getElementById('unpaidSummaryModal').classList.contains('open')) renderUnpaidSummaryList();
+  if (salesSpecialView === 'unpaidSummary') renderUnpaidSummaryList();
   if (salesSpecialView === 'customerLedger') renderCustomerLedgerTable();
 }
 function payCustomerUnpaid(customer) {
@@ -3729,7 +3739,7 @@ async function editCarryoverBalance(customer, entryId) {
       shipmentLog = shipmentLog.filter(e => e.id !== current.id);
       await persistShipmentLog();
       render();
-      if (document.getElementById('unpaidSummaryModal').classList.contains('open')) renderUnpaidSummaryList();
+      if (salesSpecialView === 'unpaidSummary') renderUnpaidSummaryList();
       showToast('이월 미수금을 삭제했습니다');
     }
     return;
@@ -3750,7 +3760,7 @@ async function editCarryoverBalance(customer, entryId) {
   }
   await persistShipmentLog();
   render();
-  if (document.getElementById('unpaidSummaryModal').classList.contains('open')) renderUnpaidSummaryList();
+  if (salesSpecialView === 'unpaidSummary') renderUnpaidSummaryList();
   showToast(`이월 미수금을 ${amount.toLocaleString()}원으로 수정했습니다`);
 }
 async function renameFactoryForOrders(oldFactory, orderIds) {
@@ -3839,6 +3849,11 @@ function renderSales() {
   if (salesSpecialView === 'paymentLedger') {
     document.getElementById('stats').innerHTML = '';
     renderPaymentLedgerView();
+    return;
+  }
+  if (salesSpecialView === 'unpaidSummary') {
+    document.getElementById('stats').innerHTML = '';
+    renderUnpaidSummaryView();
     return;
   }
 
