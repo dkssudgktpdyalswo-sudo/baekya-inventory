@@ -3414,21 +3414,52 @@ function renderCustomerLedgerView() {
 
   if (ledgerCustomer) renderCustomerLedgerTable();
 }
-function editMergedPaymentGroup(refsJson) {
+async function editMergedPaymentGroup(refsJson) {
   let refs;
   try { refs = JSON.parse(refsJson); } catch (e) { return; }
   if (!refs || refs.length === 0) return;
   if (refs.length === 1) { quickEditPayment(refs[0].entryId, refs[0].paymentIdx); return; }
-  const lines = refs.map((r, i) => {
+
+  // 기존 총액/날짜/방법 파악
+  let totalAmount = 0, method = 'cash', date = todayStr();
+  const byEntry = new Map(); // entry -> [idx, ...]
+  for (const r of refs) {
     const e = shipmentLog.find(x => x.id === r.entryId);
-    const p = e && e.payments && e.payments[r.paymentIdx];
-    const desc = e ? (e.item === '이월 미수금' ? '이월 미수금' : (e.isFee ? `추가금${e.note ? ` - ${e.note}` : ''}` : `${e.item} ${e.color || ''}`)) : '';
-    return `${i + 1}. ${desc} - ${p ? p.amount.toLocaleString() : '?'}원`;
-  }).join('\n');
-  const pick = prompt(`이 입금은 ${refs.length}건에 나눠 들어가 있어요. 몇 번을 수정할까요?\n\n${lines}`, '1');
-  if (pick === null) return;
-  const idx = parseInt(pick) - 1;
-  if (idx >= 0 && idx < refs.length) quickEditPayment(refs[idx].entryId, refs[idx].paymentIdx);
+    if (!e || !e.payments || !e.payments[r.paymentIdx]) continue;
+    const p = e.payments[r.paymentIdx];
+    totalAmount += p.amount; method = p.method || 'cash'; date = p.date;
+    if (!byEntry.has(e)) byEntry.set(e, []);
+    byEntry.get(e).push(r.paymentIdx);
+  }
+  if (byEntry.size === 0) return;
+
+  const raw = prompt(`이 입금(${refs.length}건에 나눠 들어가 있어요)을 얼마로 고칠까요? (0을 입력하면 전부 삭제돼요)`, String(Math.round(totalAmount)));
+  if (raw === null) return;
+  const newAmount = parseFloat(raw);
+  if (isNaN(newAmount) || newAmount < 0) { showToast('금액을 확인해주세요'); return; }
+
+  // 기존 나뉘어 들어가있던 것들 제거 (한 건에 인덱스가 여러 개면 큰 것부터 지워야 안전)
+  for (const [entry, idxs] of byEntry) {
+    idxs.slice().sort((a, b) => b - a).forEach(idx => entry.payments.splice(idx, 1));
+    delete entry.paidAmount; delete entry.paid;
+  }
+
+  if (newAmount > 0) {
+    // 관련된 매출 건들에 오래된 것부터 다시 채워넣음 (원래 있던 날짜/방법 그대로)
+    const targetEntries = [...byEntry.keys()].sort((a, b) => String(a.date).localeCompare(String(b.date)));
+    let amt = newAmount;
+    for (const e of targetEntries) {
+      if (amt <= 0) break;
+      const remain = getRemaining(e);
+      if (remain <= 0) continue;
+      const take = Math.min(remain, amt);
+      addPaymentEvent(e, take, method, date);
+      amt = Math.round((amt - take) * 100) / 100;
+    }
+  }
+  await persistShipmentLog();
+  render();
+  showToast('입금 내역을 수정했어요');
 }
 async function quickEditPayment(entryId, idx) {
   const e = shipmentLog.find(x => x.id === entryId);
