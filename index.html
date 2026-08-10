@@ -186,7 +186,7 @@
   </div>
   <div id="salesTools" class="hidden" style="display:flex; gap:6px; margin-top:6px; flex-wrap:wrap; align-items:center;">
     <button onclick="shiftSalesDayFilter(-1)" style="border:none;background:#eee;color:#555;border-radius:8px;padding:7px 10px;font-size:12px;">◀</button>
-    <input id="sales-day-picker" type="date" onchange="salesDayFilter=fromDateInputValue(this.value); render();" style="padding:6px 8px; border:1px solid var(--border); border-radius:8px; font-size:12px; width:auto;">
+    <input id="sales-day-picker" type="date" onchange="salesDayFilter=fromDateInputValue(this.value); salesDayFilterEnd=null; render();" style="padding:6px 8px; border:1px solid var(--border); border-radius:8px; font-size:12px; width:auto;">
     <button onclick="shiftSalesDayFilter(1)" style="border:none;background:#eee;color:#555;border-radius:8px;padding:7px 10px;font-size:12px;">▶</button>
     <span style="font-size:12px; color:var(--muted);">~</span>
     <input id="sales-day-picker-end" type="date" onchange="salesDayFilterEnd=fromDateInputValue(this.value); render();" style="padding:6px 8px; border:1px solid var(--border); border-radius:8px; font-size:12px; width:auto;">
@@ -769,8 +769,8 @@ let orderGroupMode = 'customer'; // customer | item
 let shipmentLog = []; // {id, date, customer, factory, item, color, amount, unit, orderId, remainAfter}
 let nextLogId = 1;
 let salesAdminUnlocked = false;
-let salesDayFilter = todayStr(); // null이면 전체 스크롤, 날짜 지정하면 그날만 (기본은 오늘)
-let salesDayFilterEnd = null; // 종료일까지 지정하면 그 기간 전체를 합쳐서 봄
+let salesDayFilter = monthStartStr(); // 기본은 이번 달 1일부터
+let salesDayFilterEnd = monthEndStr(); // 기본은 이번 달 말일까지 - 달력으로 하루만 고르면 그날만 보임
 let itemStatsViewMode = 'month'; // day | month
 let salesSpecialView = null; // null | 'itemMonthly' | 'customerLedger'
 let ledgerCustomer = null;
@@ -3395,9 +3395,10 @@ function renderCustomerLedgerView() {
 
   if (!ledgerStartDate || !ledgerEndDate) {
     const now = new Date();
-    const yearAgo = new Date(now); yearAgo.setFullYear(yearAgo.getFullYear() - 1);
-    ledgerStartDate = yearAgo.toISOString().slice(0, 10);
-    ledgerEndDate = now.toISOString().slice(0, 10);
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+    ledgerStartDate = monthStart.toISOString().slice(0, 10);
+    ledgerEndDate = monthEnd.toISOString().slice(0, 10);
   }
   document.getElementById('ledger-start').value = ledgerStartDate;
   document.getElementById('ledger-end').value = ledgerEndDate;
@@ -3411,6 +3412,22 @@ function renderCustomerLedgerView() {
   list.appendChild(tableWrap);
 
   if (ledgerCustomer) renderCustomerLedgerTable();
+}
+function editMergedPaymentGroup(refsJson) {
+  let refs;
+  try { refs = JSON.parse(refsJson); } catch (e) { return; }
+  if (!refs || refs.length === 0) return;
+  if (refs.length === 1) { quickEditPayment(refs[0].entryId, refs[0].paymentIdx); return; }
+  const lines = refs.map((r, i) => {
+    const e = shipmentLog.find(x => x.id === r.entryId);
+    const p = e && e.payments && e.payments[r.paymentIdx];
+    const desc = e ? (e.item === '이월 미수금' ? '이월 미수금' : (e.isFee ? `추가금${e.note ? ` - ${e.note}` : ''}` : `${e.item} ${e.color || ''}`)) : '';
+    return `${i + 1}. ${desc} - ${p ? p.amount.toLocaleString() : '?'}원`;
+  }).join('\n');
+  const pick = prompt(`이 입금은 ${refs.length}건에 나눠 들어가 있어요. 몇 번을 수정할까요?\n\n${lines}`, '1');
+  if (pick === null) return;
+  const idx = parseInt(pick) - 1;
+  if (idx >= 0 && idx < refs.length) quickEditPayment(refs[idx].entryId, refs[idx].paymentIdx);
 }
 async function quickEditPayment(entryId, idx) {
   const e = shipmentLog.find(x => x.id === entryId);
@@ -3564,9 +3581,26 @@ function renderCustomerLedgerTable() {
       events.push({ id: e.id, date: e.date, type: '매출', desc: isCarry ? '이월 미수금' : (e.isFee ? `추가금${e.note ? ` - ${e.note}` : ''}` : `${e.item} ${e.color || ''}`), detail, amount: net, isCarry });
     }
     (e.payments || []).forEach((p, idx) => {
-      events.push({ id: null, entryId: e.id, paymentIdx: idx, date: p.date, type: '입금', desc: (p.method || 'cash') === 'cash' ? '입금(현금)' : '입금(온라인)', detail: '', amount: -p.amount });
+      events.push({ id: null, entryId: e.id, paymentIdx: idx, date: p.date, type: '입금', desc: (p.method || 'cash') === 'cash' ? '입금(현금)' : '입금(온라인)', detail: '', amount: -p.amount, method: p.method || 'cash' });
     });
   }
+  // 같은 날짜에 같은 방법(현금/온라인)으로 여러 건에 나눠 들어간 입금은 하나로 합쳐서 보여줌
+  const mergedPaymentEvents = new Map(); // "date:method" -> event
+  const otherEvents = [];
+  for (const ev of events) {
+    if (ev.type !== '입금') { otherEvents.push(ev); continue; }
+    const k = `${ev.date}:${ev.method}`;
+    if (!mergedPaymentEvents.has(k)) {
+      mergedPaymentEvents.set(k, { id: null, date: ev.date, type: '입금', desc: ev.desc, detail: '', amount: 0, refs: [] });
+    }
+    const m = mergedPaymentEvents.get(k);
+    m.amount += ev.amount;
+    m.refs.push({ entryId: ev.entryId, paymentIdx: ev.paymentIdx });
+    if (m.refs.length > 1) m.desc = m.desc.replace(/\(\d+건\)$/, '') + ` (${m.refs.length}건)`;
+  }
+  const events2 = [...otherEvents, ...mergedPaymentEvents.values()];
+  events.length = 0;
+  events.push(...events2);
   events.sort((a, b) => String(a.date).localeCompare(String(b.date)));
 
   if (events.length === 0) { wrap.innerHTML = '<div class="empty">거래 내역이 없습니다</div>'; return; }
@@ -3583,10 +3617,10 @@ function renderCustomerLedgerTable() {
   const rowsHtml = rowsInRange.map(ev => {
     running = Math.round((running + ev.amount) * 100) / 100;
     const color = ev.type === '매출' ? '#c0392b' : (ev.type === '입금' ? '#1a56db' : '#a15c1e');
-    const clickable = ev.id != null || ev.entryId != null;
+    const clickable = ev.id != null || (ev.refs && ev.refs.length > 0);
     let clickHandler = '';
     if (ev.type === '매출') clickHandler = `openSaleEditModal(${ev.id})`;
-    else if (ev.type === '입금') clickHandler = `quickEditPayment(${ev.entryId}, ${ev.paymentIdx})`;
+    else if (ev.type === '입금') clickHandler = `editMergedPaymentGroup('${escAttr(JSON.stringify(ev.refs))}')`;
     else clickHandler = `quickEditReturnDefect(${ev.id})`;
     const clickAttr = clickable ? `onclick="${clickHandler}" style="cursor:pointer;"` : '';
     const printable = ev.id != null; // 매출/반품/불량만 체크로 인쇄 포함 여부 선택 (입금은 해당 매출을 따라감)
@@ -3941,6 +3975,7 @@ function shiftSalesDayFilter(delta) {
   const mm = String(base.getMonth() + 1).padStart(2, '0');
   const dd = String(base.getDate()).padStart(2, '0');
   salesDayFilter = `${yy}.${mm}.${dd}`;
+  salesDayFilterEnd = null;
   render();
 }
 function renderSales() {
@@ -5166,6 +5201,20 @@ function todayStr() {
   const yy = String(d.getFullYear()).slice(2);
   const mm = String(d.getMonth() + 1).padStart(2, '0');
   const dd = String(d.getDate()).padStart(2, '0');
+  return `${yy}.${mm}.${dd}`;
+}
+function monthStartStr() {
+  const d = new Date();
+  const yy = String(d.getFullYear()).slice(2);
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  return `${yy}.${mm}.01`;
+}
+function monthEndStr() {
+  const d = new Date();
+  const lastDay = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+  const yy = String(d.getFullYear()).slice(2);
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(lastDay).padStart(2, '0');
   return `${yy}.${mm}.${dd}`;
 }
 function toDateInputValue(kdate) {
