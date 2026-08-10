@@ -194,6 +194,7 @@
     <button onclick="document.querySelectorAll('.main-flag-checkbox').forEach(cb=>{cb.checked=false; cb.dispatchEvent(new Event('change'));})" style="border:none;background:#eee;color:#555;border-radius:8px;padding:7px 12px;font-size:12px;">전체 해제</button>
     <button onclick="printSelectedMainStatements()" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">🖨 선택 인쇄 (메인 체크)</button>
     <button onclick="showCustomerLedger()" style="border:none;background:#e8edf5;color:#3d4f6b;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">📒 거래처원장</button>
+    <button onclick="showPaymentLedger()" style="border:none;background:#e6f0fa;color:#1a56db;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">💰 입금장부</button>
     <button onclick="openUnpaidSummaryModal()" style="border:none;background:#fce8d6;color:#a15c1e;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">📋 거래처 미수금표</button>
     <button onclick="showItemMonthlyStats()" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">📊 품목출고량</button>
     <button onclick="openExpenseModal()" style="border:none;background:#fdecea;color:var(--danger);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">💸 지출 내역</button>
@@ -3127,6 +3128,14 @@ function getCostPerYard(item) {
   return finalCost(costMatch);
 }
 
+function showPaymentLedger() {
+  salesSpecialView = 'paymentLedger';
+  render();
+}
+function exitPaymentLedger() {
+  salesSpecialView = null;
+  render();
+}
 function showCustomerLedger(customer) {
   salesSpecialView = 'customerLedger';
   ledgerCustomer = customer || ledgerCustomer || '';
@@ -3138,6 +3147,116 @@ function exitCustomerLedger() {
   ledgerStartDate = null;
   ledgerEndDate = null;
   render();
+}
+function renderPaymentLedgerView() {
+  const list = document.getElementById('list');
+  list.innerHTML = '';
+
+  const backBtn = document.createElement('button');
+  backBtn.textContent = '← 돌아가기';
+  backBtn.style.cssText = 'border:none;background:#eee;color:#555;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;margin-bottom:10px;';
+  backBtn.onclick = exitPaymentLedger;
+  list.appendChild(backBtn);
+
+  // 모든 입금 기록을 하나로 모음
+  let payments = [];
+  for (const e of shipmentLog) {
+    (e.payments || []).forEach((p, idx) => {
+      payments.push({
+        date: p.date, amount: p.amount, method: p.method || 'cash',
+        entryId: e.id, idx,
+        customer: e.customer || '(거래처 없음)',
+        desc: e.item === '이월 미수금' ? '이월 미수금' : (e.isFee ? `추가금${e.note ? ` - ${e.note}` : ''}` : `${e.item} ${e.color || ''}`)
+      });
+    });
+  }
+  if (salesDayFilter) {
+    if (salesDayFilterEnd) payments = payments.filter(p => p.date >= salesDayFilter && p.date <= salesDayFilterEnd);
+    else payments = payments.filter(p => p.date === salesDayFilter);
+  }
+  if (searchTerm.trim()) {
+    const t = searchTerm.trim().toLowerCase();
+    payments = payments.filter(p => p.customer.toLowerCase().includes(t) || p.desc.toLowerCase().includes(t));
+  }
+
+  const totalCash = payments.filter(p => p.method === 'cash').reduce((s, p) => s + p.amount, 0);
+  const totalOnline = payments.filter(p => p.method === 'online').reduce((s, p) => s + p.amount, 0);
+  document.getElementById('stats').innerHTML = `<span>입금 합계 ${(totalCash + totalOnline).toLocaleString()}원</span><span>현금 ${totalCash.toLocaleString()}원</span><span>온라인 ${totalOnline.toLocaleString()}원</span>`;
+
+  if (payments.length === 0) { list.innerHTML += '<div class="empty">입금 기록이 없습니다</div>'; return; }
+
+  // 거래처별 현재 남은 미수금(오늘 기준 최신 상태) 미리 계산
+  const unpaidByCustomer = new Map();
+  for (const e of shipmentLog) {
+    if (!e.customer || e.saleAmount == null) continue;
+    const k = String(e.customer).trim();
+    unpaidByCustomer.set(k, Math.round(((unpaidByCustomer.get(k) || 0) + getRemaining(e)) * 100) / 100);
+  }
+
+  const byDate = new Map();
+  for (const p of payments) {
+    if (!byDate.has(p.date)) byDate.set(p.date, []);
+    byDate.get(p.date).push(p);
+  }
+  const dates = Array.from(byDate.keys()).sort((a, b) => b.localeCompare(a));
+
+  for (const date of dates) {
+    const dayPayments = byDate.get(date);
+    const dayCash = dayPayments.filter(p => p.method === 'cash').reduce((s, p) => s + p.amount, 0);
+    const dayOnline = dayPayments.filter(p => p.method === 'online').reduce((s, p) => s + p.amount, 0);
+
+    const banner = document.createElement('div');
+    banner.className = 'factory-divider';
+    banner.textContent = `${date} · 입금 ${(dayCash + dayOnline).toLocaleString()}원 (현금 ${dayCash.toLocaleString()} / 온라인 ${dayOnline.toLocaleString()})`;
+    list.appendChild(banner);
+
+    // 같은 날짜 안에서 거래처별로 합쳐서 보여줌
+    const byCustomer = new Map();
+    for (const p of dayPayments) {
+      if (!byCustomer.has(p.customer)) byCustomer.set(p.customer, []);
+      byCustomer.get(p.customer).push(p);
+    }
+
+    const div = document.createElement('div');
+    div.className = 'group';
+    const inner = document.createElement('div');
+    for (const [customer, list2] of byCustomer) {
+      const total = list2.reduce((s, p) => s + p.amount, 0);
+      const cash = list2.filter(p => p.method === 'cash').reduce((s, p) => s + p.amount, 0);
+      const online = list2.filter(p => p.method === 'online').reduce((s, p) => s + p.amount, 0);
+      const remaining = unpaidByCustomer.get(String(customer).trim()) || 0;
+      const gk = `paylog:${date}:${customer}`;
+      const isOpen = openGroups.has(gk);
+
+      const row = document.createElement('div');
+      row.className = 'order-card';
+      row.style.cursor = 'pointer';
+      row.onclick = () => toggleGroup(gk);
+      row.innerHTML = `
+        <div class="order-top">
+          <div>
+            <div class="order-name">${esc(customer)}</div>
+            <div class="order-sub">${cash > 0 ? `현금 ${cash.toLocaleString()}원` : ''}${cash > 0 && online > 0 ? ' · ' : ''}${online > 0 ? `온라인 ${online.toLocaleString()}원` : ''}${list2.length > 1 ? ` (${list2.length}건)` : ''} · <span style="color:${remaining > 0 ? 'var(--danger)' : 'var(--muted)'};">미수금 ${remaining.toLocaleString()}원 남음</span></div>
+          </div>
+          <div class="order-status status-done">${total.toLocaleString()}원</div>
+        </div>
+      `;
+      inner.appendChild(row);
+      if (isOpen) {
+        const detail = document.createElement('div');
+        detail.style.padding = '0 4px 8px';
+        detail.innerHTML = list2.map(p => `
+          <div onclick="event.stopPropagation(); quickEditPayment(${p.entryId}, ${p.idx})" style="display:flex; justify-content:space-between; padding:6px 8px; font-size:12px; border-top:1px dashed var(--border); cursor:pointer;">
+            <span>${esc(p.desc)} · ${p.method === 'cash' ? '현금' : '온라인'}</span>
+            <span style="font-weight:600;">${p.amount.toLocaleString()}원</span>
+          </div>
+        `).join('');
+        inner.appendChild(detail);
+      }
+    }
+    div.appendChild(inner);
+    list.appendChild(div);
+  }
 }
 function renderCustomerLedgerView() {
   const list = document.getElementById('list');
@@ -3715,6 +3834,11 @@ function renderSales() {
   if (salesSpecialView === 'customerLedger') {
     document.getElementById('stats').innerHTML = '';
     renderCustomerLedgerView();
+    return;
+  }
+  if (salesSpecialView === 'paymentLedger') {
+    document.getElementById('stats').innerHTML = '';
+    renderPaymentLedgerView();
     return;
   }
 
