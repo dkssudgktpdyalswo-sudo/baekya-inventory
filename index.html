@@ -1462,6 +1462,7 @@ function renderInv() {
               rr.innerHTML = `
                 <div>롤 <span class="yd">${r.qty}y</span>${r.inDate ? `<span style="font-size:11px;color:var(--muted);margin-left:6px;">${esc(r.inDate)} 입고</span>` : ''}</div>
                 <div class="btns">
+                  <button class="btn-out" style="background:#eaf3ec;color:#2f6b46;" onclick="event.stopPropagation(); openRollAddModalFor('${escAttr(r.item)}', '${escAttr(r.color)}')">입고</button>
                   <button class="btn-out" onclick="event.stopPropagation(); openOutModal(${r.id})">출고</button>
                   <button class="btn-out" style="background:#eee;color:var(--text);" onclick="event.stopPropagation(); openRollEditModal(${r.id})">수정</button>
                   <button class="btn-out" style="background:#fdecea;color:var(--danger);" onclick="event.stopPropagation(); markRollDefective(${r.id})">불량</button>
@@ -1486,6 +1487,15 @@ function openRollAddModal() {
   document.getElementById('f-stock-info').classList.add('hidden');
   document.getElementById('f-roll-list').innerHTML = '';
   addRollRow();
+  document.getElementById('addModal').classList.add('open');
+}
+function openRollAddModalFor(item, color) {
+  document.getElementById('f-date').value = toDateInputValue(todayStr());
+  document.getElementById('f-item').value = item;
+  document.getElementById('f-color').value = color;
+  document.getElementById('f-roll-list').innerHTML = '';
+  addRollRow();
+  updateAddModalStockInfo();
   document.getElementById('addModal').classList.add('open');
 }
 function updateAddModalStockInfo() {
@@ -1555,9 +1565,9 @@ async function saveAdd() {
     const qty = parseFloat(rowEl.querySelector('.f-roll-qty').value);
     const defective = rowEl.querySelector('.f-roll-defective').checked;
     const reason = rowEl.querySelector('.f-roll-reason').value.trim();
-    if (qty && qty > 0) entries.push({ tang, qty, defective, reason });
+    if (!isNaN(qty) && qty >= 0) entries.push({ tang, qty, defective, reason }); // 0을 입력하면 재고 없이 품목만 미리 등록됨
   });
-  if (entries.length === 0) { showToast('마수를 하나 이상 입력해주세요'); return; }
+  if (entries.length === 0) { showToast('마수를 입력해주세요 (재고 없이 미리 등록만 하시려면 0을 입력하세요)'); return; }
 
   const cat = autoDeriveCat(item);
   // 이 컬러에 남아있던 0y짜리 자리표시용 롤은 정리 (실재고가 새로 들어오니까)
