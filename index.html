@@ -181,6 +181,7 @@
   <div id="orderTools" class="hidden" style="display:flex; gap:6px; margin-top:6px; flex-wrap:wrap;">
     <button id="orderGroupToggleBtn" onclick="toggleOrderGroupMode()" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;"></button>
     <button onclick="printOrderLedger()" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">🖨 이월장부 인쇄</button>
+    <button onclick="repairOrdersFromShipmentLog()" style="border:none;background:#fdecea;color:var(--danger);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">🔧 진행량 복구(매출기록 기준)</button>
     <button onclick="archiveOldCompleted()" style="border:none;background:#fff3d6;color:#a15c1e;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">오래된 완료건 내보내기+정리</button>
   </div>
   <div id="salesTools" class="hidden" style="display:flex; gap:6px; margin-top:6px; flex-wrap:wrap;">
@@ -697,6 +698,7 @@ const firebaseConfig = {
   appId: "1:995742705102:web:7294216d6e4745dd1df79f"
 };
 let useFirebase = false;
+let lastSnapshotJSON = { orders: null, shipmentLog: null, rolls: null }; // 여러 명이 동시에 쓸 때 덮어쓰기 사고 막기용
 let db = null;
 try {
   if (firebaseConfig.apiKey !== "PASTE_YOUR_API_KEY_HERE" && typeof firebase !== 'undefined') {
@@ -816,6 +818,7 @@ async function loadAll() {
         if (doc.exists && doc.data().data) {
           rolls = JSON.parse(doc.data().data);
           nextId = rolls.reduce((m, r) => Math.max(m, r.id), 0) + 1;
+          lastSnapshotJSON.rolls = doc.data().data;
         } else if (!loaded.rolls) {
           rolls = DEFAULT_ROLLS.map(([cat, item, color, tang, qty]) => ({ id: nextId++, cat, item, color, tang, qty }));
           persistRolls();
@@ -848,6 +851,7 @@ async function loadAll() {
         if (doc.exists && doc.data().data) {
           orders = JSON.parse(doc.data().data);
           nextOrderId = orders.reduce((m, r) => Math.max(m, r.id), 0) + 1;
+          lastSnapshotJSON.orders = doc.data().data;
         } else if (!loaded.orders) {
           orders = DEFAULT_ORDERS.map(([date, customer, factory, item, color, orderQty, unit, received, note]) =>
             ({ id: nextOrderId++, date, customer, factory, item, color, orderQty, unit: unit || 'y', received, note, done: false }));
@@ -868,6 +872,7 @@ async function loadAll() {
         if (doc.exists && doc.data().data) {
           shipmentLog = JSON.parse(doc.data().data);
           nextLogId = shipmentLog.reduce((m, r) => Math.max(m, r.id), 0) + 1;
+          lastSnapshotJSON.shipmentLog = doc.data().data;
         }
         loaded.log = true; render(); checkDone();
       });
@@ -986,10 +991,36 @@ async function fallbackLoadAll() {
   updateRateBar();
 }
 
-async function persistRolls() {
-  if (useFirebase) { try { await db.collection('inventory').doc('rolls').set({ data: JSON.stringify(rolls) }); } catch(e){ showToast('저장 오류'); } return; }
-  await safeStorage.set('rolls', JSON.stringify(rolls), true);
+async function persistGuarded(docId, key, dataArray) {
+  // 여러 명이 동시에 쓸 때, 내가 마지막으로 본 이후 다른 사람이 먼저 저장한 게 있으면
+  // 조용히 덮어쓰지 않고 막아서 물어봄 (전체 내용을 통째로 저장하는 방식이라 이 안전장치가 꼭 필요함)
+  if (!useFirebase) {
+    await safeStorage.set(docId, JSON.stringify(dataArray), true);
+    return;
+  }
+  const newJSON = JSON.stringify(dataArray);
+  const ref = db.collection('inventory').doc(docId);
+  try {
+    await db.runTransaction(async (tx) => {
+      const snap = await tx.get(ref);
+      const currentJSON = (snap.exists && snap.data() && snap.data().data) ? snap.data().data : null;
+      const known = lastSnapshotJSON[key];
+      if (known != null && currentJSON !== known) {
+        throw new Error('STALE_WRITE');
+      }
+      tx.set(ref, { data: newJSON });
+    });
+    lastSnapshotJSON[key] = newJSON;
+  } catch (e) {
+    if (e && e.message === 'STALE_WRITE') {
+      alert('⚠️ 다른 사람이 방금 같은 자료를 먼저 저장했어요.\n지금 하신 작업은 저장되지 않았어요 - 화면을 새로고침한 뒤 다시 시도해주세요.');
+      location.reload();
+    } else {
+      showToast('저장 오류');
+    }
+  }
 }
+async function persistRolls() { await persistGuarded('rolls', 'rolls', rolls); }
 async function persistCosts() {
   if (useFirebase) { try { await db.collection('inventory').doc('costs').set({ data: JSON.stringify(costs) }); } catch(e){ showToast('저장 오류'); } return; }
   await safeStorage.set('costs', JSON.stringify(costs), true);
@@ -998,18 +1029,12 @@ async function persistSettings() {
   if (useFirebase) { try { await db.collection('inventory').doc('settings').set(settings); } catch(e){ showToast('저장 오류'); } return; }
   await safeStorage.set('settings', JSON.stringify(settings), true);
 }
-async function persistOrders() {
-  if (useFirebase) { try { await db.collection('inventory').doc('orders').set({ data: JSON.stringify(orders) }); } catch(e){ showToast('저장 오류'); } return; }
-  await safeStorage.set('orders', JSON.stringify(orders), true);
-}
+async function persistOrders() { await persistGuarded('orders', 'orders', orders); }
 async function persistSwatchInfo() {
   if (useFirebase) { try { await db.collection('inventory').doc('swatchInfo').set({ data: JSON.stringify(swatchInfo) }); } catch(e){ showToast('저장 오류'); } return; }
   await safeStorage.set('swatchInfo', JSON.stringify(swatchInfo), true);
 }
-async function persistShipmentLog() {
-  if (useFirebase) { try { await db.collection('inventory').doc('shipmentLog').set({ data: JSON.stringify(shipmentLog) }); } catch(e){ showToast('저장 오류'); } return; }
-  await safeStorage.set('shipmentLog', JSON.stringify(shipmentLog), true);
-}
+async function persistShipmentLog() { await persistGuarded('shipmentLog', 'shipmentLog', shipmentLog); }
 async function persistPriceBook() {
   if (useFirebase) { try { await db.collection('inventory').doc('priceBook').set({ data: JSON.stringify(priceBook) }); } catch(e){ showToast('저장 오류'); } return; }
   await safeStorage.set('priceBook', JSON.stringify(priceBook), true);
@@ -5291,6 +5316,38 @@ function exportSalesLog() {
   document.body.appendChild(a); a.click(); document.body.removeChild(a);
   URL.revokeObjectURL(url);
   showToast(`${target.length}건 내보냈습니다 (사이트 데이터는 그대로 있어요)`);
+}
+async function repairOrdersFromShipmentLog() {
+  if (!confirm('매출/출고 기록을 기준으로, 실제로 나간 것보다 이월장부 진행량이 적게 잡혀있는 발주들을 찾아서 다시 채워넣을게요.\n(줄이는 방향으로는 절대 안 건드려요) 진행할까요?')) return;
+
+  // 발주별로 실제 출고된 순수 y(또는 절→y 환산)를 매출기록에서 다시 합산 (반품/불량/추가금은 제외)
+  const derivedByOrder = new Map();
+  for (const e of shipmentLog) {
+    if (e.orderId == null) continue;
+    if (e.isReturn || e.isDefect || e.isFee || e.manualClose) continue;
+    const prev = derivedByOrder.get(e.orderId) || 0;
+    derivedByOrder.set(e.orderId, Math.round((prev + (e.amount || 0)) * 100) / 100);
+  }
+
+  let fixedCount = 0;
+  const fixedList = [];
+  for (const o of orders) {
+    const derived = derivedByOrder.get(o.id);
+    if (derived == null) continue;
+    if (derived > (o.received || 0) + 0.01) { // 실제 기록이 더 많으면(=진행량이 유실된 것) 복구
+      const before = o.received || 0;
+      o.received = derived;
+      const remain = (o.orderQty && o.orderQty > o.received) ? Math.round((o.orderQty - o.received) * 100) / 100 : 0;
+      if (remain <= 0 && !o.done) { o.done = true; o.doneDate = o.doneDate || todayStr(); }
+      fixedCount++;
+      fixedList.push(`${o.customer} · ${o.item} ${o.color || ''}: ${before}${o.unit || 'y'} → ${o.received}${o.unit || 'y'}`);
+    }
+  }
+
+  if (fixedCount === 0) { showToast('진행량이 유실된 발주를 찾지 못했어요'); return; }
+  await persistOrders();
+  render();
+  alert(`${fixedCount}건 복구했어요:\n\n${fixedList.slice(0, 30).join('\n')}${fixedList.length > 30 ? `\n...외 ${fixedList.length - 30}건` : ''}`);
 }
 async function archiveOldCompleted() {
   const daysStr = prompt('완료된 지 며칠 지난 것부터 내보내고 정리할까요? (예: 30)', '30');
