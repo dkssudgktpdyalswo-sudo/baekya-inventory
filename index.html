@@ -831,9 +831,15 @@ async function loadAll() {
       });
 
       db.collection('inventory').doc('settings').onSnapshot((doc) => {
-        if (doc.exists && doc.data()) {
+        if (doc.exists && doc.data() && doc.data().data) {
+          // 새 형식(문자열로 감싸서 저장)
+          settings = { ...DEFAULT_SETTINGS, ...JSON.parse(doc.data().data) };
+          lastSnapshotJSON.settings = doc.data().data;
+        } else if (doc.exists && doc.data() && Object.keys(doc.data()).length > 0) {
+          // 예전 형식(객체를 그대로 저장한 것) - 읽은 뒤 새 형식으로 한 번 옮겨 저장
           settings = { ...DEFAULT_SETTINGS, ...doc.data() };
-          lastSnapshotJSON.settings = JSON.stringify(doc.data());
+          lastSnapshotJSON.settings = null;
+          persistSettings();
         } else if (!loaded.settings) {
           settings = { ...DEFAULT_SETTINGS };
           persistSettings();
@@ -1038,13 +1044,13 @@ async function persistSettings() {
   try {
     await db.runTransaction(async (tx) => {
       const snap = await tx.get(ref);
-      const currentJSON = (snap.exists && snap.data()) ? JSON.stringify(snap.data()) : null;
+      const currentJSON = (snap.exists && snap.data() && snap.data().data) ? snap.data().data : null;
       const known = lastSnapshotJSON.settings;
       if (known != null && currentJSON !== known) {
         throw new Error('STALE_WRITE');
       }
       await backupIfNeededInTx(tx, 'settings', currentJSON);
-      tx.set(ref, settings);
+      tx.set(ref, { data: newJSON });
     });
     lastSnapshotJSON.settings = newJSON;
   } catch (e) {
@@ -2645,7 +2651,8 @@ function addPreShipRow(desc, qty, price, presetAmount) {
   row.className = 'pre-ship-row';
   row.style.cssText = 'border:1px solid var(--border); border-radius:8px; padding:8px; margin-top:6px;';
   row.innerHTML = `
-    <input type="text" class="pre-ship-desc" placeholder="예: 버블 2번진청 / 운임비 / 반품 등" value="${escAttr(desc || '')}" style="width:100%; padding:8px; border:1px solid var(--border); border-radius:8px; font-size:14px; margin-bottom:6px;">
+    <input type="text" class="pre-ship-desc" placeholder="예: 버블 2번진청" value="${escAttr(desc || '')}" style="width:100%; padding:8px; border:1px solid var(--border); border-radius:8px; font-size:14px; margin-bottom:6px;">
+    <input type="text" class="pre-ship-note" placeholder="비고(선택 - 운임비, 반품 사유 등)" style="width:100%; padding:8px; border:1px solid var(--border); border-radius:8px; font-size:13px; margin-bottom:6px;">
     <div style="display:flex; gap:6px; align-items:center;">
       <input type="number" step="0.1" class="pre-ship-qty" placeholder="수량(y, 선택)" value="${qty != null && qty !== '' ? qty : ''}" oninput="updatePreShipTotals()" style="flex:1; padding:8px; border:1px solid var(--border); border-radius:8px; font-size:13px;">
       <input type="number" step="1" class="pre-ship-price" placeholder="단가(원/y, 선택)" value="${price != null ? price : ''}" oninput="updatePreShipTotals()" style="flex:1; padding:8px; border:1px solid var(--border); border-radius:8px; font-size:13px;">
@@ -2694,13 +2701,14 @@ function printPreShipmentFromModal() {
   let totalSupply = 0;
   rowEls.forEach(row => {
     const desc = row.querySelector('.pre-ship-desc').value.trim();
+    const note = row.querySelector('.pre-ship-note').value.trim();
     const qty = row.querySelector('.pre-ship-qty').value;
     const price = row.querySelector('.pre-ship-price').value;
     const amount = parseFloat(row.querySelector('.pre-ship-amount').value) || 0;
     if (!desc && !amount) return;
     totalSupply += amount;
     rows.push({
-      date: todayStr(), desc, qty: qty ? `${qty}y` : '', unitPrice: price ? parseFloat(price).toLocaleString() : '',
+      date: todayStr(), desc, note, qty: qty ? `${qty}y` : '', unitPrice: price ? parseFloat(price).toLocaleString() : '',
       supply: amount, negative: amount < 0
     });
   });
@@ -2714,6 +2722,7 @@ function printPreShipmentFromModal() {
     <tr style="${r.negative ? 'color:#c0392b;' : ''}">
       <td style="padding:1px 4px;">${esc(r.date)}</td>
       <td style="padding:1px 4px;">${esc(r.desc)}</td>
+      <td style="padding:1px 4px;">${esc(r.note)}</td>
       <td style="padding:1px 4px; text-align:right;">${esc(r.qty)}</td>
       <td style="padding:1px 4px; text-align:right;">${esc(r.unitPrice)}</td>
       <td style="padding:1px 4px; text-align:right;">${r.supply.toLocaleString()}</td>
@@ -2748,8 +2757,8 @@ function printPreShipmentFromModal() {
         </table>
       </div>
       <div style="flex:1 1 auto; overflow:hidden; min-height:0;">
-        <table style="font-size:10px;">
-          <thead><tr><th style="padding:1px 4px;">날짜</th><th style="padding:1px 4px;">내용</th><th style="padding:1px 4px;">수량</th><th style="padding:1px 4px;">단가(원)</th><th style="padding:1px 4px;">공급가액(원)</th></tr></thead>
+        <table style="font-size:10px; table-layout:fixed; width:100%;">
+          <thead><tr><th style="width:10%; padding:1px 4px;">날짜</th><th style="width:20%; padding:1px 4px;">내용</th><th style="width:32%; padding:1px 4px;">비고</th><th style="width:10%; padding:1px 4px;">수량</th><th style="width:12%; padding:1px 4px;">단가(원)</th><th style="width:16%; padding:1px 4px;">공급가액(원)</th></tr></thead>
           <tbody>${rowsHtml}</tbody>
         </table>
       </div>
@@ -2930,7 +2939,7 @@ function buildStatementHTML(customerName, startDate, endDate, entryIdFilter) {
       <div style="flex:1 1 auto; overflow:hidden; min-height:0;">
         <table style="font-size:${sizes.rowFont}; table-layout:fixed; width:100%;">
           <thead>
-            <tr><th style="width:8%; padding:${sizes.rowPad} 4px;">날짜</th><th style="width:24%; padding:${sizes.rowPad} 4px;">내용</th><th style="width:8%; padding:${sizes.rowPad} 4px;">수량</th><th style="width:14%; padding:${sizes.rowPad} 4px;">비고</th><th style="width:9%; padding:${sizes.rowPad} 4px;">단가(원)</th><th style="width:12%; padding:${sizes.rowPad} 4px;">공급가액(원)</th><th style="width:10%; padding:${sizes.rowPad} 4px;">세액(원)</th><th style="width:12%; padding:${sizes.rowPad} 4px;">합계(원)</th></tr>
+            <tr><th style="width:8%; padding:${sizes.rowPad} 4px;">날짜</th><th style="width:15%; padding:${sizes.rowPad} 4px;">내용</th><th style="width:8%; padding:${sizes.rowPad} 4px;">수량</th><th style="width:23%; padding:${sizes.rowPad} 4px;">비고</th><th style="width:9%; padding:${sizes.rowPad} 4px;">단가(원)</th><th style="width:12%; padding:${sizes.rowPad} 4px;">공급가액(원)</th><th style="width:10%; padding:${sizes.rowPad} 4px;">세액(원)</th><th style="width:12%; padding:${sizes.rowPad} 4px;">합계(원)</th></tr>
           </thead>
           <tbody>${rowsHtml}</tbody>
         </table>
