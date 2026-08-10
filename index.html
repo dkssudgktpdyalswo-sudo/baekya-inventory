@@ -3634,6 +3634,21 @@ async function editCarryoverBalance(customer, entryId) {
   if (document.getElementById('unpaidSummaryModal').classList.contains('open')) renderUnpaidSummaryList();
   showToast(`이월 미수금을 ${amount.toLocaleString()}원으로 수정했습니다`);
 }
+async function renameFactoryForOrders(oldFactory, orderIds) {
+  const raw = prompt(`"${oldFactory}"로 되어있는 발주 ${orderIds.length}건의 공장/연락처를 뭐로 바꿀까요?`, oldFactory === '(연락처 미입력)' ? '' : oldFactory);
+  if (raw === null) return;
+  const newFactory = raw.trim();
+  if (!newFactory) { showToast('공장/연락처를 입력해주세요'); return; }
+  let changed = 0;
+  for (const id of orderIds) {
+    const o = orders.find(x => x.id === id);
+    if (o && o.factory !== newFactory) { o.factory = newFactory; changed++; }
+  }
+  if (changed === 0) { showToast('바뀐 내용이 없어요'); return; }
+  await persistOrders();
+  render();
+  showToast(`${changed}건의 공장/연락처를 "${newFactory}"로 바꿨어요`);
+}
 async function renameCustomer(oldName) {
   const raw = prompt(`"${oldName}"의 이름을 무엇으로 바꿀까요?`, oldName);
   if (raw === null || !raw.trim()) return;
@@ -4150,12 +4165,15 @@ function renderCustomerBuckets(list2) {
       }
       for (const [fkey, fItems] of byFactory) {
         const notDoneIds = fItems.filter(o => !o.done).map(o => o.id);
+        const allIdsInGroup = fItems.map(o => o.id);
         const factoryHead = document.createElement('div');
-        factoryHead.style.cssText = 'display:flex; align-items:center; gap:6px; padding:6px 4px; font-size:12px; color:var(--muted); border-top:1px dashed var(--border); margin-top:4px;';
-        factoryHead.innerHTML = notDoneIds.length > 0 ? `
+        factoryHead.style.cssText = 'display:flex; align-items:center; gap:6px; padding:6px 4px; font-size:12px; color:var(--muted); border-top:1px dashed var(--border); margin-top:4px; flex-wrap:wrap;';
+        factoryHead.innerHTML = (notDoneIds.length > 0 ? `
           <input type="checkbox" class="preship-group-check" data-ids="${notDoneIds.join(',')}" onchange="this.dataset.ids.split(',').forEach(id => { const cb = document.querySelector('.preship-item-check[data-id=\\'' + id + '\\']'); if (cb) cb.checked = this.checked; })" style="width:auto;">
           <span>${esc(fkey)} (이 그룹 전체 선택)</span>
-        ` : `<span>${esc(fkey)}</span>`;
+        ` : `<span>${esc(fkey)}</span>`) + `
+          <button onclick="renameFactoryForOrders('${escAttr(fkey)}', [${allIdsInGroup.join(',')}])" style="border:none;background:#eee;color:#555;border-radius:6px;padding:2px 8px;font-size:11px;">공장/연락처 일괄수정 (${allIdsInGroup.length}건)</button>
+        `;
         inner.appendChild(factoryHead);
         for (const o of fItems) {
           const card = renderOrderCard(o, true);
