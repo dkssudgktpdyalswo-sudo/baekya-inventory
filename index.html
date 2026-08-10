@@ -686,6 +686,7 @@ const PASSWORD = "3059";
 const ADMIN_PASSWORD = "9503"; // 매출/미수금 탭 전용 - 필요하면 이 값만 바꿔서 변경 가능
 const LOW_STOCK_THRESHOLD = 100;
 const DATA_VERSION = "2026-08-03-v4"; // 재고/이월장부 씨앗 데이터를 바꿀 때마다 이 값을 새로 바꿔주세요
+const APP_CODE_VERSION = "2026-08-10-b"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
 
 const firebaseConfig = {
   apiKey: "AIzaSyA4Qrz16VpQuBVxTzGMyoAD9BtzIgXV0cQ",
@@ -5921,8 +5922,32 @@ async function fixLegacyFeeEntriesIfNeeded() {
   await persistSettings();
 }
 
+function watchAppVersion() {
+  // 이 앱 코드보다 더 새 버전이 배포된 걸 감지하면, 예전 화면을 자동으로 새로고침시켜서
+  // 안전장치 없는 옛날 코드가 계속 켜져있다가 사고내는 걸 막음
+  if (!useFirebase) return;
+  const ref = db.collection('inventory').doc('appVersion');
+  ref.onSnapshot((doc) => {
+    const remoteVersion = doc.exists ? doc.data().version : null;
+    if (remoteVersion == null || remoteVersion < APP_CODE_VERSION) {
+      ref.set({ version: APP_CODE_VERSION }).catch(() => {});
+    } else if (remoteVersion > APP_CODE_VERSION) {
+      showVersionOutdatedBanner();
+    }
+  });
+}
+function showVersionOutdatedBanner() {
+  if (document.getElementById('versionOutdatedBanner')) return;
+  const banner = document.createElement('div');
+  banner.id = 'versionOutdatedBanner';
+  banner.style.cssText = 'position:fixed; top:0; left:0; right:0; background:#c0392b; color:#fff; text-align:center; padding:10px; font-size:14px; font-weight:700; z-index:9999;';
+  banner.textContent = '⚠️ 새 버전이 있어요! 곧 자동으로 새로고침됩니다...';
+  document.body.appendChild(banner);
+  setTimeout(() => location.reload(), 2500);
+}
 async function init() {
   document.getElementById('rateBar').classList.add('hidden');
+  watchAppVersion();
   await loadAll();
   await applyDataVersionIfNeeded();
   await applyCarryoverUnpaidIfNeeded();
