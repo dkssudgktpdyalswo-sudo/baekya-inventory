@@ -200,6 +200,7 @@
     <button onclick="exportSalesLog()" style="border:none;background:#fff3d6;color:#a15c1e;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">📤 매출장부 내보내기</button>
     <button onclick="archiveOldSalesLog()" style="border:none;background:#fff3d6;color:#a15c1e;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">🗑 매출장부 내보내기+정리</button>
     <button onclick="openBizInfoModal()" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">사업자 정보 설정</button>
+    <button onclick="restoreFromBackup()" style="border:none;background:#f1eee7;color:var(--muted);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">🗄 예전 날짜 백업으로 복구</button>
   </div>
 </div>
 
@@ -697,7 +698,7 @@ const firebaseConfig = {
   appId: "1:995742705102:web:7294216d6e4745dd1df79f"
 };
 let useFirebase = false;
-let lastSnapshotJSON = { orders: null, shipmentLog: null, rolls: null }; // 여러 명이 동시에 쓸 때 덮어쓰기 사고 막기용
+let lastSnapshotJSON = { orders: null, shipmentLog: null, rolls: null, settings: null }; // 여러 명이 동시에 쓸 때 덮어쓰기 사고 막기용
 let db = null;
 try {
   if (firebaseConfig.apiKey !== "PASTE_YOUR_API_KEY_HERE" && typeof firebase !== 'undefined') {
@@ -839,6 +840,7 @@ async function loadAll() {
       db.collection('inventory').doc('settings').onSnapshot((doc) => {
         if (doc.exists && doc.data()) {
           settings = { ...DEFAULT_SETTINGS, ...doc.data() };
+          lastSnapshotJSON.settings = JSON.stringify(doc.data());
         } else if (!loaded.settings) {
           settings = { ...DEFAULT_SETTINGS };
           persistSettings();
@@ -990,6 +992,17 @@ async function fallbackLoadAll() {
   updateRateBar();
 }
 
+async function backupIfNeededInTx(tx, key, currentJSON) {
+  // 하루에 한 번, 저장 직전의(=아직 안전했던) 상태를 백업용으로 남겨둠. 실패해도 본 저장은 막지 않음
+  if (currentJSON == null) return;
+  try {
+    const backupRef = db.collection('inventory_backups').doc(`${key}_${todayStr()}`);
+    const backupSnap = await tx.get(backupRef);
+    if (!backupSnap.exists) {
+      tx.set(backupRef, { data: currentJSON, savedAt: new Date().toISOString() });
+    }
+  } catch (e) { /* 백업 실패는 무시하고 진행 */ }
+}
 async function persistGuarded(docId, key, dataArray) {
   // 여러 명이 동시에 쓸 때, 내가 마지막으로 본 이후 다른 사람이 먼저 저장한 게 있으면
   // 조용히 덮어쓰지 않고 막아서 물어봄 (전체 내용을 통째로 저장하는 방식이라 이 안전장치가 꼭 필요함)
@@ -1007,6 +1020,7 @@ async function persistGuarded(docId, key, dataArray) {
       if (known != null && currentJSON !== known) {
         throw new Error('STALE_WRITE');
       }
+      await backupIfNeededInTx(tx, key, currentJSON);
       tx.set(ref, { data: newJSON });
     });
     lastSnapshotJSON[key] = newJSON;
@@ -1025,8 +1039,29 @@ async function persistCosts() {
   await safeStorage.set('costs', JSON.stringify(costs), true);
 }
 async function persistSettings() {
-  if (useFirebase) { try { await db.collection('inventory').doc('settings').set(settings); } catch(e){ showToast('저장 오류'); } return; }
-  await safeStorage.set('settings', JSON.stringify(settings), true);
+  if (!useFirebase) { await safeStorage.set('settings', JSON.stringify(settings), true); return; }
+  const newJSON = JSON.stringify(settings);
+  const ref = db.collection('inventory').doc('settings');
+  try {
+    await db.runTransaction(async (tx) => {
+      const snap = await tx.get(ref);
+      const currentJSON = (snap.exists && snap.data()) ? JSON.stringify(snap.data()) : null;
+      const known = lastSnapshotJSON.settings;
+      if (known != null && currentJSON !== known) {
+        throw new Error('STALE_WRITE');
+      }
+      await backupIfNeededInTx(tx, 'settings', currentJSON);
+      tx.set(ref, settings);
+    });
+    lastSnapshotJSON.settings = newJSON;
+  } catch (e) {
+    if (e && e.message === 'STALE_WRITE') {
+      alert('⚠️ 다른 사람이 방금 같은 설정을 먼저 저장했어요.\n지금 하신 작업은 저장되지 않았어요 - 화면을 새로고침한 뒤 다시 시도해주세요.');
+      location.reload();
+    } else {
+      showToast('저장 오류');
+    }
+  }
 }
 async function persistOrders() { await persistGuarded('orders', 'orders', orders); }
 async function persistSwatchInfo() {
@@ -3337,6 +3372,46 @@ function renderCustomerLedgerTable() {
     </table>
   `;
 }
+async function restoreFromBackup() {
+  if (!useFirebase) { showToast('이 화면에서는 백업 기능을 쓸 수 없어요'); return; }
+  const collLabel = prompt('무엇을 복구할까요?\n입력: 재고 / 이월장부 / 매출장부 / 설정');
+  if (!collLabel) return;
+  const keyMap = { '재고': 'rolls', '이월장부': 'orders', '매출장부': 'shipmentLog', '설정': 'settings' };
+  const key = keyMap[collLabel.trim()];
+  if (!key) { showToast('"재고", "이월장부", "매출장부", "설정" 중 하나로 입력해주세요'); return; }
+
+  const date = prompt(`${collLabel}의 몇 일자 백업으로 되돌릴까요? (YYYY-MM-DD, 그날 첫 저장 시점 기준)`);
+  if (!date) return;
+
+  let snap;
+  try {
+    snap = await db.collection('inventory_backups').doc(`${key}_${date}`).get();
+  } catch (e) { showToast('백업을 불러오는 중 오류가 났어요'); return; }
+  if (!snap.exists) { alert(`${date}에는 ${collLabel} 백업이 없어요. (그날 처음 저장이 있었을 때만 백업이 만들어져요)`); return; }
+
+  const backupJSON = snap.data().data;
+  const savedAt = snap.data().savedAt || '';
+  let preview;
+  try {
+    const parsed = key === 'settings' ? JSON.parse(backupJSON) : JSON.parse(backupJSON);
+    preview = Array.isArray(parsed) ? `${parsed.length}건` : '설정값';
+  } catch (e) { preview = '(내용 확인 불가)'; }
+
+  if (!confirm(`${date} 백업(저장시각: ${savedAt})으로 ${collLabel}을(를) 되돌릴게요.\n(${preview})\n\n⚠️ 지금 있는 최신 데이터는 이 백업 내용으로 덮어써져요. 계속할까요?`)) return;
+
+  const ref = db.collection('inventory').doc(key === 'settings' ? 'settings' : key);
+  try {
+    if (key === 'settings') {
+      await ref.set(JSON.parse(backupJSON));
+    } else {
+      await ref.set({ data: backupJSON });
+    }
+    alert('복구했어요. 화면을 새로고침할게요.');
+    location.reload();
+  } catch (e) {
+    showToast('복구 중 오류가 났어요');
+  }
+}
 function openExpenseModal() {
   document.getElementById('exp-date').value = toDateInputValue(todayStr());
   document.getElementById('exp-amount').value = '';
@@ -5454,6 +5529,33 @@ async function hardResetAll(silent) {
 
 const CARRYOVER_UNPAID = [["누스파세", 130900.0], ["광희)올", 629200.0], ["문텍스", 12144000.0], ["아이알", 710200.0], ["마우솔레움", 922350.0], ["일이2", 436590.0], ["H153", 112000.0], ["식스틴", 539000.0], ["제이룩", 706400.0], ["맥가이버2", 1972900.0], ["이블레스", 228800.0], ["콜라보영", 1057500.0], ["코지", 708000.0], ["SY디자인", 52250.0], ["호주머니", 676000.0], ["크로키", 135000.0], ["통", 6944800.0], ["준", 6105700.0], ["때깔", 1496300.0], ["파트너", 2552000.0], ["아이템", 468000.0], ["에이치투", 825000.0], ["시온", 3112580.0], ["로웰", 1206000.0], ["테이크", 748800.0], ["투플러스", 399200.0], ["짱", 10301300.0], ["유니스", 2793720.0], ["쏘페", 671200.0], ["사라(신평화)", 942600.0], ["리마쥬", 2114400.0], ["닛시", 575000.0], ["호박C", 4198500.0], ["핏하리", 907100.0], ["프로", 9965700.0], ["포미나", 10232800.0], ["틴트", 1839742.0], ["티나.M", 1764300.0], ["클래식", 42468635.0], ["카라", 975200.0], ["리치(채연)", 412400.0], ["주식회사 오션", 5174300.0], ["제작1부", 1192600.0], ["제이제이큐", 1563720.0], ["이모션", 451440.0], ["와이파이", 19910800.0], ["오토", 543380.0], ["엘림사", 634000.0], ["에이죤", 2870100.0], ["야투", 7706700.0], ["아이민", 896280.0], ["써니", 4535700.0], ["신성물산", 834240.0], ["시소", 150400.0], ["스타필드", 1836125.0], ["셀라", 1000000.0], ["삐삐", 23717500.0], ["뿌띠", 19350796.0], ["비타민", 5127490.0], ["비상", 760500.0], ["비비텍스", 1134000.0], ["백퍼센트", 691700.0], ["배동바지", 10801361.0], ["[폐업]미라보(런너패션)", 1180000.0], ["메이준", 4659000.0], ["메이원", 6291925.0], ["마벨", 790800.0], ["마를리", 142800.0], ["루카", 11018300.0], ["레시피", 560500.0], ["디자인", 6283600.0], ["다비드", 3930200.0], ["까르르", 23714200.0], ["간지짱", 3254700.0], ["Y&B(와이앤비)", 672000.0], ["57페이지", 587600.0]]; // 2026-08-06 기준 기존 거래처 미수금 (거래처, 금액)
 
+async function cleanupDuplicateCarryoverUnpaid() {
+  const groups = new Map();
+  for (const e of shipmentLog) {
+    if (e.item !== '이월 미수금') continue;
+    const key = String(e.customer).trim();
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(e);
+  }
+  const toRemoveIds = new Set();
+  const lines = [];
+  for (const [customer, list] of groups) {
+    if (list.length <= 1) continue;
+    // 입금 기록이 있는 걸 최우선으로 남기고, 없으면 가장 먼저 등록된(날짜 빠른) 걸 남김
+    const withPayment = list.filter(e => e.payments && e.payments.length > 0);
+    const keep = withPayment.length > 0 ? withPayment[0] : list.slice().sort((a, b) => a.date.localeCompare(b.date) || a.id - b.id)[0];
+    for (const e of list) {
+      if (e.id !== keep.id) toRemoveIds.add(e.id);
+    }
+    lines.push(`${customer}: ${list.length}건 중 1건만 남기고 ${list.length - 1}건 정리`);
+  }
+  if (toRemoveIds.size === 0) { showToast('중복된 이월 미수금이 없어요'); return; }
+  if (!confirm(`중복된 이월 미수금을 정리할게요:\n\n${lines.join('\n')}\n\n계속할까요?`)) return;
+  shipmentLog = shipmentLog.filter(e => !toRemoveIds.has(e.id));
+  await persistShipmentLog();
+  render();
+  alert(`정리했어요.\n\n${lines.join('\n')}`);
+}
 async function applyCarryoverUnpaidIfNeeded() {
   if (settings.carryoverUnpaidApplied) {
     await fixMeiWonNameIfNeeded();
