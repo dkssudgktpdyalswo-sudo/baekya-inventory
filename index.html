@@ -203,6 +203,7 @@
     <button onclick="archiveOldSalesLog()" style="border:none;background:#fff3d6;color:#a15c1e;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">🗑 매출장부 내보내기+정리</button>
     <button onclick="openBizInfoModal()" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">사업자 정보 설정</button>
     <button onclick="showAvailableBackups()" style="border:none;background:#f1eee7;color:var(--muted);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">🗄 백업 목록/복구</button>
+    <button onclick="manualBackupNow()" style="border:none;background:#eaf3ec;color:#2f6b46;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">📸 지금 이 순간 백업하기</button>
   </div>
 </div>
 
@@ -1021,6 +1022,19 @@ async function fallbackLoadAll() {
   updateRateBar();
 }
 
+async function manualBackupNow() {
+  if (!useFirebase) { showToast('이 화면에서는 백업 기능을 쓸 수 없어요'); return; }
+  const now = new Date();
+  const stamp = `${todayStr()}_${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}`;
+  try {
+    await db.collection('inventory_backups').doc(`rolls_manual_${stamp}`).set({ data: JSON.stringify(rolls), savedAt: now.toISOString() });
+    await db.collection('inventory_backups').doc(`orders_manual_${stamp}`).set({ data: JSON.stringify(orders), savedAt: now.toISOString() });
+    await db.collection('inventory_backups').doc(`shipmentLog_manual_${stamp}`).set({ data: JSON.stringify(shipmentLog), savedAt: now.toISOString() });
+    alert(`지금(${stamp.replace('_', ' ')}) 상태로 재고/이월장부/매출장부 백업을 만들었어요.\n안심하세요 - 이 백업은 이 순간 그대로 남아있어요.`);
+  } catch (e) {
+    showToast('백업 중 오류가 났어요');
+  }
+}
 async function backupIfNeededInTx(tx, key, currentJSON) {
   // 하루에 한 번, 저장 직전의(=아직 안전했던) 상태를 백업용으로 남겨둠. 실패해도 본 저장은 막지 않음
   if (currentJSON == null) return;
