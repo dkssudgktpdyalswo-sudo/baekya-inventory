@@ -167,6 +167,7 @@
   </div>
 </header>
 
+<div id="savingBadge" style="display:none; position:fixed; top:10px; right:10px; background:#333; color:#fff; padding:6px 12px; border-radius:20px; font-size:12px; z-index:100; box-shadow:0 2px 8px rgba(0,0,0,0.2);">💾 저장 중...</div>
 <div class="rate-bar" id="rateBar">
   환율 <b id="rateDisplay">-</b>원/위안 · 야드환산 <b id="yardDisplay">-</b> · 운임 <b id="shipDisplay">-</b>원
   <button onclick="openRateModal()">환율 수정</button>
@@ -181,6 +182,7 @@
   <div id="orderTools" class="hidden" style="display:flex; gap:6px; margin-top:6px; flex-wrap:wrap;">
     <button id="orderGroupToggleBtn" onclick="toggleOrderGroupMode()" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;"></button>
     <button onclick="printOrderLedger()" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">🖨 이월장부 인쇄</button>
+    <button onclick="replaceOrdersWithAuthoritative20260810()" style="border:none;background:#fdecea;color:var(--danger);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">🔧 이월장부 8/10 목록으로 교체</button>
     <button onclick="archiveOldCompleted()" style="border:none;background:#fff3d6;color:#a15c1e;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">오래된 완료건 내보내기+정리</button>
   </div>
   <div id="salesTools" class="hidden" style="display:flex; gap:6px; margin-top:6px; flex-wrap:wrap; align-items:center;">
@@ -198,9 +200,11 @@
     <button onclick="showUnpaidSummary()" style="border:none;background:#fce8d6;color:#a15c1e;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">📋 거래처 미수금표</button>
     <button onclick="showItemMonthlyStats()" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">📊 품목출고량</button>
     <button onclick="openExpenseModal()" style="border:none;background:#fdecea;color:var(--danger);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">💸 지출 내역</button>
+    <button onclick="cleanupDuplicateCarryoverUnpaid()" style="border:none;background:#fdecea;color:var(--danger);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">🔧 중복 이월미수금 정리</button>
     <button onclick="exportSalesLog()" style="border:none;background:#fff3d6;color:#a15c1e;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">📤 매출장부 내보내기</button>
     <button onclick="archiveOldSalesLog()" style="border:none;background:#fff3d6;color:#a15c1e;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">🗑 매출장부 내보내기+정리</button>
     <button onclick="openBizInfoModal()" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">사업자 정보 설정</button>
+    <button onclick="showAvailableBackups()" style="border:none;background:#f1eee7;color:var(--muted);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">🗄 백업 목록/복구</button>
   </div>
 </div>
 
@@ -691,7 +695,22 @@ const firebaseConfig = {
   appId: "1:995742705102:web:7294216d6e4745dd1df79f"
 };
 let useFirebase = false;
-let lastSnapshotJSON = { orders: null, shipmentLog: null, rolls: null, settings: null }; // 여러 명이 동시에 쓸 때 덮어쓰기 사고 막기용
+let lastSnapshotJSON = { orders: null, shipmentLog: null, rolls: null, settings: null, costs: null, swatchInfo: null, priceBook: null, depositMemos: null, customerList: null, expenses: null }; // 여러 명이 동시에 쓸 때 덮어쓰기 사고 막기용
+
+function mergeArrayInPlace(localArr, remoteArr) {
+  // 배열 자체를 통째로 새 걸로 바꾸지 않고, id 기준으로 내용만 갱신해서
+  // 이 배열의 특정 항목을 참조하고 있던 진행 중인 작업(예: 출고 처리)이 붕 뜨지 않게 함
+  const remoteById = new Map(remoteArr.map(x => [x.id, x]));
+  for (let i = localArr.length - 1; i >= 0; i--) {
+    const item = localArr[i];
+    const remote = remoteById.get(item.id);
+    if (!remote) { localArr.splice(i, 1); continue; }
+    Object.keys(item).forEach(k => { if (!(k in remote)) delete item[k]; });
+    Object.assign(item, remote);
+    remoteById.delete(item.id);
+  }
+  for (const remote of remoteById.values()) localArr.push(remote);
+}
 let db = null;
 try {
   if (firebaseConfig.apiKey !== "PASTE_YOUR_API_KEY_HERE" && typeof firebase !== 'undefined') {
@@ -809,7 +828,9 @@ async function loadAll() {
 
       db.collection('inventory').doc('rolls').onSnapshot((doc) => {
         if (doc.exists && doc.data().data) {
-          rolls = JSON.parse(doc.data().data);
+          const remoteRolls = JSON.parse(doc.data().data);
+          if (loaded.rolls) mergeArrayInPlace(rolls, remoteRolls);
+          else rolls = remoteRolls;
           nextId = rolls.reduce((m, r) => Math.max(m, r.id), 0) + 1;
           lastSnapshotJSON.rolls = doc.data().data;
         } else if (!loaded.rolls) {
@@ -823,6 +844,7 @@ async function loadAll() {
         if (doc.exists && doc.data().data) {
           costs = JSON.parse(doc.data().data);
           nextCostId = costs.reduce((m, r) => Math.max(m, r.id), 0) + 1;
+          lastSnapshotJSON.costs = doc.data().data;
         } else if (!loaded.costs) {
           costs = DEFAULT_COSTS.map(([cat, item, type, price]) => ({ id: nextCostId++, cat, item, type, price }));
           persistCosts();
@@ -849,7 +871,9 @@ async function loadAll() {
 
       db.collection('inventory').doc('orders').onSnapshot((doc) => {
         if (doc.exists && doc.data().data) {
-          orders = JSON.parse(doc.data().data);
+          const remoteOrders = JSON.parse(doc.data().data);
+          if (loaded.orders) mergeArrayInPlace(orders, remoteOrders);
+          else orders = remoteOrders;
           nextOrderId = orders.reduce((m, r) => Math.max(m, r.id), 0) + 1;
           lastSnapshotJSON.orders = doc.data().data;
         } else if (!loaded.orders) {
@@ -864,13 +888,16 @@ async function loadAll() {
         if (doc.exists && doc.data().data) {
           swatchInfo = JSON.parse(doc.data().data);
           nextSwatchId = swatchInfo.reduce((m, r) => Math.max(m, r.id), 0) + 1;
+          lastSnapshotJSON.swatchInfo = doc.data().data;
         }
         loaded.swatch = true; render(); checkDone();
       });
 
       db.collection('inventory').doc('shipmentLog').onSnapshot((doc) => {
         if (doc.exists && doc.data().data) {
-          shipmentLog = JSON.parse(doc.data().data);
+          const remoteLog = JSON.parse(doc.data().data);
+          if (loaded.log) mergeArrayInPlace(shipmentLog, remoteLog);
+          else shipmentLog = remoteLog;
           nextLogId = shipmentLog.reduce((m, r) => Math.max(m, r.id), 0) + 1;
           lastSnapshotJSON.shipmentLog = doc.data().data;
         }
@@ -881,6 +908,7 @@ async function loadAll() {
         if (doc.exists && doc.data().data) {
           priceBook = JSON.parse(doc.data().data);
           nextPriceId = priceBook.reduce((m, r) => Math.max(m, r.id), 0) + 1;
+          lastSnapshotJSON.priceBook = doc.data().data;
         }
         loaded.price = true; render(); checkDone();
       });
@@ -889,6 +917,7 @@ async function loadAll() {
         if (doc.exists && doc.data().data) {
           depositMemos = JSON.parse(doc.data().data);
           nextMemoId = depositMemos.reduce((m, r) => Math.max(m, r.id), 0) + 1;
+          lastSnapshotJSON.depositMemos = doc.data().data;
         }
         loaded.advance = true; render(); checkDone();
       });
@@ -896,6 +925,7 @@ async function loadAll() {
       db.collection('inventory').doc('customerList').onSnapshot((doc) => {
         if (doc.exists && doc.data().data) {
           customerList = JSON.parse(doc.data().data);
+          lastSnapshotJSON.customerList = doc.data().data;
         }
         loaded.custList = true; render(); checkDone();
       });
@@ -904,6 +934,7 @@ async function loadAll() {
         if (doc.exists && doc.data().data) {
           expenses = JSON.parse(doc.data().data);
           nextExpenseId = expenses.reduce((m, r) => Math.max(m, r.id), 0) + 1;
+          lastSnapshotJSON.expenses = doc.data().data;
         }
         loaded.expenses = true; render(); checkDone();
       });
@@ -1002,6 +1033,26 @@ async function backupIfNeededInTx(tx, key, currentJSON) {
     }
   } catch (e) { /* 백업 실패는 무시하고 진행 */ }
 }
+let pendingWriteCount = 0; // 지금 서버로 저장 중인 작업 개수 - 0보다 크면 화면을 벗어나려 할 때 경고함
+function beginWrite() {
+  pendingWriteCount++;
+  const badge = document.getElementById('savingBadge');
+  if (badge) badge.style.display = 'block';
+}
+function endWrite() {
+  pendingWriteCount = Math.max(0, pendingWriteCount - 1);
+  if (pendingWriteCount === 0) {
+    const badge = document.getElementById('savingBadge');
+    if (badge) badge.style.display = 'none';
+  }
+}
+window.addEventListener('beforeunload', (e) => {
+  if (pendingWriteCount > 0) {
+    e.preventDefault();
+    e.returnValue = '아직 저장이 끝나지 않았어요. 지금 나가면 방금 한 작업이 사라질 수 있어요.';
+    return e.returnValue;
+  }
+});
 async function persistGuarded(docId, key, dataArray) {
   // 여러 명이 동시에 쓸 때, 내가 마지막으로 본 이후 다른 사람이 먼저 저장한 게 있으면
   // 조용히 덮어쓰지 않고 막아서 물어봄 (전체 내용을 통째로 저장하는 방식이라 이 안전장치가 꼭 필요함)
@@ -1011,6 +1062,7 @@ async function persistGuarded(docId, key, dataArray) {
   }
   const newJSON = JSON.stringify(dataArray);
   const ref = db.collection('inventory').doc(docId);
+  beginWrite();
   try {
     await db.runTransaction(async (tx) => {
       const snap = await tx.get(ref);
@@ -1030,17 +1082,17 @@ async function persistGuarded(docId, key, dataArray) {
     } else {
       showToast('저장 오류');
     }
+  } finally {
+    endWrite();
   }
 }
 async function persistRolls() { await persistGuarded('rolls', 'rolls', rolls); }
-async function persistCosts() {
-  if (useFirebase) { try { await db.collection('inventory').doc('costs').set({ data: JSON.stringify(costs) }); } catch(e){ showToast('저장 오류'); } return; }
-  await safeStorage.set('costs', JSON.stringify(costs), true);
-}
+async function persistCosts() { await persistGuarded('costs', 'costs', costs); }
 async function persistSettings() {
   if (!useFirebase) { await safeStorage.set('settings', JSON.stringify(settings), true); return; }
   const newJSON = JSON.stringify(settings);
   const ref = db.collection('inventory').doc('settings');
+  beginWrite();
   try {
     await db.runTransaction(async (tx) => {
       const snap = await tx.get(ref);
@@ -1060,30 +1112,17 @@ async function persistSettings() {
     } else {
       showToast('저장 오류');
     }
+  } finally {
+    endWrite();
   }
 }
 async function persistOrders() { await persistGuarded('orders', 'orders', orders); }
-async function persistSwatchInfo() {
-  if (useFirebase) { try { await db.collection('inventory').doc('swatchInfo').set({ data: JSON.stringify(swatchInfo) }); } catch(e){ showToast('저장 오류'); } return; }
-  await safeStorage.set('swatchInfo', JSON.stringify(swatchInfo), true);
-}
+async function persistSwatchInfo() { await persistGuarded('swatchInfo', 'swatchInfo', swatchInfo); }
 async function persistShipmentLog() { await persistGuarded('shipmentLog', 'shipmentLog', shipmentLog); }
-async function persistPriceBook() {
-  if (useFirebase) { try { await db.collection('inventory').doc('priceBook').set({ data: JSON.stringify(priceBook) }); } catch(e){ showToast('저장 오류'); } return; }
-  await safeStorage.set('priceBook', JSON.stringify(priceBook), true);
-}
-async function persistDepositMemos() {
-  if (useFirebase) { try { await db.collection('inventory').doc('depositMemos').set({ data: JSON.stringify(depositMemos) }); } catch(e){ showToast('저장 오류'); } return; }
-  await safeStorage.set('depositMemos', JSON.stringify(depositMemos), true);
-}
-async function persistCustomerList() {
-  if (useFirebase) { try { await db.collection('inventory').doc('customerList').set({ data: JSON.stringify(customerList) }); } catch(e){ showToast('저장 오류'); } return; }
-  await safeStorage.set('customerList', JSON.stringify(customerList), true);
-}
-async function persistExpenses() {
-  if (useFirebase) { try { await db.collection('inventory').doc('expenses').set({ data: JSON.stringify(expenses) }); } catch(e){ showToast('저장 오류'); } return; }
-  await safeStorage.set('expenses', JSON.stringify(expenses), true);
-}
+async function persistPriceBook() { await persistGuarded('priceBook', 'priceBook', priceBook); }
+async function persistDepositMemos() { await persistGuarded('depositMemos', 'depositMemos', depositMemos); }
+async function persistCustomerList() { await persistGuarded('customerList', 'customerList', customerList); }
+async function persistExpenses() { await persistGuarded('expenses', 'expenses', expenses); }
 
 // ---------- 원가 계산 ----------
 function finalCost(c) {
@@ -1895,6 +1934,61 @@ function renderCustomerShipList() {
       </div>
     `;
   }).join('');
+}
+const AUTHORITATIVE_ORDERS_20260810 = [
+  ['문텍스', '중국직송', '우드', '1번베지', 833, 'y', ''],
+  ['문텍스', '중국직송', '우드', '3번진차콜', 984, 'y', ''],
+  ['그로브', '010-3468-5009', '토피', '#40보카밤', 430, 'y', 'GW26PT0004부츠컷팬츠/오무데표시'],
+  ['그로브', '010-3468-5009', '토피', '#4차콜', 600, 'y', 'GW26PT0004부츠컷팬츠/오무데표시'],
+  ['그로브', '010-3468-5009', '토피', '#검정', 400, 'y', 'GW26PT0004부츠컷팬츠/오무데표시'],
+  ['포미나', '02-2234-7416', '와플', '#4진베지', 210, 'y', ''],
+  ['포미나', '02-2234-7416', '와플', '검정', 210, 'y', ''],
+  ['까르르', '010-3759-2564', '인디고', '검백 기모', 250, 'y', '8월25일출고'],
+  ['까르르', '010-9523-5221', '369', '진밤', 1, '절', ''],
+  ['간지짱', '010-3610-2462', '무드', '#8밤색', 2, '절', '틸버리분'],
+  ['간지짱', '010-3610-2462', '무드', '#10검정', 2, '절', '틸버리분'],
+  ['맥가이버2', '02-2238-3342', '무드', '#10검정', 205, 'y', ''],
+  ['하우룩', '010-4797-6700', '249', '#83베지', 85, 'y', '122 9부팬츠'],
+  ['하우룩', '010-4797-6700', '249', '#검정', 91, 'y', '122 9부팬츠'],
+  ['노컨텐츠', '010-9608-9908', '엠버', '1번밤색', 80, 'y', '와이드턱스트라이프팬츠'],
+  ['노컨텐츠', '010-9608-9908', '엠버', '2번차콜', 80, 'y', '와이드턱스트라이프팬츠'],
+  ['미스레이', '010-5207-5562', '372축가공', '차콜', 100, 'y', ''],
+  ['미스레이', '010-5207-5562', '501', '백아이', 1, '절', '작은절로'],
+  ['제이랜드', '공장미정', '604체크', '차콜기모', 96, 'y', ''],
+  ['제이랜드', '공장미정', '604체크', '차콜기모', 42, 'y', ''],
+  ['시즌', '', '에센셜', '#18진베지', 64, 'y', ''],
+  ['시즌', '', '에센셜', '#15카키', 64, 'y', ''],
+  ['유니스', '010-2288-3976', '헤이즐', '진그레이', 78, 'y', 'h단추 롱스커트'],
+  ['유니스', '010-2288-3976', '헤이즐', '검정', 30, 'y', 'h단추 롱스커트'],
+  ['쁘띠프랑스', '공장미정', '무드', '#8밤색', 100, 'y', ''],
+  ['호주머니', '', '249', '#48진밤', 65, 'y', '4611'],
+  ['57페이지', '010-5069-6368', '249', '#83베지', 1, '절', ''],
+  ['엘투', '청구', '988', '38차콜', 1, '절', '새탕으로'],
+  ['클래식', '010-3731-8351', '988', '14코코아', 1, '절', ''],
+  ['크림빌라', 'd동지하100-3마루', '553', '#16모카', 50, 'y', '프랑주름스커트'],
+  ['뮤렌', 'A동지하2277아띠', '머핀', '43검정', 9, 'y', ''],
+  ['위컴퍼니', '경기선불택배', '802', '검정', 78, 'y', 'etre relie op-160, SK-115'],
+  ['위컴퍼니', '경기선불택배', '802', '11번차콜', 11, 'y', 'etre relie op-160, SK-115'],
+  ['위컴퍼니', '경기선불택배', '802', '13번네이비', 59, 'y', 'etre relie op-160, SK-115'],
+  ['SY디자인', '', '350겉피치', '#2진베지', 48, 'y', 'M25-W-JK151'],
+  ['SY디자인', '', '350겉피치', '#11진차콜', 32, 'y', 'M25-W-JK151'],
+  ['문텍스', '', '인디고무지', '1번청색', 70, 'y', ''],
+  ['베데르미', '매장', '엠버', '차콜', 4, 'y', ''],
+  ['아우로', '매장', '엠버', '차콜', 2, 'y', ''],
+  ['제이랜드', '매장', '604체크', '차콜기모', 1, 'y', '96y탕에서'],
+  ['제이랜드', '매장', '604체크', '차콜기모', 0.5, 'y', '42y탕에서'],
+  ['암미', '매장', '소다', '3번아이', 1, 'y', ''],
+  ['위컴퍼니', '매장', '802', '3컬러', 0.2, 'y', '컴펌용'],
+];
+async function replaceOrdersWithAuthoritative20260810() {
+  if (!confirm(`26.08.10자 인쇄물 기준 ${AUTHORITATIVE_ORDERS_20260810.length}건으로 "진행중" 발주를 통째로 교체할게요.\n\n지금 진행중으로 남아있는 기존 발주들은 다 지워지고 이 목록으로 바뀌어요. (완료된 이력은 안 건드려요)\n\n계속할까요?`)) return;
+  orders = orders.filter(o => o.done); // 완료된 건 이력은 보존, 진행중인 건 전부 제거
+  for (const [customer, factory, item, color, orderQty, unit, note] of AUTHORITATIVE_ORDERS_20260810) {
+    orders.push({ id: nextOrderId++, date: '26.08.10', customer, factory, item, color, orderQty, unit, received: 0, note, done: false });
+  }
+  await persistOrders();
+  render();
+  showToast(`이월장부를 ${AUTHORITATIVE_ORDERS_20260810.length}건으로 교체했어요`);
 }
 function printOrderLedger() {
   let list2 = orders.filter(o => !o.done);
@@ -3527,40 +3621,47 @@ function renderCustomerLedgerTable() {
     </table>
   `;
 }
-async function restoreFromBackup() {
+async function showAvailableBackups() {
   if (!useFirebase) { showToast('이 화면에서는 백업 기능을 쓸 수 없어요'); return; }
-  const collLabel = prompt('무엇을 복구할까요?\n입력: 재고 / 이월장부 / 매출장부 / 설정');
+  const keyMap = { '재고': 'rolls', '이월장부': 'orders', '매출장부': 'shipmentLog' };
+  const collLabel = prompt('무엇의 백업 목록을 볼까요?\n입력: 재고 / 이월장부 / 매출장부');
   if (!collLabel) return;
-  const keyMap = { '재고': 'rolls', '이월장부': 'orders', '매출장부': 'shipmentLog', '설정': 'settings' };
   const key = keyMap[collLabel.trim()];
-  if (!key) { showToast('"재고", "이월장부", "매출장부", "설정" 중 하나로 입력해주세요'); return; }
+  if (!key) { showToast('"재고", "이월장부", "매출장부" 중 하나로 입력해주세요'); return; }
 
-  const date = prompt(`${collLabel}의 몇 일자 백업으로 되돌릴까요? (YYYY-MM-DD, 그날 첫 저장 시점 기준)`);
-  if (!date) return;
+  let snap;
+  try {
+    snap = await db.collection('inventory_backups')
+      .where(firebase.firestore.FieldPath.documentId(), '>=', `${key}_`)
+      .where(firebase.firestore.FieldPath.documentId(), '<', `${key}_\uf8ff`)
+      .get();
+  } catch (e) { showToast('백업 목록을 불러오는 중 오류가 났어요'); return; }
+  if (snap.empty) { alert(`${collLabel}의 백업이 아직 없어요.`); return; }
 
+  const dates = snap.docs.map(d => ({ date: d.id.replace(`${key}_`, ''), savedAt: d.data().savedAt || '' })).sort((a, b) => b.date.localeCompare(a.date));
+  const dateList = dates.map(d => `${d.date} (저장시각 ${d.savedAt})`).join('\n');
+  const pick = prompt(`${collLabel}의 백업 가능한 날짜예요:\n\n${dateList}\n\n어느 날짜로 되돌릴까요? (YYYY-MM-DD)`, dates[0].date);
+  if (!pick) return;
+  await restoreFromBackupDate(collLabel, key, pick.trim());
+}
+async function restoreFromBackupDate(collLabel, key, date) {
   let snap;
   try {
     snap = await db.collection('inventory_backups').doc(`${key}_${date}`).get();
   } catch (e) { showToast('백업을 불러오는 중 오류가 났어요'); return; }
-  if (!snap.exists) { alert(`${date}에는 ${collLabel} 백업이 없어요. (그날 처음 저장이 있었을 때만 백업이 만들어져요)`); return; }
+  if (!snap.exists) { alert(`${date}에는 ${collLabel} 백업이 없어요.`); return; }
 
   const backupJSON = snap.data().data;
   const savedAt = snap.data().savedAt || '';
-  let preview;
-  try {
-    const parsed = key === 'settings' ? JSON.parse(backupJSON) : JSON.parse(backupJSON);
-    preview = Array.isArray(parsed) ? `${parsed.length}건` : '설정값';
-  } catch (e) { preview = '(내용 확인 불가)'; }
+  let preview = '(내용 확인 불가)';
+  try { preview = `${JSON.parse(backupJSON).length}건`; } catch (e) {}
 
-  if (!confirm(`${date} 백업(저장시각: ${savedAt})으로 ${collLabel}을(를) 되돌릴게요.\n(${preview})\n\n⚠️ 지금 있는 최신 데이터는 이 백업 내용으로 덮어써져요. 계속할까요?`)) return;
+  if (!confirm(`${date} 백업(저장시각: ${savedAt})으로 ${collLabel}을(를) 되돌릴게요.\n(${preview})\n\n⚠️ 지금 있는 최신 데이터는 이 백업 내용으로 완전히 덮어써져요. 계속할까요?`)) return;
+  if (!confirm(`정말요? 되돌리기 전에 혹시 최근에 입력하신 게 있다면 그건 사라져요. 그래도 진행할까요?`)) return;
 
-  const ref = db.collection('inventory').doc(key === 'settings' ? 'settings' : key);
+  const ref = db.collection('inventory').doc(key);
   try {
-    if (key === 'settings') {
-      await ref.set(JSON.parse(backupJSON));
-    } else {
-      await ref.set({ data: backupJSON });
-    }
+    await ref.set({ data: backupJSON });
     alert('복구했어요. 화면을 새로고침할게요.');
     location.reload();
   } catch (e) {
