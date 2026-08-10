@@ -183,12 +183,12 @@
     <button onclick="printOrderLedger()" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">🖨 이월장부 인쇄</button>
     <button onclick="archiveOldCompleted()" style="border:none;background:#fff3d6;color:#a15c1e;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">오래된 완료건 내보내기+정리</button>
   </div>
-  <div id="salesTools" class="hidden" style="display:flex; gap:6px; margin-top:6px; flex-wrap:wrap;">
-    <button id="salesViewToggleBtn" onclick="toggleSalesViewMode()" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;"></button>
+  <div id="salesTools" class="hidden" style="display:flex; gap:6px; margin-top:6px; flex-wrap:wrap; align-items:center;">
     <button onclick="shiftSalesDayFilter(-1)" style="border:none;background:#eee;color:#555;border-radius:8px;padding:7px 10px;font-size:12px;">◀</button>
     <input id="sales-day-picker" type="date" onchange="salesDayFilter=fromDateInputValue(this.value); render();" style="padding:6px 8px; border:1px solid var(--border); border-radius:8px; font-size:12px; width:auto;">
     <button onclick="shiftSalesDayFilter(1)" style="border:none;background:#eee;color:#555;border-radius:8px;padding:7px 10px;font-size:12px;">▶</button>
-    <button onclick="salesDayFilter=null; render();" style="border:none;background:#eee;color:#555;border-radius:8px;padding:7px 12px;font-size:12px;">전체 보기</button>
+    <span style="font-size:12px; color:var(--muted);">~</span>
+    <input id="sales-day-picker-end" type="date" onchange="salesDayFilterEnd=fromDateInputValue(this.value); render();" style="padding:6px 8px; border:1px solid var(--border); border-radius:8px; font-size:12px; width:auto;">
     <button onclick="addCustomerName()" style="border:none;background:#eaf3ec;color:#2f6b46;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">+ 거래처 추가</button>
     <button onclick="document.querySelectorAll('.main-flag-checkbox').forEach(cb=>{cb.checked=true; cb.dispatchEvent(new Event('change'));})" style="border:none;background:#eee;color:#555;border-radius:8px;padding:7px 12px;font-size:12px;">전체 선택</button>
     <button onclick="document.querySelectorAll('.main-flag-checkbox').forEach(cb=>{cb.checked=false; cb.dispatchEvent(new Event('change'));})" style="border:none;background:#eee;color:#555;border-radius:8px;padding:7px 12px;font-size:12px;">전체 해제</button>
@@ -200,7 +200,6 @@
     <button onclick="exportSalesLog()" style="border:none;background:#fff3d6;color:#a15c1e;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">📤 매출장부 내보내기</button>
     <button onclick="archiveOldSalesLog()" style="border:none;background:#fff3d6;color:#a15c1e;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">🗑 매출장부 내보내기+정리</button>
     <button onclick="openBizInfoModal()" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">사업자 정보 설정</button>
-    <button onclick="restoreFromBackup()" style="border:none;background:#f1eee7;color:var(--muted);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">🗄 예전 날짜 백업으로 복구</button>
   </div>
 </div>
 
@@ -646,6 +645,8 @@
     <p id="payment-desc" style="font-size:13px;color:var(--muted);margin-top:-6px;"></p>
     <label>입금액(원)</label>
     <input id="payment-amount" type="number" step="1">
+    <label>입금 날짜</label>
+    <input id="payment-date" type="date">
     <label>결제 방법</label>
     <div class="row2">
       <div><label style="display:flex;align-items:center;gap:6px;font-size:14px;color:var(--text);"><input type="radio" name="payment-method" value="cash" checked style="width:auto;"> 현금</label></div>
@@ -758,8 +759,8 @@ let orderGroupMode = 'customer'; // customer | item
 let shipmentLog = []; // {id, date, customer, factory, item, color, amount, unit, orderId, remainAfter}
 let nextLogId = 1;
 let salesAdminUnlocked = false;
-let salesViewMode = 'day'; // day | month
 let salesDayFilter = todayStr(); // null이면 전체 스크롤, 날짜 지정하면 그날만 (기본은 오늘)
+let salesDayFilterEnd = null; // 종료일까지 지정하면 그 기간 전체를 합쳐서 봄
 let itemStatsViewMode = 'month'; // day | month
 let salesSpecialView = null; // null | 'itemMonthly' | 'customerLedger'
 let ledgerCustomer = null;
@@ -1137,7 +1138,23 @@ function openAddModal() {
 function esc(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 function escAttr(s) { return String(s).replace(/'/g, "\\'"); }
 
-document.getElementById('search').addEventListener('input', e => { searchTerm = e.target.value; render(); });
+document.getElementById('search').addEventListener('input', e => { searchTerm = e.target.value; render(); showSearchSuggestions(e.target); });
+document.getElementById('search').addEventListener('focus', e => { showSearchSuggestions(e.target); });
+document.getElementById('search').addEventListener('blur', () => { hideItemSuggestionsDelayed(); });
+function showSearchSuggestions(inputEl) {
+  let candidates;
+  if (currentTab === 'sales' || currentTab === 'order') {
+    const customerNames = Array.from(new Set([
+      ...orders.map(o => String(o.customer).trim()),
+      ...shipmentLog.map(e => String(e.customer || '').trim()),
+      ...customerList.map(c => String(c).trim())
+    ].filter(Boolean)));
+    candidates = Array.from(new Set([...customerNames, ..._knownItemNames]));
+  } else {
+    candidates = _knownItemNames;
+  }
+  showSuggestionsGeneric(inputEl, candidates);
+}
 
 function render() {
   updateItemNameList();
@@ -1240,6 +1257,7 @@ function showFactorySuggestions(inputEl) {
 function selectItemSuggestion(name) {
   if (_itemSuggestTarget) {
     _itemSuggestTarget.value = name;
+    _itemSuggestTarget.dispatchEvent(new Event('input', { bubbles: true }));
     _itemSuggestTarget.focus();
   }
   document.getElementById('itemSuggestBox').classList.add('hidden');
@@ -2239,9 +2257,9 @@ function getPaidAmount(e) {
 function getRemaining(e) {
   return Math.max(0, e.saleAmount - (e.discount || 0) - getPaidAmount(e));
 }
-function addPaymentEvent(entry, amount, method) {
+function addPaymentEvent(entry, amount, method, date) {
   if (!entry.payments) entry.payments = [];
-  entry.payments.push({ date: todayStr(), amount: Math.round(amount * 100) / 100, method: method || 'cash' });
+  entry.payments.push({ date: date || todayStr(), amount: Math.round(amount * 100) / 100, method: method || 'cash' });
 }
 
 let pendingDefectLogId = null;
@@ -2434,6 +2452,7 @@ function recordPayment(logId) {
   pendingPaymentEntryIds = [logId];
   document.getElementById('payment-desc').textContent = `${entry.customer || ''} · ${entry.item} ${entry.color || ''} (미수금 ${remaining.toLocaleString()}원)`;
   document.getElementById('payment-amount').value = remaining;
+  document.getElementById('payment-date').value = toDateInputValue(todayStr());
   document.querySelector('input[name="payment-method"][value="cash"]').checked = true;
   document.getElementById('paymentModal').classList.add('open');
 }
@@ -2444,6 +2463,7 @@ function recordGroupPayment(entryIds) {
   pendingPaymentEntryIds = entryIds;
   document.getElementById('payment-desc').textContent = `미수금 합계 ${totalRemaining.toLocaleString()}원`;
   document.getElementById('payment-amount').value = totalRemaining;
+  document.getElementById('payment-date').value = toDateInputValue(todayStr());
   document.querySelector('input[name="payment-method"][value="cash"]').checked = true;
   document.getElementById('paymentModal').classList.add('open');
 }
@@ -2477,6 +2497,7 @@ async function confirmPaymentModal() {
   const entries = entryIds.map(id => shipmentLog.find(e => e.id === id)).filter(Boolean);
   if (entries.length === 0) return;
   const method = document.querySelector('input[name="payment-method"]:checked').value;
+  const payDate = fromDateInputValue(document.getElementById('payment-date').value) || todayStr();
   let amt = parseFloat(document.getElementById('payment-amount').value);
   if (!amt || amt <= 0 || isNaN(amt)) { showToast('금액을 확인해주세요'); return; }
 
@@ -2491,7 +2512,7 @@ async function confirmPaymentModal() {
         discountApplied = shortfall;
       }
     }
-    addPaymentEvent(entry, amt, method);
+    addPaymentEvent(entry, amt, method, payDate);
     delete entry.paidAmount; delete entry.paid;
     await persistShipmentLog();
     closePaymentModal(); render();
@@ -2509,7 +2530,7 @@ async function confirmPaymentModal() {
     const remain = getRemaining(e);
     if (remain <= 0) continue;
     const take = Math.min(remain, amt);
-    addPaymentEvent(e, take, method);
+    addPaymentEvent(e, take, method, payDate);
     delete e.paidAmount; delete e.paid;
     amt = Math.round((amt - take) * 100) / 100;
   }
@@ -3100,11 +3121,6 @@ function renderItemMonthlyStatsView() {
   }
 }
 
-function toggleSalesViewMode() {
-  salesViewMode = salesViewMode === 'day' ? 'month' : 'day';
-  render();
-}
-
 function getCostPerYard(item) {
   const costMatch = findCostFor(item);
   if (!costMatch) return null;
@@ -3150,6 +3166,7 @@ function renderCustomerLedgerView() {
     </div>
     <button onclick="ledgerCustomer=document.getElementById('ledger-customer').value.trim(); ledgerStartDate=document.getElementById('ledger-start').value; ledgerEndDate=document.getElementById('ledger-end').value; renderCustomerLedgerTable();" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:8px;padding:10px 16px;font-size:13px;font-weight:600;height:38px;">조회</button>
     <button onclick="printCurrentLedgerStatement()" style="border:none;background:#eaf3ec;color:#2f6b46;border-radius:8px;padding:10px 16px;font-size:13px;font-weight:600;height:38px;">🖨 명세서 인쇄</button>
+    <button onclick="if(ledgerCustomer) payCustomerUnpaid(ledgerCustomer)" style="border:none;background:#eaf3ec;color:#2f6b46;border-radius:8px;padding:10px 16px;font-size:13px;font-weight:600;height:38px;">입금 처리</button>
     <button onclick="printLedgerPeriod()" style="border:none;background:#e8edf5;color:#3d4f6b;border-radius:8px;padding:10px 16px;font-size:13px;font-weight:600;height:38px;">🖨 기간별 원장 인쇄</button>
     <button onclick="if(ledgerCustomer) renameCustomer(ledgerCustomer)" style="border:none;background:#eee;color:#555;border-radius:8px;padding:10px 12px;font-size:12px;height:38px;">이름 수정</button>
     <button onclick="document.querySelectorAll('.ledger-print-check').forEach(cb=>cb.checked=true)" style="border:none;background:#eee;color:#555;border-radius:8px;padding:10px 12px;font-size:12px;height:38px;">전체 선택</button>
@@ -3671,8 +3688,8 @@ function renderSales() {
   document.getElementById('invTools').classList.add('hidden');
   document.getElementById('orderTools').classList.add('hidden');
   document.getElementById('salesTools').classList.remove('hidden');
-  document.getElementById('salesViewToggleBtn').textContent = salesViewMode === 'day' ? '월별로 보기' : '일별로 보기';
   document.getElementById('sales-day-picker').value = salesDayFilter ? toDateInputValue(salesDayFilter) : '';
+  document.getElementById('sales-day-picker-end').value = salesDayFilterEnd ? toDateInputValue(salesDayFilterEnd) : '';
   document.getElementById('chipRow').innerHTML = '';
 
   if (salesSpecialView === 'itemMonthly') {
@@ -3692,8 +3709,11 @@ function renderSales() {
     sales = sales.filter(e => String(e.customer).toLowerCase().includes(t) || String(e.item).toLowerCase().includes(t));
   }
   if (salesDayFilter) {
-    const filterKey = salesViewMode === 'month' ? salesDayFilter.slice(0, 5) : salesDayFilter;
-    sales = sales.filter(e => (salesViewMode === 'month' ? String(e.date).slice(0, 5) : e.date) === filterKey);
+    if (salesDayFilterEnd) {
+      sales = sales.filter(e => e.date >= salesDayFilter && e.date <= salesDayFilterEnd);
+    } else {
+      sales = sales.filter(e => e.date === salesDayFilter);
+    }
   }
 
   // 각 건마다 원가/순이익/마진율 계산 (공제액 차감한 실제 매출 기준) - 반품/불량 항목은 대상 아님
@@ -3726,8 +3746,11 @@ function renderSales() {
   // 지금 보고 있는 기간(날짜 필터)에 맞춰 지출도 같이 집계해서 순이익에서 뺌
   let relevantExpenses = expenses;
   if (salesDayFilter) {
-    const filterKey2 = salesViewMode === 'month' ? salesDayFilter.slice(0, 5) : salesDayFilter;
-    relevantExpenses = expenses.filter(e => (salesViewMode === 'month' ? String(e.date).slice(0, 5) : e.date) === filterKey2);
+    if (salesDayFilterEnd) {
+      relevantExpenses = expenses.filter(e => e.date >= salesDayFilter && e.date <= salesDayFilterEnd);
+    } else {
+      relevantExpenses = expenses.filter(e => e.date === salesDayFilter);
+    }
   }
   const totalExpense = relevantExpenses.reduce((s, e) => s + e.amount, 0);
   const netProfit = totalProfit - totalExpense;
@@ -3772,7 +3795,7 @@ function renderSales() {
 
   const byPeriod = new Map();
   for (const e of sales) {
-    const key = salesViewMode === 'month' ? String(e.date).slice(0, 5) : e.date; // "YY.MM" or "YY.MM.DD"
+    const key = e.date;
     if (!byPeriod.has(key)) byPeriod.set(key, []);
     byPeriod.get(key).push(e);
   }
@@ -3783,7 +3806,7 @@ function renderSales() {
     for (const p of (e.payments || [])) allPayments.push(p);
   }
   function paymentsInPeriod(period) {
-    return allPayments.filter(p => salesViewMode === 'month' ? String(p.date).slice(0, 5) === period : p.date === period);
+    return allPayments.filter(p => p.date === period);
   }
 
   for (const period of periods) {
@@ -3793,7 +3816,7 @@ function renderSales() {
     const periodSales = periodGross - periodReturnDefect;
     const periodProfit = periodEntries.reduce((s, e) => s + (e._profit != null ? e._profit : 0), 0);
     const periodMargin = periodSales > 0 ? Math.round((periodProfit / periodSales) * 1000) / 10 : null;
-    const label = salesViewMode === 'month' ? `${period} 월간` : period;
+    const label = period;
     const pays = paymentsInPeriod(period);
     const cashTotal = pays.filter(p => (p.method || 'cash') === 'cash').reduce((s, p) => s + p.amount, 0);
     const onlineTotal = pays.filter(p => p.method === 'online').reduce((s, p) => s + p.amount, 0);
@@ -3831,7 +3854,7 @@ function renderSales() {
         <div class="group-head" onclick="toggleGroup('${escAttr(custGroupKey)}')">
           <div class="info">
             <div class="name">${esc(k)}</div>
-            <div class="sub">${entries.length}건 · 매출 ${custTotal.toLocaleString()}원 · 순이익 ${custProfit.toLocaleString()}원${custUnpaid > 0 ? ` · <span style="color:var(--danger);font-weight:700;">미수금 ${custUnpaid.toLocaleString()}원</span>` : ''}</div>
+            <div class="sub">${entries.length}건 · 매출 ${custTotal.toLocaleString()}원 · 순이익 ${custProfit.toLocaleString()}원</div>
             <div style="margin-top:4px;" onclick="event.stopPropagation();">
               <label style="display:inline-flex;align-items:center;gap:5px;font-size:12px;color:var(--muted);margin-right:8px;">
                 <input type="checkbox" class="main-flag-checkbox" data-customer="${escAttr(k)}" data-start="${escAttr(entries.reduce((a, e) => a < e.date ? a : e.date, entries[0].date))}" data-end="${escAttr(entries.reduce((a, e) => a > e.date ? a : e.date, entries[0].date))}" ${isMainGroup ? 'checked' : ''} onchange="toggleMainFlag([${entries.map(e => e.id).join(',')}], this.checked)" style="width:auto;">
