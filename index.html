@@ -2447,7 +2447,11 @@ function recordGroupPayment(entryIds) {
   document.querySelector('input[name="payment-method"][value="cash"]').checked = true;
   document.getElementById('paymentModal').classList.add('open');
 }
-function closePaymentModal() { document.getElementById('paymentModal').classList.remove('open'); pendingPaymentEntryIds = []; }
+function closePaymentModal() {
+  document.getElementById('paymentModal').classList.remove('open');
+  pendingPaymentEntryIds = [];
+  if (document.getElementById('unpaidSummaryModal').classList.contains('open')) renderUnpaidSummaryList();
+}
 async function markSampleAndClose() {
   const entryIds = pendingPaymentEntryIds;
   const entries = entryIds.map(id => shipmentLog.find(e => e.id === id)).filter(Boolean);
@@ -3039,8 +3043,8 @@ function renderItemMonthlyStatsView() {
   topBar.appendChild(toggleBtn);
   list.appendChild(topBar);
 
-  // 실제 출고량 기준(가격 유무 상관없이) - 정상 출고만 집계, 반품/불량/수동종료 제외
-  const shipments = shipmentLog.filter(e => !e.isReturn && !e.isDefect && !e.manualClose && e.yardsShipped > 0);
+  // 실제 출고량 기준(가격 유무 상관없이) - 정상 출고만 집계, 반품/불량/수동종료/추가금 제외
+  const shipments = shipmentLog.filter(e => !e.isReturn && !e.isDefect && !e.manualClose && !e.isFee && e.yardsShipped > 0);
   let filtered = shipments;
   if (searchTerm.trim()) {
     const t = searchTerm.trim().toLowerCase();
@@ -3529,7 +3533,7 @@ function renderUnpaidSummaryList() {
           <div style="font-size:14px;">${esc(r.customer)}</div>
           <div style="display:flex; align-items:center; gap:8px;">
             <span style="font-weight:700; color:var(--danger);">${r.unpaid.toLocaleString()}원</span>
-            <button onclick="payCarryoverBalance('${escAttr(r.customer)}', ${r.carryoverId != null ? r.carryoverId : 'null'})" style="border:none;background:#eaf3ec;color:#2f6b46;border-radius:6px;padding:4px 8px;font-size:11px;">입금 처리</button>
+            <button onclick="payCustomerUnpaid('${escAttr(r.customer)}')" style="border:none;background:#eaf3ec;color:#2f6b46;border-radius:6px;padding:4px 8px;font-size:11px;">입금 처리</button>
             <button onclick="editCarryoverBalance('${escAttr(r.customer)}', ${r.carryoverId != null ? r.carryoverId : 'null'})" style="border:none;background:#eee;color:var(--text);border-radius:6px;padding:4px 8px;font-size:11px;">직접 수정</button>
           </div>
         </div>
@@ -3568,19 +3572,13 @@ async function deleteDepositMemo(id) {
   if (document.getElementById('unpaidSummaryModal').classList.contains('open')) renderUnpaidSummaryList();
   if (salesSpecialView === 'customerLedger') renderCustomerLedgerTable();
 }
-async function payCarryoverBalance(customer, entryId) {
-  const current = entryId != null ? shipmentLog.find(e => e.id === entryId) : null;
-  if (!current) { showToast('먼저 "직접 수정"으로 이월 미수금을 등록해주세요'); return; }
-  const remaining = getRemaining(current);
-  const raw = prompt(`${customer}의 남은 미수금 ${remaining.toLocaleString()}원 중 얼마를 입금받으셨나요?`, remaining ? String(remaining) : '');
-  if (raw === null) return;
-  const amount = parseFloat(raw);
-  if (isNaN(amount) || amount <= 0) { showToast('금액을 확인해주세요'); return; }
-  addPaymentEvent(current, amount, 'cash');
-  await persistShipmentLog();
-  render();
-  if (document.getElementById('unpaidSummaryModal').classList.contains('open')) renderUnpaidSummaryList();
-  showToast(`${amount.toLocaleString()}원 입금 처리했습니다 (원장·내역서에도 표시돼요)`);
+function payCustomerUnpaid(customer) {
+  const entryIds = shipmentLog
+    .filter(e => e.customer && String(e.customer).trim() === String(customer).trim() && e.saleAmount != null && getRemaining(e) > 0)
+    .sort((a, b) => a.date.localeCompare(b.date) || a.id - b.id)
+    .map(e => e.id);
+  if (entryIds.length === 0) { showToast('이 거래처는 남은 미수금이 없어요'); return; }
+  recordGroupPayment(entryIds);
 }
 async function editCarryoverBalance(customer, entryId) {
   const current = entryId != null ? shipmentLog.find(e => e.id === entryId) : null;
