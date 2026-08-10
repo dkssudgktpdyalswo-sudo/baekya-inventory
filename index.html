@@ -2220,9 +2220,14 @@ async function cancelShipmentLogEntry(logId) {
     if (entry.isPreInvoice && o.preInvoiceLogId === entry.id) {
       o.preInvoiceLogId = null; // 선수금 매출 기록 자체가 취소되니 다시 명세서를 쓸 수 있게 풀어줌
     }
-    if (o.done && (entry.isFullCompletion || entry.manualClose) && !entry.isPreInvoice) {
-      o.done = false;
-      o.doneDate = null;
+    if (!entry.isPreInvoice) {
+      // 취소된 건이 완료시켰던 건인지가 아니라, 취소 후 실제로 남은 수량이 있는지로 판단해야
+      // 중간에 낀 부분출고를 취소해도 정확히 진행중으로 돌아감
+      const remainNow = (o.orderQty && o.orderQty > o.received) ? Math.round((o.orderQty - o.received) * 100) / 100 : 0;
+      if (o.done && remainNow > 0) {
+        o.done = false;
+        o.doneDate = null;
+      }
     }
     await persistOrders();
   }
