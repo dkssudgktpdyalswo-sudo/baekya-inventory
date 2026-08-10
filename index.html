@@ -182,7 +182,6 @@
   <div id="orderTools" class="hidden" style="display:flex; gap:6px; margin-top:6px; flex-wrap:wrap;">
     <button id="orderGroupToggleBtn" onclick="toggleOrderGroupMode()" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;"></button>
     <button onclick="printOrderLedger()" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">🖨 이월장부 인쇄</button>
-    <button onclick="replaceOrdersWithAuthoritative20260810()" style="border:none;background:#fdecea;color:var(--danger);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">🔧 이월장부 8/10 목록으로 교체</button>
     <button onclick="archiveOldCompleted()" style="border:none;background:#fff3d6;color:#a15c1e;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">오래된 완료건 내보내기+정리</button>
   </div>
   <div id="salesTools" class="hidden" style="display:flex; gap:6px; margin-top:6px; flex-wrap:wrap; align-items:center;">
@@ -200,7 +199,6 @@
     <button onclick="showUnpaidSummary()" style="border:none;background:#fce8d6;color:#a15c1e;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">📋 거래처 미수금표</button>
     <button onclick="showItemMonthlyStats()" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">📊 품목출고량</button>
     <button onclick="openExpenseModal()" style="border:none;background:#fdecea;color:var(--danger);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">💸 지출 내역</button>
-    <button onclick="cleanupDuplicateCarryoverUnpaid()" style="border:none;background:#fdecea;color:var(--danger);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">🔧 중복 이월미수금 정리</button>
     <button onclick="exportSalesLog()" style="border:none;background:#fff3d6;color:#a15c1e;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">📤 매출장부 내보내기</button>
     <button onclick="archiveOldSalesLog()" style="border:none;background:#fff3d6;color:#a15c1e;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">🗑 매출장부 내보내기+정리</button>
     <button onclick="openBizInfoModal()" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">사업자 정보 설정</button>
