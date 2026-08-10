@@ -1070,8 +1070,9 @@ async function persistGuarded(docId, key, dataArray) {
       if (known != null && currentJSON !== known) {
         throw new Error('STALE_WRITE');
       }
+      const currentRev = (snap.exists && snap.data() && typeof snap.data().rev === 'number') ? snap.data().rev : 0;
       await backupIfNeededInTx(tx, key, currentJSON);
-      tx.set(ref, { data: newJSON });
+      tx.set(ref, { data: newJSON, rev: currentRev + 1 });
     });
     lastSnapshotJSON[key] = newJSON;
   } catch (e) {
@@ -1100,8 +1101,9 @@ async function persistSettings() {
       if (known != null && currentJSON !== known) {
         throw new Error('STALE_WRITE');
       }
+      const currentRev = (snap.exists && snap.data() && typeof snap.data().rev === 'number') ? snap.data().rev : 0;
       await backupIfNeededInTx(tx, 'settings', currentJSON);
-      tx.set(ref, { data: newJSON });
+      tx.set(ref, { data: newJSON, rev: currentRev + 1 });
     });
     lastSnapshotJSON.settings = newJSON;
   } catch (e) {
