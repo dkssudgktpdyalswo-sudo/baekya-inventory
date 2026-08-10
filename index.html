@@ -1175,6 +1175,7 @@ function openAddModal() {
 // ---------- 공통 ----------
 function esc(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 function escAttr(s) { return String(s).replace(/'/g, "\\'"); }
+function escJsonAttr(obj) { return JSON.stringify(obj).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
 
 document.getElementById('search').addEventListener('input', e => { searchTerm = e.target.value; render(); showSearchSuggestions(e.target); });
 document.getElementById('search').addEventListener('focus', e => { showSearchSuggestions(e.target); });
@@ -3620,7 +3621,7 @@ function renderCustomerLedgerTable() {
     const clickable = ev.id != null || (ev.refs && ev.refs.length > 0);
     let clickHandler = '';
     if (ev.type === '매출') clickHandler = `openSaleEditModal(${ev.id})`;
-    else if (ev.type === '입금') clickHandler = `editMergedPaymentGroup('${escAttr(JSON.stringify(ev.refs))}')`;
+    else if (ev.type === '입금') clickHandler = `editMergedPaymentGroup('${escJsonAttr(ev.refs)}')`;
     else clickHandler = `quickEditReturnDefect(${ev.id})`;
     const clickAttr = clickable ? `onclick="${clickHandler}" style="cursor:pointer;"` : '';
     const printable = ev.id != null; // 매출/반품/불량만 체크로 인쇄 포함 여부 선택 (입금은 해당 매출을 따라감)
