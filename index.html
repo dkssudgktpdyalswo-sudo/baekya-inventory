@@ -1455,6 +1455,7 @@ function renderInv() {
           <div class="name">${esc(ig.item)}${itemChina ? ` <span style="font-weight:400;font-size:12px;color:var(--muted);">#${esc(itemChina)}</span>` : ''}</div>
           <div class="sub">분류 ${esc(ig.cat)} · 컬러 ${ig.colors.length}종</div>
           ${costMatch ? `<div class="cost-badge">원가 ${Math.round(finalCost(costMatch)).toLocaleString()}원/y${costMatch.type === 'domestic' ? ' (국내산)' : ''}</div>` : ''}
+          <div style="margin-top:4px;"><button onclick="event.stopPropagation(); deleteAllRollsForItem('${escAttr(ig.item)}')" style="border:none;background:#fdecea;color:var(--danger);border-radius:6px;padding:3px 8px;font-size:11px;">이 품목 전체 삭제</button></div>
         </div>
         <div class="total">
           <div class="num">${itemTotal.toLocaleString()}y</div>
@@ -1482,7 +1483,11 @@ function renderInv() {
           <div class="info">
             <div class="name">${esc(g.color)}</div>
             <div class="sub">${total > 0 ? `롤 ${normalRolls.length}개` : '재고 없음'}${defectiveTotal > 0 ? ` · <span style="color:var(--danger);font-weight:700;">불량 ${defectiveTotal.toLocaleString()}y</span>` : ''}</div>
-            <div style="margin-top:4px;"><button onclick="event.stopPropagation(); openSwatchEditModal('${escAttr(g.cat)}','${escAttr(g.item)}','${escAttr(g.color)}')" style="border:none;background:#f1eee7;color:var(--muted);border-radius:6px;padding:3px 8px;font-size:11px;">스왓치·중국품번 수정</button></div>
+            <div style="margin-top:4px; display:flex; gap:4px; flex-wrap:wrap;">
+              <button onclick="event.stopPropagation(); openSwatchEditModal('${escAttr(g.cat)}','${escAttr(g.item)}','${escAttr(g.color)}')" style="border:none;background:#f1eee7;color:var(--muted);border-radius:6px;padding:3px 8px;font-size:11px;">스왓치·중국품번 수정</button>
+              <button onclick="event.stopPropagation(); openRollAddModalFor('${escAttr(g.item)}', '${escAttr(g.color)}')" style="border:none;background:#eaf3ec;color:#2f6b46;border-radius:6px;padding:3px 8px;font-size:11px;">입고</button>
+              <button onclick="event.stopPropagation(); deleteAllRollsForColor('${escAttr(g.item)}', '${escAttr(g.color)}')" style="border:none;background:#fdecea;color:var(--danger);border-radius:6px;padding:3px 8px;font-size:11px;">이 컬러 전체 삭제</button>
+            </div>
           </div>
           <div class="total">
             <div class="num">${total.toLocaleString()}y</div>
@@ -1715,6 +1720,7 @@ async function markRollDefective(id) {
   if (reason === null) return;
   r.defective = true;
   r.defectReason = reason.trim();
+  compactTangsForItemColor(r.item, r.color);
   await persistRolls();
   render();
   showToast('불량으로 표시했습니다');
@@ -1731,7 +1737,26 @@ async function unmarkRollDefective(id) {
 }
 async function deleteRoll(id) {
   if (!confirm('이 롤을 삭제하시겠습니까?')) return;
+  const target = rolls.find(x => x.id === id);
   rolls = rolls.filter(x => x.id !== id);
+  if (target) compactTangsForItemColor(target.item, target.color);
+  await persistRolls(); render(); showToast('삭제되었습니다');
+}
+async function deleteAllRollsForColor(item, color) {
+  const t_item = String(item).trim();
+  const t_color = String(color).trim();
+  const count = rolls.filter(r => String(r.item).trim() === t_item && String(r.color).trim() === t_color).length;
+  if (count === 0) { showToast('삭제할 롤이 없어요'); return; }
+  if (!confirm(`"${item} ${color}"의 롤 ${count}개를 전부 삭제할까요?`)) return;
+  rolls = rolls.filter(r => !(String(r.item).trim() === t_item && String(r.color).trim() === t_color));
+  await persistRolls(); render(); showToast('삭제되었습니다');
+}
+async function deleteAllRollsForItem(item) {
+  const t_item = String(item).trim();
+  const count = rolls.filter(r => String(r.item).trim() === t_item).length;
+  if (count === 0) { showToast('삭제할 롤이 없어요'); return; }
+  if (!confirm(`"${item}" 품목 전체(컬러 상관없이 롤 ${count}개)를 삭제할까요?\n이 작업은 되돌릴 수 없어요.`)) return;
+  rolls = rolls.filter(r => String(r.item).trim() !== t_item);
   await persistRolls(); render(); showToast('삭제되었습니다');
 }
 
@@ -5055,6 +5080,31 @@ function cleanupDepletedRolls(item, color, touchedRollIds) {
   rolls = rolls.filter(r => !removeIds.has(r.id));
 }
 
+function compactTangsForItemColor(item, color) {
+  // 낮은 번호 탕이 다 나가서 비면, 남은 탕들을 탕1부터 다시 당겨서 번호를 매김
+  // (입고날짜가 롤마다 따로 남아있어서 순서 파악엔 문제없음)
+  const t_item = String(item).trim();
+  const t_color = String(color).trim();
+  const group = rolls.filter(r => String(r.item).trim() === t_item && String(r.color).trim() === t_color && !r.defective);
+  if (group.length === 0) return;
+  const tangTotals = new Map();
+  for (const r of group) tangTotals.set(r.tang, (tangTotals.get(r.tang) || 0) + r.qty);
+  const nonEmptyTangs = Array.from(tangTotals.entries()).filter(([, q]) => q > 0).map(([t]) => t).sort((a, b) => a - b);
+  if (nonEmptyTangs.length === 0) return;
+  const renumberMap = new Map();
+  nonEmptyTangs.forEach((oldTang, idx) => renumberMap.set(oldTang, idx + 1));
+  for (const r of group) {
+    if (renumberMap.has(r.tang)) r.tang = renumberMap.get(r.tang);
+  }
+  // 비어서(0y) 번호를 못 받은 자리표시 롤들은 이제 필요없으니 정리
+  for (let i = rolls.length - 1; i >= 0; i--) {
+    const r = rolls[i];
+    if (String(r.item).trim() === t_item && String(r.color).trim() === t_color && !r.defective && r.qty === 0 && !renumberMap.has(r.tang)) {
+      rolls.splice(i, 1);
+    }
+  }
+}
+
 function deductFromInventory(item, color, amount, tang) {
   const t_item = resolveInventoryItem(item);
   const t_color = String(resolveInventoryColor(item, color)).trim();
@@ -5081,6 +5131,7 @@ function deductFromInventory(item, color, amount, tang) {
     }
   }
   cleanupDepletedRolls(item, color, matches.map(r => r.id));
+  compactTangsForItemColor(item, color);
   const deducted = Math.round((amount - remain) * 100) / 100;
   return { ok: true, deducted, shortBy: remain, breakdown };
 }
