@@ -3008,7 +3008,7 @@ function buildStatementHTML(customerName, startDate, endDate, entryIdFilter) {
     }
     if (e.saleAmount == null) continue;
     if (e.item === '이월 미수금') {
-      carryoverAmt += e.saleAmount; // 이월 미수금은 이번 기간 매출/공급가액에 안 섞고 별도 집계
+      carryoverAmt += getRemaining(e); // 입금 등으로 이미 줄어든 만큼 반영한 실제 남은 금액 (원래 총액이 아님)
       continue;
     }
     const defectAmt = e.defectYards > 0 ? Math.round(e.unitPrice * e.defectYards) : 0;
@@ -3081,7 +3081,14 @@ function buildStatementHTML(customerName, startDate, endDate, entryIdFilter) {
       </tr>`;
   }).join('');
 
-  const balance = Math.max(0, totalSale - totalDiscount - totalReturnDefect - totalPaid + carryoverAmt);
+  // "미수금액"은 이 명세서에 적힌 것들만이 아니라, 이 거래처가 지금 전체적으로 갖고 있는 미수금 총액이어야 함 (미수금표랑 같은 방식으로 계산)
+  let customerTotalUnpaid = 0;
+  for (const e of shipmentLog) {
+    if (String(e.customer || '').trim() !== t_c) continue;
+    if (e.saleAmount != null) customerTotalUnpaid += getRemaining(e);
+    else if ((e.isReturn || e.isDefect) && e.deductAmount != null) customerTotalUnpaid -= e.deductAmount;
+  }
+  const balance = Math.max(0, customerTotalUnpaid);
 
   const b = settings;
   const infoBox = `
