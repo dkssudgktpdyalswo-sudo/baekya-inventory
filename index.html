@@ -2985,16 +2985,11 @@ function buildStatementHTML(customerName, startDate, endDate, entryIdFilter) {
     startDate = ds.reduce((a, b) => a < b ? a : b);
     endDate = ds.reduce((a, b) => a > b ? a : b);
   }
-  // 이월 미수금은 날짜 범위/체크 여부와 상관없이 항상 청구액에 포함 (기간 거래가 아니라 누적 잔액이므로, 거래기간 표시에는 영향 안 줌)
-  const carryoverEntry = shipmentLog.find(e => String(e.customer || '').trim() === t_c && e.item === '이월 미수금');
-  if (carryoverEntry && !custEntries.some(e => e.id === carryoverEntry.id)) {
-    custEntries = [...custEntries, carryoverEntry];
-  }
   if (custEntries.length === 0) return null;
 
   const saleRows = []; // 매출/반품/불량 (날짜순)
   const paymentRows = []; // 입금 (날짜순, 항상 매출 아래에)
-  let totalSale = 0, totalPaid = 0, totalDiscount = 0, totalReturnDefect = 0, totalSupply = 0, totalTax = 0, carryoverAmt = 0, totalQty = 0;
+  let totalSale = 0, totalPaid = 0, totalDiscount = 0, totalReturnDefect = 0, totalSupply = 0, totalTax = 0, listedUnpaid = 0, totalQty = 0;
 
   for (const e of custEntries) {
     if (e.isReturn || e.isDefect) {
@@ -3007,10 +3002,8 @@ function buildStatementHTML(customerName, startDate, endDate, entryIdFilter) {
       continue;
     }
     if (e.saleAmount == null) continue;
-    if (e.item === '이월 미수금') {
-      carryoverAmt += getRemaining(e); // 입금 등으로 이미 줄어든 만큼 반영한 실제 남은 금액 (원래 총액이 아님)
-      continue;
-    }
+    if (e.item === '이월 미수금') continue; // "미수금" 이전 잔액 자체는 아래에서 잔액 기준으로 따로 계산하므로, 개별 항목으로는 안 보여줌
+    listedUnpaid += getRemaining(e); // 이 명세서에 실제로 적히는 항목들 중 아직 안 받은 만큼
     const defectAmt = e.defectYards > 0 ? Math.round(e.unitPrice * e.defectYards) : 0;
     const extraAmt = e.extraAmount || 0;
     const grossSale = e.saleAmount + defectAmt - extraAmt; // 순수 품목 매출액 (불량 차감분 복원, 추가액은 별도 행으로 뺌)
@@ -3089,6 +3082,8 @@ function buildStatementHTML(customerName, startDate, endDate, entryIdFilter) {
     else if ((e.isReturn || e.isDefect) && e.deductAmount != null) customerTotalUnpaid -= e.deductAmount;
   }
   const balance = Math.max(0, customerTotalUnpaid);
+  // "미수금"(이전) = 전체 미수금 중, 이 명세서에 실제로 적힌 항목들 말고 나머지 - 매출이 쌓일수록 자동으로 같이 늘어남 (한 번 등록해둔 숫자에 고정되지 않음)
+  const carryoverAmt = Math.max(0, balance - listedUnpaid);
 
   const b = settings;
   const infoBox = `
@@ -3143,7 +3138,7 @@ function buildStatementHTML(customerName, startDate, endDate, entryIdFilter) {
           if (totalReturnDefect > 0) items.push({ label: '반품/불량 차감', value: `-${totalReturnDefect.toLocaleString()}원`, color: '#c0392b' });
           if (totalDiscount > 0) items.push({ label: '공제액', value: `${totalDiscount.toLocaleString()}원`, color: '#1a5f8a' });
           if (totalPaid > 0) items.push({ label: '입금 합계', value: `${totalPaid.toLocaleString()}원`, color: '#1a56db' });
-          if (carryoverAmt > 0) items.push({ label: '이월 미수금', value: `${carryoverAmt.toLocaleString()}원`, color: '#a15c1e' });
+          if (carryoverAmt > 0) items.push({ label: '미수금', value: `${carryoverAmt.toLocaleString()}원`, color: '#a15c1e' });
           let rowsOut = '';
           for (let i = 0; i < items.length; i += 2) {
             const a = items[i], c = items[i + 1];
