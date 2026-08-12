@@ -5372,8 +5372,38 @@ function openReturnForCustomer(customer) {
   document.getElementById('returnModalTitle').textContent = '반품/불량/추가금 등록';
   document.getElementById('returnModal').classList.add('open');
 }
-function openReturnFromMultiOrderForm() {
+async function openReturnFromMultiOrderForm() {
   const customer = document.getElementById('o-customer').value.trim();
+
+  // 발주 폼에 입력해둔 내용이 있으면 먼저 저장하고 넘어감 - 안 그러면 추가금만 등록되고 발주는 그냥 날아가버림
+  if (editingOrderId === null) {
+    const date = fromDateInputValue(document.getElementById('o-date').value) || todayStr();
+    const factoryGroups = document.querySelectorAll('.o-factory-group');
+    const newOrders = [];
+    factoryGroups.forEach(fg => {
+      const factory = fg.querySelector('.o-factory-input').value.trim();
+      const itemGroups = fg.querySelectorAll('.o-item-group');
+      itemGroups.forEach(ig => {
+        const item = ig.querySelector('.o-item-input').value.trim();
+        if (!item) return;
+        const colorRows = ig.querySelectorAll('.o-color-row');
+        colorRows.forEach(cr => {
+          const color = cr.querySelector('.o-color-input').value.trim();
+          const orderQty = parseFloat(cr.querySelector('.o-color-qty').value) || 0;
+          const unit = cr.querySelector('.o-color-unit').value;
+          const note = cr.querySelector('.o-color-note').value.trim();
+          if (!color && orderQty <= 0 && !note) return; // 아무것도 안 채운 빈 줄은 건너뜀
+          newOrders.push({ id: nextOrderId++, date, customer, factory, item, color, orderQty, unit, received: 0, note, done: false });
+        });
+      });
+    });
+    if (newOrders.length > 0) {
+      if (!customer) { showToast('거래처를 확인해주세요'); return; }
+      orders.push(...newOrders);
+      await persistOrders();
+      showToast(`발주 ${newOrders.length}건도 같이 등록됐어요`);
+    }
+  }
   closeOrderAddModal();
 
   pendingReturnOrderId = null;
