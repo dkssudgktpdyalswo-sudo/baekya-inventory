@@ -1930,7 +1930,7 @@ function renderOrderCard(o, showItemAsTitle) {
   const title = showItemAsTitle ? `${esc(o.item)} ${esc(o.color || '')}` : `${esc(o.customer || '')}${dateTag}`;
   const sub = (showItemAsTitle
     ? `${esc(o.date || '')} · 공장/연락처 ${esc(o.factory || '-')}`
-    : `${esc(o.date || '')} · 공장/연락처 ${esc(o.factory || '-')}`) + (o.pendingFee ? ` · 💸 보류된 추가금 ${o.pendingFee.amount.toLocaleString()}원 (출고시 매출반영)` : '');
+    : `${esc(o.date || '')} · 공장/연락처 ${esc(o.factory || '-')}`) + (o.pendingFee ? ` · 💸 보류된 추가금 ${o.pendingFee.amount.toLocaleString()}원 (출고시 매출반영) <span onclick="event.stopPropagation();editPendingFee(${o.id})" style="color:var(--primary-dark);text-decoration:underline;cursor:pointer;">수정</span>` : '');
   const div = document.createElement('div');
   div.className = 'order-card';
   div.innerHTML = `
@@ -2998,7 +2998,7 @@ function buildStatementHTML(customerName, startDate, endDate, entryIdFilter, inc
     if (!e.isFee) totalQty += (e.yardsShipped || 0); // 추가금(운임비 등)은 원단이 아니므로 총수량에서 제외
     const swOrder = findSwatchOrderByItemColor(e.item, e.color);
     const descWithOrder = e.isFee ? (e.note || '추가금') : `${e.item} ${e.color || ''}${swOrder != null ? ` (${swOrder}번)` : ''}`;
-    saleRows.push({ date: e.date, desc: descWithOrder, note: e.isFee ? '' : (e.note || ''), qty: e.isFee ? '' : (e.unit === '절' ? `${e.yardsShipped}y` : `${e.amount}${e.unit}`), unitPrice: e.isFee ? '' : e.unitPrice.toLocaleString(), supply: rowSupply, tax: rowTax, amount: grossSale, color: 'black' });
+    saleRows.push({ date: e.date, desc: descWithOrder, note: e.isFee ? '' : (e.note || ''), qty: e.isFee ? '' : (e.unit === '절' ? `${e.yardsShipped}y` : `${e.amount}${e.unit}`), unitPrice: e.isFee ? '' : e.unitPrice.toLocaleString(), supply: rowSupply, tax: rowTax, amount: grossSale, color: 'black', isFeeRow: !!e.isFee });
 
     if (defectAmt > 0) {
       totalReturnDefect += defectAmt;
@@ -3038,7 +3038,7 @@ function buildStatementHTML(customerName, startDate, endDate, entryIdFilter, inc
     totalTax += rTax;
     saleRows.push({ date: r.date || todayStr(), desc: r.desc, note: r.note || '', qty: r.qty || '', unitPrice: r.unitPrice || '', supply: r.supply, tax: rTax, amount: rAmount, color: (r.supply || 0) < 0 ? 'red' : 'black' });
   }
-  saleRows.sort((a, b) => String(a.date).localeCompare(String(b.date)));
+  saleRows.sort((a, b) => String(a.date).localeCompare(String(b.date)) || (!!a.isFeeRow - !!b.isFeeRow));
   paymentRows.sort((a, b) => String(a.date).localeCompare(String(b.date)));
   const rows = [...saleRows, ...paymentRows];
 
@@ -4575,7 +4575,7 @@ function renderCustomerBuckets(list2) {
     groupDiv.innerHTML = `
       <div class="group-head" onclick="toggleGroup('${escAttr(k)}')">
         <div class="info">
-          <div class="name">${esc(cust)} <button onclick="event.stopPropagation();openReturnForCustomer('${escAttr(cust)}')" style="border:none;background:#fce8d6;color:#a15c1e;border-radius:6px;padding:3px 9px;font-size:11px;font-weight:600;margin-left:6px;">추가금</button> <button onclick="event.stopPropagation();printPreShipmentSelected('${escAttr(cust)}')" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:6px;padding:3px 9px;font-size:11px;font-weight:600;margin-left:6px;">🖨 선수금용 명세서(체크한 것만)</button> ${pendingCount > 0 ? `<button onclick="event.stopPropagation();openCustomerShipList('${escAttr(cust)}')" style="border:none;background:#eaf3ec;color:#2f6b46;border-radius:6px;padding:3px 9px;font-size:11px;font-weight:600;margin-left:6px;">📦 출고 처리</button>` : ''}</div>
+          <div class="name">${esc(cust)} <button onclick="event.stopPropagation();printPreShipmentSelected('${escAttr(cust)}')" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:6px;padding:3px 9px;font-size:11px;font-weight:600;margin-left:6px;">🖨 선수금용 명세서(체크한 것만)</button> ${pendingCount > 0 ? `<button onclick="event.stopPropagation();openCustomerShipList('${escAttr(cust)}')" style="border:none;background:#eaf3ec;color:#2f6b46;border-radius:6px;padding:3px 9px;font-size:11px;font-weight:600;margin-left:6px;">📦 출고 처리</button>` : ''}</div>
           <div class="sub">전체 ${items.length}건 · 진행중 ${pendingCount}건 · ${qtyLabel}</div>
         </div>
         <div class="total"><div class="cnt">${isOpen ? '접기 ▲' : '펼치기 ▼'}</div></div>
@@ -4602,6 +4602,7 @@ function renderCustomerBuckets(list2) {
           <span>${esc(fkey)} (이 그룹 전체 선택)</span>
         ` : `<span>${esc(fkey)}</span>`) + `
           <button onclick="renameFactoryForOrders('${escAttr(fkey)}', [${allIdsInGroup.join(',')}])" style="border:none;background:#eee;color:#555;border-radius:6px;padding:2px 8px;font-size:11px;">공장/연락처 일괄수정 (${allIdsInGroup.length}건)</button>
+          ${notDoneIds.length > 0 ? `<button onclick="openReturnForFactoryGroup('${escAttr(cust)}', [${notDoneIds.join(',')}])" style="border:none;background:#fce8d6;color:#a15c1e;border-radius:6px;padding:2px 8px;font-size:11px;">추가금 (이 공장건 전체)</button>` : ''}
         `;
         inner.appendChild(factoryHead);
         for (const o of fItems) {
@@ -5471,37 +5472,48 @@ function openDefectReturnForCustomer(customer) {
   document.getElementById('returnModalTitle').textContent = '반품/불량/추가금 등록';
   document.getElementById('returnModal').classList.add('open');
 }
-async function openReturnForCustomer(customer) {
-  pendingReturnOrderId = null;
-  // 이 거래처에 진행중인 발주가 있으면, 그걸 트리거로 써서 보류할 수 있음 (그 중 뭐든 먼저 출고될 때 매출로 잡힘)
-  // 여러 건이면 어느 발주 것인지 반드시 골라야 함 - 안 그러면 상관없는 발주가 먼저 나갈 때 엉뚱하게 같이 잡혀버림
-  const pendingOrders = orders.filter(o => String(o.customer).trim() === String(customer).trim() && !o.done);
-  pendingReturnLinkGroupId = null;
-  pendingExtraOrderCandidates = pendingOrders;
-  const pickWrap = document.getElementById('ret-extra-order-pick-wrap');
-  const pickList = document.getElementById('ret-extra-order-pick-list');
-  if (pendingOrders.length > 1) {
-    pickWrap.classList.remove('hidden');
-    pickList.innerHTML = pendingOrders.map(o => `
-      <label style="display:flex; align-items:center; gap:6px; padding:3px 0; font-size:13px;">
-        <input type="checkbox" class="ret-extra-order-check" data-order-id="${o.id}" style="width:auto;">
-        ${esc(o.date || '')} · ${esc(o.item)} ${esc(o.color || '')}
-      </label>
-    `).join('');
-  } else {
-    pickWrap.classList.add('hidden');
-    pickList.innerHTML = '';
+async function editPendingFee(orderId) {
+  const o = orders.find(x => x.id === orderId);
+  if (!o || !o.pendingFee) return;
+  const raw = prompt(`보류된 추가금을 얼마로 고칠까요? (0을 입력하면 삭제돼요)`, String(o.pendingFee.amount));
+  if (raw === null) return;
+  const amount = parseFloat(raw);
+  if (isNaN(amount) || amount < 0) { showToast('금액을 확인해주세요'); return; }
+
+  // 같은 그룹(공장건 전체)에 다 같이 걸려있으니, 그룹 전체에 동일하게 반영
+  const groupOrders = o.linkGroupId ? orders.filter(x => x.linkGroupId === o.linkGroupId) : [o];
+  if (amount === 0) {
+    for (const go of groupOrders) delete go.pendingFee;
+    await persistOrders();
+    render();
+    showToast('보류된 추가금을 삭제했어요');
+    return;
   }
+  const note = prompt('비고(사유)를 고칠까요? (그대로 두려면 확인만 눌러주세요)', o.pendingFee.note || '');
+  for (const go of groupOrders) {
+    go.pendingFee = { ...go.pendingFee, amount, note: note != null ? note.trim() : (go.pendingFee.note || '') };
+  }
+  await persistOrders();
+  render();
+  showToast('보류된 추가금을 수정했어요');
+}
+function openReturnForFactoryGroup(customer, orderIds) {
+  // 이월장부의 공장 소그룹에서 정확히 그 공장건들에만 걸리게 등록 (체크리스트 없이 자동으로 다 걸림 - 여러 번 나눠 등록하다 추가금이 중복되는 일 방지)
+  pendingReturnOrderId = null;
+  pendingReturnLinkGroupId = null;
+  const targetOrders = orderIds.map(id => orders.find(o => o.id === id)).filter(Boolean).filter(o => !o.done);
+  pendingExtraOrderCandidates = targetOrders;
+  document.getElementById('ret-extra-order-pick-wrap').classList.add('hidden'); // 이미 공장 단위로 확정됐으니 따로 체크 안 함
   document.getElementById('ret-type-return-defect-wrap').classList.add('hidden');
   document.getElementById('ret-type-extra-label').classList.remove('hidden');
   document.querySelector('input[name="ret-type"][value="extra"]').checked = true;
   document.getElementById('ret-customer').value = customer;
   resetReturnRows('', '', 'y', '');
   document.getElementById('ret-extra-amount').value = '';
-  document.getElementById('ret-extra-factory').value = '';
+  document.getElementById('ret-extra-factory').value = targetOrders[0] ? (targetOrders[0].factory || '') : '';
   document.getElementById('ret-note').value = '';
   onReturnTypeChange();
-  document.getElementById('returnModalTitle').textContent = '추가금 등록';
+  document.getElementById('returnModalTitle').textContent = `추가금 등록 (${targetOrders.length}건 - 이 공장건 전체)`;
   document.getElementById('returnModal').classList.add('open');
 }
 async function openReturnFromMultiOrderForm() {
