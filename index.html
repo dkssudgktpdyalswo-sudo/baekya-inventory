@@ -198,7 +198,7 @@
     <button onclick="showPaymentLedger()" style="border:none;background:#e6f0fa;color:#1a56db;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">💰 입금장부</button>
     <button onclick="showUnpaidSummary()" style="border:none;background:#fce8d6;color:#a15c1e;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">📋 거래처 미수금표</button>
     <button onclick="showItemMonthlyStats()" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">📊 품목출고량</button>
-    <button onclick="openExpenseModal()" style="border:none;background:#fdecea;color:var(--danger);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">💸 지출 내역</button>
+    <button onclick="openExpenseModal()" style="border:none;background:#fdecea;color:var(--danger);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">💰 지출/입금내역</button>
     <button onclick="exportSalesLog()" style="border:none;background:#fff3d6;color:#a15c1e;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">📤 매출장부 내보내기</button>
     <button onclick="archiveOldSalesLog()" style="border:none;background:#fff3d6;color:#a15c1e;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">🗑 매출장부 내보내기+정리</button>
     <button onclick="openBizInfoModal()" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">사업자 정보 설정</button>
@@ -322,7 +322,7 @@
     <div id="o-multi-wrap">
       <div id="o-multi-list"></div>
       <button onclick="addFactoryGroup()" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;margin-top:6px;">+ 공장 추가</button>
-      <button onclick="openReturnFromMultiOrderForm()" style="border:none;background:#fce8d6;color:#a15c1e;border-radius:8px;padding:9px 12px;font-size:13px;font-weight:600;margin-top:10px;width:100%;">반품/불량/추가금 등록</button>
+      <button onclick="openReturnFromMultiOrderForm()" style="border:none;background:#fce8d6;color:#a15c1e;border-radius:8px;padding:9px 12px;font-size:13px;font-weight:600;margin-top:10px;width:100%;">추가금 등록</button>
     </div>
 
     <div id="o-single-wrap" class="hidden">
@@ -346,7 +346,7 @@
         <label>처리(출고)된 마수(y) — 숫자가 잘못됐으면 여기서 바로 고치세요</label>
         <input id="o-received" type="number" step="0.1" placeholder="예: 20">
       </div>
-      <button onclick="openReturnFromOrderForm()" style="border:none;background:#fce8d6;color:#a15c1e;border-radius:8px;padding:9px 12px;font-size:13px;font-weight:600;margin-top:10px;width:100%;">반품/불량/추가금 등록</button>
+      <button onclick="openReturnFromOrderForm()" style="border:none;background:#fce8d6;color:#a15c1e;border-radius:8px;padding:9px 12px;font-size:13px;font-weight:600;margin-top:10px;width:100%;">추가금 등록</button>
       <label>비고</label>
       <input id="o-note" placeholder="선택사항">
     </div>
@@ -452,11 +452,13 @@
     <h3 id="returnModalTitle">반품 처리</h3>
     <p style="font-size:12px;color:var(--muted);margin-top:-6px;">여러 품목·컬러를 한 번에 등록할 수 있어요.</p>
     <label>구분</label>
-    <div class="row2">
-      <div><label style="display:flex;align-items:center;gap:6px;font-size:14px;color:var(--text);"><input type="radio" name="ret-type" value="return" checked style="width:auto;" onchange="onReturnTypeChange()"> 반품</label></div>
-      <div><label style="display:flex;align-items:center;gap:6px;font-size:14px;color:var(--text);"><input type="radio" name="ret-type" value="defect" style="width:auto;" onchange="onReturnTypeChange()"> 불량(이월 없이)</label></div>
+    <div id="ret-type-return-defect-wrap">
+      <div class="row2">
+        <div><label style="display:flex;align-items:center;gap:6px;font-size:14px;color:var(--text);"><input type="radio" name="ret-type" value="return" checked style="width:auto;" onchange="onReturnTypeChange()"> 반품</label></div>
+        <div><label style="display:flex;align-items:center;gap:6px;font-size:14px;color:var(--text);"><input type="radio" name="ret-type" value="defect" style="width:auto;" onchange="onReturnTypeChange()"> 불량(이월 없이)</label></div>
+      </div>
     </div>
-    <label style="display:flex;align-items:center;gap:6px;font-size:14px;color:var(--text);margin-top:6px;"><input type="radio" name="ret-type" value="extra" style="width:auto;" onchange="onReturnTypeChange()"> 추가금 (운임비 등, 매출에 그대로 더해짐)</label>
+    <label id="ret-type-extra-label" style="display:flex;align-items:center;gap:6px;font-size:14px;color:var(--text);margin-top:6px;"><input type="radio" name="ret-type" value="extra" style="width:auto;" onchange="onReturnTypeChange()"> 추가금 (운임비 등, 매출에 그대로 더해짐)</label>
     <label>거래처</label>
     <input id="ret-customer" placeholder="예: 메이원" autocomplete="off" oninput="showCustomerSuggestions(this)" onfocus="showCustomerSuggestions(this)" onblur="hideItemSuggestionsDelayed()">
 
@@ -472,6 +474,10 @@
       <input id="ret-note" placeholder="예: 급송비">
       <label>공장/연락처 (선택 - 어느 건으로 나가는지 헷갈릴 수 있으면 적어주세요)</label>
       <input id="ret-extra-factory" placeholder="예: 010-0000-0000 또는 매장">
+      <div id="ret-extra-order-pick-wrap" class="hidden">
+        <label>이 추가금, 어느 발주 거예요? (체크한 발주가 출고될 때 같이 매출로 잡혀요)</label>
+        <div id="ret-extra-order-pick-list" style="max-height:160px; overflow-y:auto; border:1px solid var(--border); border-radius:8px; padding:6px;"></div>
+      </div>
     </div>
 
     <div class="modal-actions">
@@ -524,16 +530,21 @@
   </div>
 </div>
 
-<!-- 지출 내역 -->
+<!-- 지출/입금 내역 -->
 <div class="modal-overlay" id="expenseModal">
   <div class="modal" style="max-width:480px;">
-    <h3>💸 지출 내역</h3>
+    <h3>💰 지출/입금내역</h3>
+    <p style="font-size:12px;color:var(--muted);margin-top:-6px;">그날그날 매장에서 쓰거나 받은 현금을 한 곳에서 관리해요.</p>
+    <div class="row2">
+      <div><label style="display:flex;align-items:center;gap:6px;font-size:14px;color:var(--text);"><input type="radio" name="exp-type" value="expense" checked style="width:auto;"> 지출 (−)</label></div>
+      <div><label style="display:flex;align-items:center;gap:6px;font-size:14px;color:var(--text);"><input type="radio" name="exp-type" value="income" style="width:auto;"> 입금 (+)</label></div>
+    </div>
     <div class="row2">
       <div><label>날짜</label><input id="exp-date" type="date"></div>
       <div><label>금액(원)</label><input id="exp-amount" type="number" step="1" placeholder="예: 8000"></div>
     </div>
     <label>항목</label>
-    <input id="exp-title" placeholder="예: 식대, 퀵비, 비품비">
+    <input id="exp-title" placeholder="예: 식대, 퀵비, 비품비 / 현금 입금">
     <label>비고(선택)</label>
     <input id="exp-note" placeholder="예: 점심 - 김밥천국">
     <button onclick="addExpense()" style="border:none;background:#eaf3ec;color:#2f6b46;border-radius:8px;padding:9px 14px;font-size:13px;font-weight:600;margin-top:8px;width:100%;">+ 추가</button>
@@ -1925,7 +1936,7 @@ function renderOrderCard(o, showItemAsTitle) {
   div.innerHTML = `
     <div class="order-top">
       <div>
-        <div class="order-name">${title}${!showItemAsTitle ? ` <button onclick="event.stopPropagation();processReturn(${o.id})" style="border:none;background:#fce8d6;color:#a15c1e;border-radius:6px;padding:2px 7px;font-size:11px;margin-left:6px;">반품</button>` : ''}</div>
+        <div class="order-name">${title}</div>
         <div class="order-sub">${sub}</div>
       </div>
       <div class="order-status ${statusClass(s)}">${statusLabel(s)}</div>
@@ -2920,24 +2931,26 @@ function printPreShipmentFromModal() {
 
   const taxIncluded = document.getElementById('pre-ship-tax').checked;
   if (taxIncluded) {
-    // 별도 줄로 추가하지 않고, 각 항목의 세액(원) 칸에 나눠서 반영
+    // 별도 줄로 추가하지 않고, 새로 입력한 항목은 각 항목의 세액(원) 칸에 나눠서 반영
     extraRows.forEach(r => { r.tax = Math.round((r.supply || 0) * 0.1); });
   }
+  const taxOverrideIds = taxIncluded ? new Set(pastEntryIds) : null; // 체크리스트에서 고른 기존 항목들도, 실제 기록은 안 건드리고 이 인쇄물에서만 부가세 얹어서 보여줌
 
   const html = buildStatementHTML(customerName, null, null, pastEntryIds.length > 0 ? pastEntryIds : null, true, extraRows, {
     badge: '출고 전(선수금용)',
     subtitle: '아직 출고 전인 발주 기준 예상 청구 내역이에요'
-  });
+  }, taxOverrideIds);
   if (html == null) { showToast('인쇄할 내역이 없습니다'); return; }
   document.getElementById('printArea').innerHTML = html;
   closePreShipmentModal();
   setTimeout(() => window.print(), 100);
 }
 
-function buildStatementHTML(customerName, startDate, endDate, entryIdFilter, includePayments, extraRows, options) {
+function buildStatementHTML(customerName, startDate, endDate, entryIdFilter, includePayments, extraRows, options, taxOverrideIds) {
   if (includePayments === undefined) includePayments = true;
   extraRows = extraRows || [];
   options = options || {};
+  taxOverrideIds = taxOverrideIds || null; // Set - 이 안에 있는 매출 건은 실제 기록은 안 건드리고 인쇄할 때만 부가세 10% 얹어서 보여줌
   const t_c = String(customerName).trim();
   const inRange = (d) => d && d >= startDate && d <= endDate;
   let custEntries;
@@ -2958,7 +2971,7 @@ function buildStatementHTML(customerName, startDate, endDate, entryIdFilter, inc
 
   const saleRows = []; // 매출/반품/불량 (날짜순)
   const paymentRows = []; // 입금 (날짜순, 항상 매출 아래에)
-  let totalSale = 0, totalPaid = 0, totalDiscount = 0, totalReturnDefect = 0, totalSupply = 0, totalTax = 0, listedUnpaid = 0, totalQty = 0;
+  let totalSale = 0, totalPaid = 0, totalDiscount = 0, totalReturnDefect = 0, totalSupply = 0, totalTax = 0, listedUnpaid = 0, totalQty = 0, taxOverrideExtra = 0;
 
   for (const e of custEntries) {
     if (e.isReturn || e.isDefect) {
@@ -2975,9 +2988,10 @@ function buildStatementHTML(customerName, startDate, endDate, entryIdFilter, inc
     listedUnpaid += getRemaining(e); // 이 명세서에 실제로 적히는 항목들 중 아직 안 받은 만큼
     const defectAmt = e.defectYards > 0 ? Math.round(e.unitPrice * e.defectYards) : 0;
     const extraAmt = e.extraAmount || 0;
-    const grossSale = e.saleAmount + defectAmt - extraAmt; // 순수 품목 매출액 (불량 차감분 복원, 추가액은 별도 행으로 뺌)
     const rowSupply = (e.supplyAmount != null ? e.supplyAmount : e.saleAmount) + defectAmt - extraAmt;
-    const rowTax = e.taxAmount || 0;
+    const rowTax = (taxOverrideIds && taxOverrideIds.has(e.id) && !e.taxAmount) ? Math.round(rowSupply * 0.1) : (e.taxAmount || 0);
+    taxOverrideExtra += rowTax - (e.taxAmount || 0);
+    const grossSale = e.saleAmount + defectAmt - extraAmt + (rowTax - (e.taxAmount || 0)); // 순수 품목 매출액 (인쇄시 부가세 얹은 만큼도 합계에 반영)
     totalSale += grossSale;
     totalSupply += rowSupply;
     totalTax += rowTax;
@@ -3067,7 +3081,7 @@ function buildStatementHTML(customerName, startDate, endDate, entryIdFilter, inc
     if (e.saleAmount != null) customerTotalUnpaid += getRemaining(e);
     else if ((e.isReturn || e.isDefect) && e.deductAmount != null) customerTotalUnpaid -= e.deductAmount;
   }
-  const balance = Math.max(0, customerTotalUnpaid + extraTotal);
+  const balance = Math.max(0, customerTotalUnpaid + extraTotal + taxOverrideExtra);
   // "미수금"(이전) = 기존에 갖고 있던 미수금 중, 이 명세서에 실제로 적힌 항목들 말고 나머지 (새로 추가하는 선수금 항목은 안 섞음 - 그건 표에 이미 따로 나옴)
   const carryoverAmt = Math.max(0, customerTotalUnpaid - listedUnpaid);
 
@@ -3158,8 +3172,8 @@ function printStatementForRange(customerName, startDate, endDate) {
   document.getElementById('printArea').innerHTML = html;
   setTimeout(() => window.print(), 100);
 }
-function printStatementForEntries(customerName, entryIds, includePayments) {
-  const html = buildStatementHTML(customerName, null, null, entryIds, includePayments === undefined ? true : includePayments);
+function printStatementForEntries(customerName, entryIds, includePayments, taxOverrideIds) {
+  const html = buildStatementHTML(customerName, null, null, entryIds, includePayments === undefined ? true : includePayments, null, null, taxOverrideIds);
   if (html == null) { showToast('선택한 내역이 없습니다'); return; }
   document.getElementById('printArea').innerHTML = html;
   setTimeout(() => window.print(), 100);
@@ -3460,6 +3474,7 @@ function renderCustomerLedgerView() {
     <button onclick="if(ledgerCustomer) renameCustomer(ledgerCustomer)" style="border:none;background:#eee;color:#555;border-radius:8px;padding:10px 12px;font-size:12px;height:38px;">이름 수정</button>
     <button onclick="document.querySelectorAll('.ledger-print-check').forEach(cb=>cb.checked=true)" style="border:none;background:#eee;color:#555;border-radius:8px;padding:10px 12px;font-size:12px;height:38px;">전체 선택</button>
     <button onclick="document.querySelectorAll('.ledger-print-check').forEach(cb=>cb.checked=false)" style="border:none;background:#eee;color:#555;border-radius:8px;padding:10px 12px;font-size:12px;height:38px;">전체 해제</button>
+    <label style="display:flex; align-items:center; gap:4px; font-size:12px; color:var(--text);"><input type="checkbox" id="ledger-print-add-tax" style="width:auto;"> 부가세 10% 포함해서 인쇄 (세액 없는 항목만, 기록은 안 바뀜)</label>
   `;
   list.appendChild(controls);
 
@@ -3577,7 +3592,7 @@ function printCurrentLedgerStatement() {
       refs.forEach(r => paymentKeys.add(`${r.entryId}:${r.paymentIdx}`));
     } catch (e) {}
   });
-  printStatementForEntries(customer, entryIds, paymentKeys);
+  printStatementForEntries(customer, entryIds, paymentKeys, document.getElementById('ledger-print-add-tax').checked ? new Set(entryIds) : null);
 }
 function printLedgerPeriod() {
   const customer = (ledgerCustomer || document.getElementById('ledger-customer').value).trim();
@@ -3820,6 +3835,7 @@ function openExpenseModal() {
   document.getElementById('exp-amount').value = '';
   document.getElementById('exp-title').value = '';
   document.getElementById('exp-note').value = '';
+  document.querySelector('input[name="exp-type"][value="expense"]').checked = true;
   renderExpenseList();
   document.getElementById('expenseModal').classList.add('open');
 }
@@ -3829,18 +3845,19 @@ async function addExpense() {
   const amount = parseFloat(document.getElementById('exp-amount').value);
   const title = document.getElementById('exp-title').value.trim();
   const note = document.getElementById('exp-note').value.trim();
+  const type = document.querySelector('input[name="exp-type"]:checked').value; // 'expense' | 'income'
   if (!title) { showToast('항목을 적어주세요'); return; }
   if (!amount || amount <= 0) { showToast('금액을 확인해주세요'); return; }
-  expenses.push({ id: nextExpenseId++, date, title, amount, note });
+  expenses.push({ id: nextExpenseId++, date, title, amount, note, type });
   await persistExpenses();
   document.getElementById('exp-amount').value = '';
   document.getElementById('exp-title').value = '';
   document.getElementById('exp-note').value = '';
   renderExpenseList();
-  showToast('지출 등록했습니다');
+  showToast(type === 'income' ? '입금 등록했습니다' : '지출 등록했습니다');
 }
 async function deleteExpense(id) {
-  if (!confirm('이 지출 항목을 삭제할까요?')) return;
+  if (!confirm('이 항목을 삭제할까요?')) return;
   expenses = expenses.filter(e => e.id !== id);
   await persistExpenses();
   renderExpenseList();
@@ -3848,23 +3865,25 @@ async function deleteExpense(id) {
 function renderExpenseList() {
   const listEl = document.getElementById('expense-list');
   const sorted = expenses.slice().sort((a, b) => b.date.localeCompare(a.date) || b.id - a.id);
-  if (sorted.length === 0) { listEl.innerHTML = '<div class="empty">지출 기록이 없습니다</div>'; return; }
+  if (sorted.length === 0) { listEl.innerHTML = '<div class="empty">기록이 없습니다</div>'; return; }
 
   const byDate = new Map();
   for (const e of sorted) {
     if (!byDate.has(e.date)) byDate.set(e.date, []);
     byDate.get(e.date).push(e);
   }
-  const totalAll = sorted.reduce((s, e) => s + e.amount, 0);
-  let html = `<div style="padding:6px 4px; font-weight:700; font-size:13px; border-bottom:1px solid var(--border); margin-bottom:6px;">전체 지출 합계 ${totalAll.toLocaleString()}원</div>`;
+  const totalExpense = sorted.filter(e => e.type !== 'income').reduce((s, e) => s + e.amount, 0);
+  const totalIncome = sorted.filter(e => e.type === 'income').reduce((s, e) => s + e.amount, 0);
+  let html = `<div style="padding:6px 4px; font-weight:700; font-size:13px; border-bottom:1px solid var(--border); margin-bottom:6px;">전체 지출 -${totalExpense.toLocaleString()}원 · 입금 +${totalIncome.toLocaleString()}원 · 순액 ${(totalIncome - totalExpense).toLocaleString()}원</div>`;
   for (const [date, list] of byDate) {
-    const dayTotal = list.reduce((s, e) => s + e.amount, 0);
-    html += `<div style="font-size:12px; color:var(--muted); font-weight:600; margin-top:8px;">${esc(date)} · ${dayTotal.toLocaleString()}원</div>`;
+    const dayExpense = list.filter(e => e.type !== 'income').reduce((s, e) => s + e.amount, 0);
+    const dayIncome = list.filter(e => e.type === 'income').reduce((s, e) => s + e.amount, 0);
+    html += `<div style="font-size:12px; color:var(--muted); font-weight:600; margin-top:8px;">${esc(date)} · 지출 -${dayExpense.toLocaleString()}원 · 입금 +${dayIncome.toLocaleString()}원</div>`;
     html += list.map(e => `
       <div style="display:flex; justify-content:space-between; align-items:center; padding:6px 4px; border-bottom:1px dashed var(--border);">
         <div style="font-size:13px;">${esc(e.title)}${e.note ? ` <span style="color:var(--muted); font-size:11px;">(${esc(e.note)})</span>` : ''}</div>
         <div style="display:flex; align-items:center; gap:8px;">
-          <span style="font-weight:600;">${e.amount.toLocaleString()}원</span>
+          <span style="font-weight:600; color:${e.type === 'income' ? '#2f6b46' : 'var(--danger)'};">${e.type === 'income' ? '+' : '-'}${e.amount.toLocaleString()}원</span>
           <button onclick="deleteExpense(${e.id})" style="border:none;background:none;color:var(--muted);font-size:11px;">삭제</button>
         </div>
       </div>
@@ -4166,7 +4185,7 @@ function renderSales() {
   }, 0);
   const unpaid = Math.max(0, sales.reduce((s, e) => s + (e.saleAmount != null ? getRemaining(e) : 0), 0) - totalReturnDefect);
 
-  // 지금 보고 있는 기간(날짜 필터)에 맞춰 지출도 같이 집계해서 순이익에서 뺌
+  // 지금 보고 있는 기간(날짜 필터)에 맞춰 지출/입금도 같이 집계해서 순이익에 반영
   let relevantExpenses = expenses;
   if (salesDayFilter) {
     if (salesDayFilterEnd) {
@@ -4175,9 +4194,11 @@ function renderSales() {
       relevantExpenses = expenses.filter(e => e.date === salesDayFilter);
     }
   }
-  const totalExpense = relevantExpenses.reduce((s, e) => s + e.amount, 0);
-  const netProfit = totalProfit - totalExpense;
-  document.getElementById('stats').innerHTML = `<span>매출 ${totalSales.toLocaleString()}원</span><span>총순이익 ${netProfit.toLocaleString()}원${totalExpense > 0 ? ` (지출 -${totalExpense.toLocaleString()}원 반영)` : ''}</span><span>미수금 ${unpaid.toLocaleString()}원</span>`;
+  const totalExpense = relevantExpenses.filter(e => e.type !== 'income').reduce((s, e) => s + e.amount, 0);
+  const totalIncome = relevantExpenses.filter(e => e.type === 'income').reduce((s, e) => s + e.amount, 0);
+  const netProfit = totalProfit - totalExpense + totalIncome;
+  const expenseNote = (totalExpense > 0 || totalIncome > 0) ? ` (지출 -${totalExpense.toLocaleString()}원, 입금 +${totalIncome.toLocaleString()}원 반영)` : '';
+  document.getElementById('stats').innerHTML = `<span>매출 ${totalSales.toLocaleString()}원</span><span>총순이익 ${netProfit.toLocaleString()}원${expenseNote}</span><span>미수금 ${unpaid.toLocaleString()}원</span>`;
 
   const list = document.getElementById('list');
   list.innerHTML = '';
@@ -4286,6 +4307,7 @@ function renderSales() {
               ${custUnpaid > 0 ? `<button onclick="recordGroupPayment([${entries.map(e => e.id).join(',')}])" style="border:none;background:#eaf3ec;color:#2f6b46;border-radius:6px;padding:5px 10px;font-size:12px;font-weight:600;">입금 처리</button>` : ''}
               ${entries.some(e => getPaidAmount(e) > 0) ? `<button onclick="resetGroupPayment([${entries.map(e => e.id).join(',')}])" style="border:none;background:#f1eee7;color:var(--muted);border-radius:6px;padding:5px 10px;font-size:12px;margin-left:6px;">입금 취소</button>` : ''}
               <button onclick="openSaleAddModal('${escAttr(k)}')" style="border:none;background:#eaf3ec;color:#2f6b46;border-radius:6px;padding:5px 10px;font-size:12px;margin-left:6px;">+ 품목 추가</button>
+              <button onclick="openDefectReturnForCustomer('${escAttr(k)}')" style="border:none;background:#fdecea;color:var(--danger);border-radius:6px;padding:5px 10px;font-size:12px;margin-left:6px;">반품/불량/추가금</button>
               <button onclick="showCustomerLedger('${escAttr(k)}')" style="border:none;background:#e8edf5;color:#3d4f6b;border-radius:6px;padding:5px 10px;font-size:12px;margin-left:6px;">📒 원장</button>
               <button onclick="renameCustomer('${escAttr(k)}')" style="border:none;background:#eee;color:#555;border-radius:6px;padding:5px 10px;font-size:12px;margin-left:6px;">이름 수정</button>
             </div>
@@ -4378,7 +4400,6 @@ function renderSales() {
           <div class="order-btns">
             ${remaining > 0 ? `<button onclick="recordPayment(${e.id})" style="border:none;background:#eaf3ec;color:#2f6b46;border-radius:6px;padding:4px 8px;font-size:11px;">입금 처리</button>` : ''}
             ${paidAmt > 0 ? `<button onclick="resetPayment(${e.id})" style="border:none;background:#f1eee7;color:var(--muted);border-radius:6px;padding:4px 8px;font-size:11px;">입금 취소</button>` : ''}
-            <button onclick="openDefectModal(${e.id})" style="border:none;background:#fdecea;color:var(--danger);border-radius:6px;padding:4px 8px;font-size:11px;">불량 처리</button>
             <button onclick="openSaleEditModal(${e.id})" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:6px;padding:4px 8px;font-size:11px;">매출 수정</button>
           </div>
         `;
@@ -4554,7 +4575,7 @@ function renderCustomerBuckets(list2) {
     groupDiv.innerHTML = `
       <div class="group-head" onclick="toggleGroup('${escAttr(k)}')">
         <div class="info">
-          <div class="name">${esc(cust)} <button onclick="event.stopPropagation();openReturnForCustomer('${escAttr(cust)}')" style="border:none;background:#fce8d6;color:#a15c1e;border-radius:6px;padding:3px 9px;font-size:11px;font-weight:600;margin-left:6px;">반품/불량/추가금</button> <button onclick="event.stopPropagation();printPreShipmentSelected('${escAttr(cust)}')" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:6px;padding:3px 9px;font-size:11px;font-weight:600;margin-left:6px;">🖨 선수금용 명세서(체크한 것만)</button> ${pendingCount > 0 ? `<button onclick="event.stopPropagation();openCustomerShipList('${escAttr(cust)}')" style="border:none;background:#eaf3ec;color:#2f6b46;border-radius:6px;padding:3px 9px;font-size:11px;font-weight:600;margin-left:6px;">📦 출고 처리</button>` : ''}</div>
+          <div class="name">${esc(cust)} <button onclick="event.stopPropagation();openReturnForCustomer('${escAttr(cust)}')" style="border:none;background:#fce8d6;color:#a15c1e;border-radius:6px;padding:3px 9px;font-size:11px;font-weight:600;margin-left:6px;">추가금</button> <button onclick="event.stopPropagation();printPreShipmentSelected('${escAttr(cust)}')" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:6px;padding:3px 9px;font-size:11px;font-weight:600;margin-left:6px;">🖨 선수금용 명세서(체크한 것만)</button> ${pendingCount > 0 ? `<button onclick="event.stopPropagation();openCustomerShipList('${escAttr(cust)}')" style="border:none;background:#eaf3ec;color:#2f6b46;border-radius:6px;padding:3px 9px;font-size:11px;font-weight:600;margin-left:6px;">📦 출고 처리</button>` : ''}</div>
           <div class="sub">전체 ${items.length}건 · 진행중 ${pendingCount}건 · ${qtyLabel}</div>
         </div>
         <div class="total"><div class="cnt">${isOpen ? '접기 ▲' : '펼치기 ▼'}</div></div>
@@ -5398,6 +5419,8 @@ function fromDateInputValue(v) {
 }
 
 let pendingReturnOrderId = null;
+let pendingReturnSaleEntryId = null; // 매출 카드에서 반품 열었을 때, 어느 매출 건 기준인지
+let pendingExtraOrderCandidates = []; // 거래처 카드에서 추가금 열었을 때, 보류 대상이 될 수 있는 진행중 발주 후보들
 let pendingReturnLinkGroupId = null; // 발주와 같이 등록되는 추가금을 서로 연결해두기 위한 값
 
 function addReturnRow(item, color, unit, note) {
@@ -5430,9 +5453,14 @@ function resetReturnRows(item, color, unit, note) {
   addReturnRow(item, color, unit, note);
 }
 
-function openReturnForCustomer(customer) {
+function openDefectReturnForCustomer(customer) {
+  // 매출 탭 거래처 카드에서 여는 반품/불량/추가금 - 여기서 추가금 등록하면 특정 발주랑 연결이 안 되니까 즉시 매출로 잡힘 (안전한 경우)
   pendingReturnOrderId = null;
   pendingReturnLinkGroupId = null;
+  pendingExtraOrderCandidates = [];
+  document.getElementById('ret-extra-order-pick-wrap').classList.add('hidden');
+  document.getElementById('ret-type-return-defect-wrap').classList.remove('hidden');
+  document.getElementById('ret-type-extra-label').classList.remove('hidden');
   document.querySelector('input[name="ret-type"][value="return"]').checked = true;
   document.getElementById('ret-customer').value = customer;
   resetReturnRows('', '', 'y', '');
@@ -5441,6 +5469,39 @@ function openReturnForCustomer(customer) {
   document.getElementById('ret-note').value = '';
   onReturnTypeChange();
   document.getElementById('returnModalTitle').textContent = '반품/불량/추가금 등록';
+  document.getElementById('returnModal').classList.add('open');
+}
+async function openReturnForCustomer(customer) {
+  pendingReturnOrderId = null;
+  // 이 거래처에 진행중인 발주가 있으면, 그걸 트리거로 써서 보류할 수 있음 (그 중 뭐든 먼저 출고될 때 매출로 잡힘)
+  // 여러 건이면 어느 발주 것인지 반드시 골라야 함 - 안 그러면 상관없는 발주가 먼저 나갈 때 엉뚱하게 같이 잡혀버림
+  const pendingOrders = orders.filter(o => String(o.customer).trim() === String(customer).trim() && !o.done);
+  pendingReturnLinkGroupId = null;
+  pendingExtraOrderCandidates = pendingOrders;
+  const pickWrap = document.getElementById('ret-extra-order-pick-wrap');
+  const pickList = document.getElementById('ret-extra-order-pick-list');
+  if (pendingOrders.length > 1) {
+    pickWrap.classList.remove('hidden');
+    pickList.innerHTML = pendingOrders.map(o => `
+      <label style="display:flex; align-items:center; gap:6px; padding:3px 0; font-size:13px;">
+        <input type="checkbox" class="ret-extra-order-check" data-order-id="${o.id}" style="width:auto;">
+        ${esc(o.date || '')} · ${esc(o.item)} ${esc(o.color || '')}
+      </label>
+    `).join('');
+  } else {
+    pickWrap.classList.add('hidden');
+    pickList.innerHTML = '';
+  }
+  document.getElementById('ret-type-return-defect-wrap').classList.add('hidden');
+  document.getElementById('ret-type-extra-label').classList.remove('hidden');
+  document.querySelector('input[name="ret-type"][value="extra"]').checked = true;
+  document.getElementById('ret-customer').value = customer;
+  resetReturnRows('', '', 'y', '');
+  document.getElementById('ret-extra-amount').value = '';
+  document.getElementById('ret-extra-factory').value = '';
+  document.getElementById('ret-note').value = '';
+  onReturnTypeChange();
+  document.getElementById('returnModalTitle').textContent = '추가금 등록';
   document.getElementById('returnModal').classList.add('open');
 }
 async function openReturnFromMultiOrderForm() {
@@ -5482,55 +5543,94 @@ async function openReturnFromMultiOrderForm() {
 
   pendingReturnOrderId = null;
   pendingReturnLinkGroupId = linkGroupId;
-  document.querySelector('input[name="ret-type"][value="return"]').checked = true;
+  pendingExtraOrderCandidates = [];
+  document.getElementById('ret-extra-order-pick-wrap').classList.add('hidden');
+  document.getElementById('ret-type-return-defect-wrap').classList.add('hidden');
+  document.getElementById('ret-type-extra-label').classList.remove('hidden');
+  document.querySelector('input[name="ret-type"][value="extra"]').checked = true;
   document.getElementById('ret-customer').value = customer;
   resetReturnRows('', '', 'y', '');
   document.getElementById('ret-extra-amount').value = '';
   document.getElementById('ret-extra-factory').value = '';
   document.getElementById('ret-note').value = '';
   onReturnTypeChange();
-  document.getElementById('returnModalTitle').textContent = '반품/불량/추가금 등록';
+  document.getElementById('returnModalTitle').textContent = '추가금 등록';
   document.getElementById('returnModal').classList.add('open');
 }
-function openReturnFromOrderForm() {
+async function openReturnFromOrderForm() {
+  const date = fromDateInputValue(document.getElementById('o-date').value) || todayStr();
   const customer = document.getElementById('o-customer').value.trim();
+  const factory = document.getElementById('o-factory').value.trim();
   const item = document.getElementById('o-item').value.trim();
   const color = document.getElementById('o-color').value.trim();
+  const orderQty = parseFloat(document.getElementById('o-qty').value) || 0;
   const unit = document.getElementById('o-unit').value;
-  const factoryVal = document.getElementById('o-factory') ? document.getElementById('o-factory').value.trim() : '';
-  const linkedOrderId = editingOrderId; // 수정 중이던 발주가 있으면 연결, 새 등록이면 null
+  const note = document.getElementById('o-note').value.trim();
+
+  let targetOrder = null;
+  if (editingOrderId !== null) {
+    targetOrder = orders.find(x => x.id === editingOrderId);
+    if (targetOrder) {
+      const received = Math.max(0, parseFloat(document.getElementById('o-received').value) || 0);
+      targetOrder.date = date; targetOrder.customer = customer; targetOrder.factory = factory; targetOrder.item = item; targetOrder.color = color; targetOrder.orderQty = orderQty; targetOrder.unit = unit; targetOrder.note = note; targetOrder.received = received;
+      if (orderQty > 0 && received >= orderQty && !targetOrder.done) { targetOrder.done = true; targetOrder.doneDate = date; }
+      else if (orderQty > 0 && received < orderQty && targetOrder.done) { targetOrder.done = false; targetOrder.doneDate = null; }
+    }
+  } else if (item) {
+    // 발주 폼에 입력해둔 내용이 있으면 먼저 저장하고 넘어감 - 안 그러면 추가금만 등록되고 발주는 그냥 날아가버림
+    targetOrder = { id: nextOrderId++, date, customer, factory, item, color, orderQty, unit, received: 0, note, done: false };
+    orders.push(targetOrder);
+  }
+  let linkGroupId = null;
+  if (targetOrder && !targetOrder.done) {
+    linkGroupId = targetOrder.linkGroupId || ('link-' + Date.now());
+    targetOrder.linkGroupId = linkGroupId;
+  }
+  if (targetOrder) { await persistOrders(); showToast('발주 내용을 저장했어요'); }
   closeOrderAddModal();
 
-  pendingReturnOrderId = linkedOrderId;
-  pendingReturnLinkGroupId = null;
-  document.querySelector('input[name="ret-type"][value="return"]').checked = true;
+  pendingReturnOrderId = null;
+  pendingReturnLinkGroupId = linkGroupId;
+  pendingExtraOrderCandidates = [];
+  document.getElementById('ret-extra-order-pick-wrap').classList.add('hidden');
+  document.getElementById('ret-type-return-defect-wrap').classList.add('hidden');
+  document.getElementById('ret-type-extra-label').classList.remove('hidden');
+  document.querySelector('input[name="ret-type"][value="extra"]').checked = true;
   document.getElementById('ret-customer').value = customer;
   resetReturnRows(item, color, unit, '');
   document.getElementById('ret-extra-amount').value = '';
-  document.getElementById('ret-extra-factory').value = factoryVal;
+  document.getElementById('ret-extra-factory').value = factory;
   document.getElementById('ret-note').value = '';
   onReturnTypeChange();
-  document.getElementById('returnModalTitle').textContent = '반품/불량/추가금 등록';
+  document.getElementById('returnModalTitle').textContent = '추가금 등록';
   document.getElementById('returnModal').classList.add('open');
 }
-function processReturn(orderId) {
-  const o = orders.find(x => x.id === orderId);
-  if (!o) return;
-  pendingReturnOrderId = orderId;
+function openReturnFromSaleEntry(entryId) {
+  const e = shipmentLog.find(x => x.id === entryId);
+  if (!e) return;
+  pendingReturnOrderId = null;
   pendingReturnLinkGroupId = null;
+  pendingReturnSaleEntryId = entryId; // 어느 매출 건에서 열었는지 기록해둠 (반품 처리시 그 건 기준으로 재고 복원)
+  pendingExtraOrderCandidates = [];
+  document.getElementById('ret-extra-order-pick-wrap').classList.add('hidden');
+  document.getElementById('ret-type-return-defect-wrap').classList.add('hidden'); // 불량은 매출 탭의 "불량 처리" 버튼으로 따로 하므로 여긴 반품만
   document.querySelector('input[name="ret-type"][value="return"]').checked = true;
-  document.getElementById('ret-customer').value = o.customer || '';
-  resetReturnRows(o.item || '', o.color || '', o.unit || 'y', '');
+  document.getElementById('ret-customer').value = e.customer || '';
+  resetReturnRows(e.item || '', e.color || '', e.unit || 'y', '');
   document.getElementById('ret-extra-amount').value = '';
-  document.getElementById('ret-extra-factory').value = o.factory || '';
+  document.getElementById('ret-extra-factory').value = e.factory || '';
   document.getElementById('ret-note').value = '';
   onReturnTypeChange();
-  document.getElementById('returnModalTitle').textContent = '반품/불량/추가금 등록';
+  document.getElementById('returnModalTitle').textContent = '반품 처리';
   document.getElementById('returnModal').classList.add('open');
 }
 function openStandaloneReturnModal() {
   pendingReturnOrderId = null;
   pendingReturnLinkGroupId = null;
+  pendingExtraOrderCandidates = [];
+  document.getElementById('ret-extra-order-pick-wrap').classList.add('hidden');
+  document.getElementById('ret-type-return-defect-wrap').classList.remove('hidden');
+  document.getElementById('ret-type-extra-label').classList.remove('hidden');
   document.querySelector('input[name="ret-type"][value="return"]').checked = true;
   document.getElementById('ret-customer').value = '';
   resetReturnRows('', '', 'y', '');
@@ -5541,7 +5641,7 @@ function openStandaloneReturnModal() {
   document.getElementById('returnModalTitle').textContent = '반품/불량/추가금 등록';
   document.getElementById('returnModal').classList.add('open');
 }
-function closeReturnModal() { document.getElementById('returnModal').classList.remove('open'); pendingReturnOrderId = null; pendingReturnLinkGroupId = null; }
+function closeReturnModal() { document.getElementById('returnModal').classList.remove('open'); pendingReturnOrderId = null; pendingReturnLinkGroupId = null; pendingReturnSaleEntryId = null; pendingExtraOrderCandidates = []; }
 function onReturnTypeChange() {
   const type = document.querySelector('input[name="ret-type"]:checked').value;
   const multiWrap = document.getElementById('ret-multi-wrap');
@@ -5565,6 +5665,28 @@ async function confirmReturn() {
     const extraFactory = document.getElementById('ret-extra-factory').value.trim();
     if (!customer) { showToast('거래처를 확인해주세요'); return; }
     if (!amount || amount <= 0) { showToast('금액을 확인해주세요'); return; }
+
+    // 거래처 카드에서 연 경우, 어느 발주 것인지 정확히 골라서 그 발주(들)에만 보류
+    if (pendingExtraOrderCandidates.length > 0) {
+      let targetOrders;
+      if (pendingExtraOrderCandidates.length === 1) {
+        targetOrders = pendingExtraOrderCandidates;
+      } else {
+        const checkedIds = Array.from(document.querySelectorAll('.ret-extra-order-check:checked')).map(cb => parseInt(cb.dataset.orderId));
+        if (checkedIds.length === 0) { showToast('이 추가금이 어느 발주 것인지 체크해주세요'); return; }
+        targetOrders = pendingExtraOrderCandidates.filter(o => checkedIds.includes(o.id));
+      }
+      const linkGroupId = targetOrders.find(o => o.linkGroupId)?.linkGroupId || ('link-' + Date.now());
+      for (const o of targetOrders) {
+        o.linkGroupId = linkGroupId;
+        o.pendingFee = { amount, note, factory: extraFactory };
+      }
+      await persistOrders();
+      closeReturnModal();
+      render();
+      showToast(`추가금 ${amount.toLocaleString()}원을 선택한 발주(${targetOrders.length}건)에 보류해뒀어요 (출고할 때 같이 매출로 잡혀요)`);
+      return;
+    }
 
     if (pendingReturnLinkGroupId) {
       // 아직 출고 안 된 발주랑 같이 등록된 추가금은, 원단이랑 마찬가지로 매출에 바로 안 잡고
