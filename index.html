@@ -1917,9 +1917,9 @@ function renderOrderCard(o, showItemAsTitle) {
   const wd = getWeekdayKorean(o.date);
   const dateTag = o.date ? `<span style="font-weight:400;font-size:11px;color:var(--muted);margin-left:6px;">${esc(o.date)}${wd ? `(${wd})` : ''}</span>` : '';
   const title = showItemAsTitle ? `${esc(o.item)} ${esc(o.color || '')}` : `${esc(o.customer || '')}${dateTag}`;
-  const sub = showItemAsTitle
+  const sub = (showItemAsTitle
     ? `${esc(o.date || '')} · 공장/연락처 ${esc(o.factory || '-')}`
-    : `${esc(o.date || '')} · 공장/연락처 ${esc(o.factory || '-')}`;
+    : `${esc(o.date || '')} · 공장/연락처 ${esc(o.factory || '-')}`) + (o.pendingFee ? ` · 💸 보류된 추가금 ${o.pendingFee.amount.toLocaleString()}원 (출고시 매출반영)` : '');
   const div = document.createElement('div');
   div.className = 'order-card';
   div.innerHTML = `
@@ -2804,7 +2804,6 @@ function printPreShipmentSelected(customerName) {
 function openPreShipmentModal(customerName, orderIds) {
   const targetOrders = orderIds.map(id => orders.find(o => o.id === id)).filter(Boolean).filter(o => !o.done);
   const t_c = String(customerName).trim();
-  const extraEntries = shipmentLog.filter(e => String(e.customer).trim() === t_c && e.date === todayStr() && e.orderId == null);
 
   pendingPreShipCustomer = customerName;
   document.getElementById('pre-ship-desc').textContent = `${customerName} · 발행일 ${todayStr()} — 단가·수량 고치거나 항목을 추가/삭제한 뒤 인쇄하세요.`;
@@ -2819,26 +2818,27 @@ function openPreShipmentModal(customerName, orderIds) {
     const swOrder = findSwatchOrderByItemColor(o.item, o.color);
     addPreShipRow(`${o.item} ${o.color || ''}${swOrder != null ? ` (${swOrder}번)` : ''}${o.note ? ` (${o.note})` : ''}`, yards, price);
   }
-  for (const e of extraEntries) {
-    const swOrder = findSwatchOrderByItemColor(e.item, e.color);
-    if (e.isReturn || e.isDefect) {
-      addPreShipRow(`${e.isDefect ? '불량' : '반품'} - ${e.item} ${e.color || ''}${swOrder != null ? ` (${swOrder}번)` : ''}${e.note ? ` (${e.note})` : ''}`, Math.abs(e.amount), e.unitPrice, e.deductAmount != null ? -e.deductAmount : null);
-    } else if (e.saleAmount != null) {
-      addPreShipRow(`${e.item}${swOrder != null ? ` (${swOrder}번)` : ''}${e.note ? ` (${e.note})` : ''}`, '', '', e.saleAmount);
+  // 이 발주들이랑 같이 등록했지만 아직 출고 전이라 매출로 안 잡힌(보류된) 추가금도 항목으로 미리 채워줌
+  const seenFeeGroups = new Set();
+  for (const o of targetOrders) {
+    if (o.pendingFee && !seenFeeGroups.has(o.linkGroupId || o.id)) {
+      seenFeeGroups.add(o.linkGroupId || o.id);
+      addPreShipRow(o.pendingFee.note || '추가금', '', '', o.pendingFee.amount);
     }
   }
-  if (targetOrders.length === 0 && extraEntries.length === 0) addPreShipRow('', '', '');
+  if (targetOrders.length === 0) addPreShipRow('', '', '');
 
-  // 이전에 이미 등록된(오늘 것 제외) 미수금 항목들도 선택해서 같이 뽑을 수 있게 목록으로 보여줌 (기본은 다 체크 안 된 상태 - 실수로 겹쳐 나가는 일 없게)
-  const pastUnpaid = shipmentLog.filter(e => String(e.customer).trim() === t_c && e.saleAmount != null && e.date !== todayStr() && getRemaining(e) > 0);
+  // 이미 등록된 미수금 항목(추가금/반품/불량 등, 오늘 등록한 것 포함)은 여기서 직접 타이핑하지 않고
+  // 전부 이 체크리스트 하나로만 다뤄서, 이중으로 잡히는 일이 없게 함. 오늘 등록한 건 기본으로 체크해둠.
+  const pastUnpaid = shipmentLog.filter(e => String(e.customer).trim() === t_c && e.saleAmount != null && e.item !== '이월 미수금' && getRemaining(e) > 0);
   const pastWrap = document.getElementById('pre-ship-past-wrap');
   if (pastUnpaid.length > 0) {
     pastWrap.innerHTML = `
-      <div style="font-size:12px; font-weight:700; color:#a15c1e; margin-bottom:4px;">📋 이전 미수금 항목 (체크하면 이 명세서에 같이 포함돼요)</div>
+      <div style="font-size:12px; font-weight:700; color:#a15c1e; margin-bottom:4px;">📋 미수금 항목 (체크한 것만 이 명세서에 포함돼요 - 오늘 등록한 건 기본 체크)</div>
       ${pastUnpaid.map(e => `
         <label style="display:flex; align-items:center; gap:6px; padding:4px 0; font-size:12px;">
-          <input type="checkbox" class="pre-ship-past-check" data-entry-id="${e.id}" style="width:auto;">
-          ${esc(e.date)} · ${esc(e.item === '이월 미수금' ? '이월 미수금' : `${e.item} ${e.color || ''}`)} - 미수금 ${getRemaining(e).toLocaleString()}원
+          <input type="checkbox" class="pre-ship-past-check" data-entry-id="${e.id}" ${e.date === todayStr() ? 'checked' : ''} style="width:auto;">
+          ${esc(e.date)} · ${esc(e.item === '이월 미수금' ? '이월 미수금' : (e.isFee ? `추가금${e.note ? ` - ${e.note}` : ''}` : `${e.item} ${e.color || ''}`))} - 미수금 ${getRemaining(e).toLocaleString()}원
         </label>
       `).join('')}
     `;
@@ -5329,6 +5329,27 @@ async function confirmOrderReceiveInner(o) {
   shipmentLog.push(newEntry);
   await persistShipmentLog();
 
+  // 이 발주(같은 그룹)에 보류해둔 추가금이 있으면, 첫 출고 시점에 같이 매출로 반영
+  let feeMsg = '';
+  if (o.pendingFee) {
+    const fee = o.pendingFee;
+    shipmentLog.push({
+      id: nextLogId++, date: todayStr(), orderId: null,
+      customer: o.customer, factory: fee.factory || o.factory, item: '추가금', color: '', isFee: true, linkGroupId: o.linkGroupId,
+      amount: 1, unit: 'y', yardsShipped: 1, remainAfter: 0, isFullCompletion: true,
+      unitPrice: fee.amount, supplyAmount: fee.amount, taxAmount: 0, saleAmount: fee.amount, paidAmount: 0,
+      note: fee.note || ''
+    });
+    await persistShipmentLog();
+    if (o.linkGroupId) {
+      for (const other of orders) { if (other.linkGroupId === o.linkGroupId) delete other.pendingFee; }
+    } else {
+      delete o.pendingFee;
+    }
+    await persistOrders();
+    feeMsg = ` · 보류돼있던 추가금 ${fee.amount.toLocaleString()}원도 같이 매출로 잡혔어요`;
+  }
+
   closeOrderReceiveModal(); render();
   const qtyLabel = isJeol ? `${raw}절(${yardsShipped}y${yardsEstimated ? ' 추정' : ''})` : `${raw}y`;
   let msg = remain > 0 ? `${qtyLabel} 출고, 이월 ${remain}${o.unit || 'y'} 남음` : `${qtyLabel} 출고, 전량 완료(자동 처리됨)`;
@@ -5338,6 +5359,7 @@ async function confirmOrderReceiveInner(o) {
   } else {
     msg += ` · 재고도 같이 차감됐어요`;
   }
+  msg += feeMsg;
   showToast(msg);
 }
 function todayStr() {
@@ -5543,6 +5565,23 @@ async function confirmReturn() {
     const extraFactory = document.getElementById('ret-extra-factory').value.trim();
     if (!customer) { showToast('거래처를 확인해주세요'); return; }
     if (!amount || amount <= 0) { showToast('금액을 확인해주세요'); return; }
+
+    if (pendingReturnLinkGroupId) {
+      // 아직 출고 안 된 발주랑 같이 등록된 추가금은, 원단이랑 마찬가지로 매출에 바로 안 잡고
+      // 발주에 보류해뒀다가 그 발주가 실제로 출고될 때 같이 매출로 잡히게 함 (이중 계산/선수금 명세서 혼란 방지)
+      const linkedOrders = orders.filter(o => o.linkGroupId === pendingReturnLinkGroupId);
+      if (linkedOrders.length > 0) {
+        for (const o of linkedOrders) {
+          o.pendingFee = { amount, note, factory: extraFactory };
+        }
+        await persistOrders();
+        closeReturnModal();
+        render();
+        showToast(`추가금 ${amount.toLocaleString()}원을 발주에 보류해뒀어요 (출고할 때 같이 매출로 잡혀요)`);
+        return;
+      }
+    }
+
     shipmentLog.push({
       id: nextLogId++, date: todayStr(), orderId: null,
       customer, factory: extraFactory, item: '추가금', color: '', isFee: true, linkGroupId: pendingReturnLinkGroupId,
@@ -5682,8 +5721,29 @@ async function markOrderDone(id) {
     note: remain <= 0 ? '' : '', invDeductedAmount: invDeductedAmountFlag, deductBreakdown: invBreakdownFlag
   });
   await persistShipmentLog();
+
+  let feeMsg = '';
+  if (o.pendingFee) {
+    const fee = o.pendingFee;
+    shipmentLog.push({
+      id: nextLogId++, date: todayStr(), orderId: null,
+      customer: o.customer, factory: fee.factory || o.factory, item: '추가금', color: '', isFee: true, linkGroupId: o.linkGroupId,
+      amount: 1, unit: 'y', yardsShipped: 1, remainAfter: 0, isFullCompletion: true,
+      unitPrice: fee.amount, supplyAmount: fee.amount, taxAmount: 0, saleAmount: fee.amount, paidAmount: 0,
+      note: fee.note || ''
+    });
+    await persistShipmentLog();
+    if (o.linkGroupId) {
+      for (const other of orders) { if (other.linkGroupId === o.linkGroupId) delete other.pendingFee; }
+    } else {
+      delete o.pendingFee;
+    }
+    await persistOrders();
+    feeMsg = ` · 보류돼있던 추가금 ${fee.amount.toLocaleString()}원도 같이 매출로 잡혔어요`;
+  }
+
   render();
-  const extra = remain > 0 ? ` (${yardsShipped}y${isJeol ? ' 추정' : ''} 출고 처리${saleAmount ? ', 매출 ' + saleAmount.toLocaleString() + '원' : ''})` : '';
+  const extra = (remain > 0 ? ` (${yardsShipped}y${isJeol ? ' 추정' : ''} 출고 처리${saleAmount ? ', 매출 ' + saleAmount.toLocaleString() + '원' : ''})` : '') + feeMsg;
   showToast(`완료 처리되어 목록에서 정리했습니다${extra}`);
 }
 async function reopenOrder(id) {
@@ -5697,12 +5757,27 @@ async function deleteOrder(id) {
   const target = orders.find(x => x.id === id);
   let deleteLinkedFee = false;
   let linkedFeeEntry = null;
+  let keepPendingFeeAsStandalone = false;
   if (target && target.linkGroupId) {
-    const otherOrdersWithSameLink = orders.some(o => o.id !== id && o.linkGroupId === target.linkGroupId);
+    const otherOrdersWithSameLink = orders.filter(o => o.id !== id && o.linkGroupId === target.linkGroupId);
     linkedFeeEntry = shipmentLog.find(e => e.linkGroupId === target.linkGroupId && e.isFee);
-    if (!otherOrdersWithSameLink && linkedFeeEntry) {
-      deleteLinkedFee = confirm(`이 발주랑 같이 등록했던 추가금(${(linkedFeeEntry.saleAmount || 0).toLocaleString()}원${linkedFeeEntry.note ? ` - ${linkedFeeEntry.note}` : ''})도 같이 삭제할까요?`);
+    if (otherOrdersWithSameLink.length === 0) {
+      if (linkedFeeEntry) {
+        deleteLinkedFee = confirm(`이 발주랑 같이 등록했던 추가금(${(linkedFeeEntry.saleAmount || 0).toLocaleString()}원${linkedFeeEntry.note ? ` - ${linkedFeeEntry.note}` : ''})도 같이 삭제할까요?`);
+      } else if (target.pendingFee) {
+        keepPendingFeeAsStandalone = confirm(`이 발주에 보류해뒀던 추가금(${target.pendingFee.amount.toLocaleString()}원${target.pendingFee.note ? ` - ${target.pendingFee.note}` : ''})이 있어요.\n발주는 삭제하되, 추가금은 매출로 남겨둘까요?\n("취소"를 누르면 추가금도 같이 사라져요)`);
+      }
     }
+  }
+  if (keepPendingFeeAsStandalone && target.pendingFee) {
+    shipmentLog.push({
+      id: nextLogId++, date: todayStr(), orderId: null,
+      customer: target.customer, factory: target.pendingFee.factory || target.factory, item: '추가금', color: '', isFee: true,
+      amount: 1, unit: 'y', yardsShipped: 1, remainAfter: 0, isFullCompletion: true,
+      unitPrice: target.pendingFee.amount, supplyAmount: target.pendingFee.amount, taxAmount: 0, saleAmount: target.pendingFee.amount, paidAmount: 0,
+      note: target.pendingFee.note || ''
+    });
+    await persistShipmentLog();
   }
   orders = orders.filter(x => x.id !== id);
   if (deleteLinkedFee && linkedFeeEntry) {
