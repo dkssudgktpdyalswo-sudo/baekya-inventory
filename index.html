@@ -2880,8 +2880,7 @@ function updatePreShipTotals() {
 function printPreShipmentFromModal() {
   const customerName = pendingPreShipCustomer;
   const rowEls = document.querySelectorAll('.pre-ship-row');
-  const rows = [];
-  let totalSupply = 0;
+  const extraRows = [];
   rowEls.forEach(row => {
     const desc = row.querySelector('.pre-ship-desc').value.trim();
     const note = row.querySelector('.pre-ship-note').value.trim();
@@ -2889,87 +2888,36 @@ function printPreShipmentFromModal() {
     const price = row.querySelector('.pre-ship-price').value;
     const amount = parseFloat(row.querySelector('.pre-ship-amount').value) || 0;
     if (!desc && !amount) return;
-    totalSupply += amount;
-    rows.push({
+    extraRows.push({
       date: todayStr(), desc, note, qty: qty ? `${qty}y` : '', unitPrice: price ? parseFloat(price).toLocaleString() : '',
-      supply: amount, negative: amount < 0
+      supply: amount
     });
   });
-  if (rows.length === 0) { showToast('항목을 하나 이상 입력해주세요'); return; }
+  if (extraRows.length === 0) { showToast('항목을 하나 이상 입력해주세요'); return; }
 
   const taxIncluded = document.getElementById('pre-ship-tax').checked;
-  const totalTax = taxIncluded ? Math.round(totalSupply * 0.1) : 0;
-  const grandTotal = totalSupply + totalTax;
+  if (taxIncluded) {
+    // 부가세 포함이면, 각 항목 공급가액에서 세액을 분리해내지 않고 합계에만 얹기보다
+    // 통일된 도구에서 세액을 항목별로 다루므로, 첫 항목에 전체 세액을 몰아서 표기
+    const totalSupplyRaw = extraRows.reduce((s, r) => s + (r.supply || 0), 0);
+    const tax = Math.round(totalSupplyRaw * 0.1);
+    extraRows.push({ date: todayStr(), desc: '부가세(10%)', note: '', qty: '', unitPrice: '', supply: tax });
+  }
 
-  const rowsHtml = rows.map(r => `
-    <tr style="${r.negative ? 'color:#c0392b;' : ''}">
-      <td style="padding:1px 4px;">${esc(r.date)}</td>
-      <td style="padding:1px 4px;">${esc(r.desc)}</td>
-      <td style="padding:1px 4px;">${esc(r.note)}</td>
-      <td style="padding:1px 4px; text-align:right;">${esc(r.qty)}</td>
-      <td style="padding:1px 4px; text-align:right;">${esc(r.unitPrice)}</td>
-      <td style="padding:1px 4px; text-align:right;">${r.supply.toLocaleString()}</td>
-    </tr>`).join('');
-
-  const b = settings;
-  const renderCopy = (copyLabel) => `
-    <div style="padding:8mm 8mm; font-family:-apple-system,'Malgun Gothic',sans-serif; box-sizing:border-box; height:50%; overflow:hidden; display:flex; flex-direction:column;">
-      <div style="flex:none;">
-        <div style="display:flex; justify-content:space-between; align-items:baseline; margin-bottom:6px;">
-          <h2 style="margin:0; font-size:16px; letter-spacing:2px; color:#1a5f8a;">거 래 명 세 표</h2>
-          <span style="font-size:10px; font-weight:700; border:1px solid #1a5f8a; color:#1a5f8a; padding:2px 8px; border-radius:4px;">${copyLabel} · 출고 전(선수금용)</span>
-        </div>
-        <div style="color:#555; margin-bottom:6px; font-size:11px;">발행일: ${todayStr()} · 아직 출고 전인 발주 기준 예상 청구 내역이에요</div>
-        <table style="font-size:10px; margin-bottom:6px;">
-          <tr>
-            <td style="width:50%; vertical-align:top; padding:2px;">
-              <div style="font-weight:700; background:#cfe8f7; color:#1a5f8a; padding:2px 6px; margin-bottom:2px;">공급자</div>
-              <table style="font-size:10px;"><tbody>
-                <tr><td style="width:60px;background:#eaf4fb;color:#1a5f8a;padding:1px 4px;">등록번호</td><td style="padding:1px 4px;">${esc(b.bizNumber || '')}</td></tr>
-                <tr><td style="background:#eaf4fb;color:#1a5f8a;padding:1px 4px;">상호</td><td style="padding:1px 4px;">${esc(b.bizName || '')}</td><td style="background:#eaf4fb;color:#1a5f8a;width:40px;padding:1px 4px;">성명</td><td style="padding:1px 4px;">${esc(b.bizOwner || '')}</td></tr>
-                <tr><td style="background:#eaf4fb;color:#1a5f8a;padding:1px 4px;">주소</td><td colspan="3" style="padding:1px 4px;">${esc(b.bizAddress || '')}</td></tr>
-              </tbody></table>
-            </td>
-            <td style="width:50%; vertical-align:top; padding:2px;">
-              <div style="font-weight:700; background:#cfe8f7; color:#1a5f8a; padding:2px 6px; margin-bottom:2px;">공급받는자</div>
-              <table style="font-size:10px;"><tbody>
-                <tr><td style="width:60px;background:#eaf4fb;color:#1a5f8a;padding:1px 4px;">상호</td><td style="padding:1px 4px;">${esc(customerName)}</td></tr>
-              </tbody></table>
-            </td>
-          </tr>
-        </table>
-      </div>
-      <div style="flex:1 1 auto; overflow:hidden; min-height:0;">
-        <table style="font-size:10px; table-layout:fixed; width:100%;">
-          <thead><tr><th style="width:10%; padding:1px 4px;">날짜</th><th style="width:20%; padding:1px 4px;">내용</th><th style="width:32%; padding:1px 4px;">비고</th><th style="width:10%; padding:1px 4px;">수량</th><th style="width:12%; padding:1px 4px;">단가(원)</th><th style="width:16%; padding:1px 4px;">공급가액(원)</th></tr></thead>
-          <tbody>${rowsHtml}</tbody>
-        </table>
-      </div>
-      <div style="flex:none;">
-        <table style="font-size:11px; margin-top:6px;">
-          <tr><td style="background:#eaf4fb;color:#1a5f8a;width:25%;padding:1px 4px;">공급가액 합계</td><td style="text-align:right;padding:1px 4px;">${totalSupply.toLocaleString()}원</td>
-              <td style="background:#eaf4fb;color:#1a5f8a;width:25%;padding:1px 4px;">세액 합계</td><td style="text-align:right;padding:1px 4px;">${totalTax.toLocaleString()}원</td></tr>
-          <tr><td style="background:#d3e9f7;color:#1a5f8a;font-weight:800;padding:1px 4px;">청구(선수금) 금액</td><td colspan="3" style="text-align:right;font-weight:800;font-size:13px;padding:1px 4px;">${grandTotal.toLocaleString()}원</td></tr>
-        </table>
-        ${b.bankInfo ? `<div style="margin-top:6px; font-size:10px; color:#333;">입금계좌: ${esc(b.bankInfo)}</div>` : ''}
-        ${b.noteText ? `<div style="margin-top:2px; font-size:10px; color:#555;">참고사항: ${esc(b.noteText)}</div>` : ''}
-      </div>
-    </div>
-  `;
-
-  const html = `
-    <div style="width:100%; height:277mm; display:flex; flex-direction:column;">
-      ${renderCopy('공급자 보관용')}
-      <div style="border-top:1px dashed #999;"></div>
-      ${renderCopy('공급받는자 보관용')}
-    </div>
-  `;
+  const html = buildStatementHTML(customerName, null, null, null, true, extraRows, {
+    badge: '출고 전(선수금용)',
+    subtitle: '아직 출고 전인 발주 기준 예상 청구 내역이에요'
+  });
+  if (html == null) { showToast('인쇄할 내역이 없습니다'); return; }
   document.getElementById('printArea').innerHTML = html;
   closePreShipmentModal();
   setTimeout(() => window.print(), 100);
 }
 
-function buildStatementHTML(customerName, startDate, endDate, entryIdFilter) {
+function buildStatementHTML(customerName, startDate, endDate, entryIdFilter, includePayments, extraRows, options) {
+  if (includePayments === undefined) includePayments = true;
+  extraRows = extraRows || [];
+  options = options || {};
   const t_c = String(customerName).trim();
   const inRange = (d) => d && d >= startDate && d <= endDate;
   let custEntries;
@@ -2979,13 +2927,14 @@ function buildStatementHTML(customerName, startDate, endDate, entryIdFilter) {
   } else {
     custEntries = shipmentLog.filter(e => String(e.customer || '').trim() === t_c && inRange(e.date));
   }
-  if (custEntries.length === 0 && !entryIdFilter) return null;
+  if (custEntries.length === 0 && !entryIdFilter && extraRows.length === 0) return null;
   if (entryIdFilter && custEntries.length > 0) {
     const ds = custEntries.map(e => e.date);
     startDate = ds.reduce((a, b) => a < b ? a : b);
     endDate = ds.reduce((a, b) => a > b ? a : b);
   }
-  if (custEntries.length === 0) return null;
+  if (custEntries.length === 0 && extraRows.length === 0) return null;
+  if (custEntries.length === 0) { startDate = startDate || todayStr(); endDate = endDate || todayStr(); }
 
   const saleRows = []; // 매출/반품/불량 (날짜순)
   const paymentRows = []; // 입금 (날짜순, 항상 매출 아래에)
@@ -3013,10 +2962,9 @@ function buildStatementHTML(customerName, startDate, endDate, entryIdFilter) {
     totalSupply += rowSupply;
     totalTax += rowTax;
     if (!e.isFee) totalQty += (e.yardsShipped || 0); // 추가금(운임비 등)은 원단이 아니므로 총수량에서 제외
-    const breakdownText = (e.deductBreakdown && e.deductBreakdown.length > 1) ? ` (${e.deductBreakdown.map(b => `${b.qty}y`).join('+')})` : '';
     const swOrder = findSwatchOrderByItemColor(e.item, e.color);
-    const descWithOrder = e.isFee ? `추가금${e.note ? ` - ${e.note}` : ''}` : `${e.item} ${e.color || ''}${swOrder != null ? ` (${swOrder}번)` : ''}`;
-    saleRows.push({ date: e.date, desc: descWithOrder, note: e.isFee ? '' : (e.note || ''), qty: e.isFee ? '' : ((e.unit === '절' ? `${e.yardsShipped}y` : `${e.amount}${e.unit}`) + breakdownText), unitPrice: e.isFee ? '' : e.unitPrice.toLocaleString(), supply: rowSupply, tax: rowTax, amount: grossSale, color: 'black' });
+    const descWithOrder = e.isFee ? (e.note || '추가금') : `${e.item} ${e.color || ''}${swOrder != null ? ` (${swOrder}번)` : ''}`;
+    saleRows.push({ date: e.date, desc: descWithOrder, note: e.isFee ? '' : (e.note || ''), qty: e.isFee ? '' : (e.unit === '절' ? `${e.yardsShipped}y` : `${e.amount}${e.unit}`), unitPrice: e.isFee ? '' : e.unitPrice.toLocaleString(), supply: rowSupply, tax: rowTax, amount: grossSale, color: 'black' });
 
     if (defectAmt > 0) {
       totalReturnDefect += defectAmt;
@@ -3032,11 +2980,26 @@ function buildStatementHTML(customerName, startDate, endDate, entryIdFilter) {
     }
     totalDiscount += (e.discount || 0);
 
-    const pays = entryIdFilter ? (e.payments || []) : (e.payments || []).filter(p => inRange(p.date));
-    for (const p of pays) {
+    const pays = (e.payments || [])
+      .map((p, idx) => ({ p, idx }))
+      .filter(({ p, idx }) => {
+        if (!entryIdFilter && !inRange(p.date)) return false;
+        if (includePayments === false) return false;
+        if (includePayments instanceof Set) return includePayments.has(`${e.id}:${idx}`);
+        return true;
+      });
+    for (const { p } of pays) {
       totalPaid += p.amount;
       paymentRows.push({ date: p.date, desc: `입금 (${(p.method || 'cash') === 'cash' ? '현금' : '온라인'})`, note: '', qty: '', unitPrice: '', supply: null, tax: null, amount: p.amount, color: 'blue' });
     }
+  }
+  // 선수금용으로 수동 입력한 항목들(아직 실제 출고 전이라 매출기록이 없는 것들)을 같이 합침
+  let extraTotal = 0;
+  for (const r of extraRows) {
+    extraTotal += r.supply || 0;
+    totalSale += r.supply || 0;
+    totalSupply += r.supply || 0;
+    saleRows.push({ date: r.date || todayStr(), desc: r.desc, note: r.note || '', qty: r.qty || '', unitPrice: r.unitPrice || '', supply: r.supply, tax: 0, amount: r.supply, color: (r.supply || 0) < 0 ? 'red' : 'black' });
   }
   saleRows.sort((a, b) => String(a.date).localeCompare(String(b.date)));
   paymentRows.sort((a, b) => String(a.date).localeCompare(String(b.date)));
@@ -3081,9 +3044,9 @@ function buildStatementHTML(customerName, startDate, endDate, entryIdFilter) {
     if (e.saleAmount != null) customerTotalUnpaid += getRemaining(e);
     else if ((e.isReturn || e.isDefect) && e.deductAmount != null) customerTotalUnpaid -= e.deductAmount;
   }
-  const balance = Math.max(0, customerTotalUnpaid);
-  // "미수금"(이전) = 전체 미수금 중, 이 명세서에 실제로 적힌 항목들 말고 나머지 - 매출이 쌓일수록 자동으로 같이 늘어남 (한 번 등록해둔 숫자에 고정되지 않음)
-  const carryoverAmt = Math.max(0, balance - listedUnpaid);
+  const balance = Math.max(0, customerTotalUnpaid + extraTotal);
+  // "미수금"(이전) = 기존에 갖고 있던 미수금 중, 이 명세서에 실제로 적힌 항목들 말고 나머지 (새로 추가하는 선수금 항목은 안 섞음 - 그건 표에 이미 따로 나옴)
+  const carryoverAmt = Math.max(0, customerTotalUnpaid - listedUnpaid);
 
   const b = settings;
   const infoBox = `
@@ -3116,9 +3079,9 @@ function buildStatementHTML(customerName, startDate, endDate, entryIdFilter) {
       <div style="flex:none;">
         <div style="display:flex; justify-content:space-between; align-items:baseline; margin-bottom:${sizes.titleGap};">
           <h2 style="margin:0; font-size:${sizes.titleSize}; letter-spacing:2px; color:#1a5f8a;">거 래 명 세 표</h2>
-          <span style="font-size:${sizes.metaSize}; font-weight:700; border:1px solid #1a5f8a; color:#1a5f8a; padding:2px 10px; border-radius:4px;">${copyLabel}</span>
+          <span style="font-size:${sizes.metaSize}; font-weight:700; border:1px solid #1a5f8a; color:#1a5f8a; padding:2px 10px; border-radius:4px;">${copyLabel}${options.badge ? ` · ${esc(options.badge)}` : ''}</span>
         </div>
-        <div style="color:#555; margin-bottom:${sizes.metaGap}; font-size:${sizes.metaSize};">거래기간: ${esc(startDate)} ~ ${esc(endDate)} · 발행일: ${todayStr()}</div>
+        <div style="color:#555; margin-bottom:${sizes.metaGap}; font-size:${sizes.metaSize};">${options.subtitle ? esc(options.subtitle) : `거래기간: ${esc(startDate)} ~ ${esc(endDate)}`} · 발행일: ${todayStr()}</div>
         ${infoBox}
       </div>
       <div style="flex:1 1 auto; overflow:hidden; min-height:0;">
@@ -3173,8 +3136,8 @@ function printStatementForRange(customerName, startDate, endDate) {
   document.getElementById('printArea').innerHTML = html;
   setTimeout(() => window.print(), 100);
 }
-function printStatementForEntries(customerName, entryIds) {
-  const html = buildStatementHTML(customerName, null, null, entryIds);
+function printStatementForEntries(customerName, entryIds, includePayments) {
+  const html = buildStatementHTML(customerName, null, null, entryIds, includePayments === undefined ? true : includePayments);
   if (html == null) { showToast('선택한 내역이 없습니다'); return; }
   document.getElementById('printArea').innerHTML = html;
   setTimeout(() => window.print(), 100);
@@ -3581,10 +3544,18 @@ async function quickEditReturnDefect(id) {
 function printCurrentLedgerStatement() {
   const customer = (ledgerCustomer || document.getElementById('ledger-customer').value).trim();
   if (!customer) { showToast('거래처를 입력해주세요'); return; }
-  const checked = document.querySelectorAll('.ledger-print-check:checked');
-  if (checked.length === 0) { showToast('인쇄할 항목을 체크해주세요'); return; }
-  const entryIds = Array.from(new Set(Array.from(checked).map(cb => parseInt(cb.dataset.entryId))));
-  printStatementForEntries(customer, entryIds);
+  const checkedSales = document.querySelectorAll('.ledger-print-check[data-entry-id]:checked');
+  const checkedPayments = document.querySelectorAll('.ledger-print-check[data-refs]:checked');
+  if (checkedSales.length === 0 && checkedPayments.length === 0) { showToast('인쇄할 항목을 체크해주세요'); return; }
+  const entryIds = Array.from(new Set(Array.from(checkedSales).map(cb => parseInt(cb.dataset.entryId))));
+  const paymentKeys = new Set();
+  checkedPayments.forEach(cb => {
+    try {
+      const refs = JSON.parse(cb.dataset.refs);
+      refs.forEach(r => paymentKeys.add(`${r.entryId}:${r.paymentIdx}`));
+    } catch (e) {}
+  });
+  printStatementForEntries(customer, entryIds, paymentKeys);
 }
 function printLedgerPeriod() {
   const customer = (ledgerCustomer || document.getElementById('ledger-customer').value).trim();
@@ -3739,9 +3710,12 @@ function renderCustomerLedgerTable() {
     else if (ev.type === '입금') clickHandler = `editMergedPaymentGroup('${escJsonAttr(ev.refs)}')`;
     else clickHandler = `quickEditReturnDefect(${ev.id})`;
     const clickAttr = clickable ? `onclick="${clickHandler}" style="cursor:pointer;"` : '';
-    const printable = ev.id != null; // 매출/반품/불량만 체크로 인쇄 포함 여부 선택 (입금은 해당 매출을 따라감)
+    const printable = ev.id != null || (ev.type === '입금' && ev.refs && ev.refs.length > 0); // 매출/반품/불량/입금 모두 체크로 인쇄 포함 여부 선택
+    const checkboxHtml = ev.id != null
+      ? `<input type="checkbox" class="ledger-print-check" data-entry-id="${ev.id}" checked style="width:auto;">`
+      : (printable ? `<input type="checkbox" class="ledger-print-check" data-refs="${escJsonAttr(ev.refs)}" checked style="width:auto;">` : '');
     return `<tr ${clickAttr}>
-      <td style="padding:8px 4px; border-bottom:1px solid var(--border);" onclick="event.stopPropagation();">${printable ? `<input type="checkbox" class="ledger-print-check" data-entry-id="${ev.id}" checked style="width:auto;">` : ''}</td>
+      <td style="padding:8px 4px; border-bottom:1px solid var(--border);" onclick="event.stopPropagation();">${checkboxHtml}</td>
       <td style="padding:8px 6px; border-bottom:1px solid var(--border); font-size:13px;">${esc(ev.date)}</td>
       <td style="padding:8px 6px; border-bottom:1px solid var(--border); font-size:13px; color:${color}; font-weight:600;">${esc(ev.type)}</td>
       <td style="padding:8px 6px; border-bottom:1px solid var(--border); font-size:13px;">${esc(ev.desc)}${ev.detail ? `<div style="font-size:11px; color:var(--muted); margin-top:2px;">${esc(ev.detail)}</div>` : ''}${clickable ? ' <span style="font-size:10px;color:var(--primary-dark);text-decoration:underline;">수정</span>' : ''}${(ev.type === '매출' && ev.id != null && getEntryRemainingSafe(ev.id) > 0) ? ` <span onclick="event.stopPropagation(); recordPayment(${ev.id})" style="font-size:10px;color:#2f6b46;text-decoration:underline;cursor:pointer;">입금</span>` : ''}</td>
