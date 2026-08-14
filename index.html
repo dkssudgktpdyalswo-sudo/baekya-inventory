@@ -582,6 +582,7 @@
     <p id="pre-ship-desc" style="font-size:13px;color:var(--muted);margin-top:-6px;"></p>
     <div id="pre-ship-rows"></div>
     <button onclick="addPreShipRow('', '', '')" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;margin-top:6px;">+ 항목 추가 (운임비/반품/불량 등)</button>
+    <div id="pre-ship-past-wrap" style="margin-top:10px;"></div>
     <label style="display:flex;align-items:center;gap:6px;font-size:14px;color:var(--text);margin-top:12px;"><input type="checkbox" id="pre-ship-tax" style="width:auto;" onchange="updatePreShipTotals()"> 부가세 10% 포함해서 청구</label>
     <div style="margin-top:10px; padding:10px; background:#eaf4fb; border-radius:8px; font-size:14px;">
       공급가액 합계: <b id="pre-ship-supply-total">0</b>원<br>
@@ -2815,16 +2816,36 @@ function openPreShipmentModal(customerName, orderIds) {
     const isJeol = (o.unit || 'y') === '절';
     const yards = isJeol ? Math.round(o.orderQty * 55 * 100) / 100 : o.orderQty;
     const price = findRememberedPrice(o.customer, o.item, o.color);
-    addPreShipRow(`${o.item} ${o.color || ''}${o.note ? ` (${o.note})` : ''}`, yards, price);
+    const swOrder = findSwatchOrderByItemColor(o.item, o.color);
+    addPreShipRow(`${o.item} ${o.color || ''}${swOrder != null ? ` (${swOrder}번)` : ''}${o.note ? ` (${o.note})` : ''}`, yards, price);
   }
   for (const e of extraEntries) {
+    const swOrder = findSwatchOrderByItemColor(e.item, e.color);
     if (e.isReturn || e.isDefect) {
-      addPreShipRow(`${e.isDefect ? '불량' : '반품'} - ${e.item} ${e.color || ''}${e.note ? ` (${e.note})` : ''}`, Math.abs(e.amount), e.unitPrice, e.deductAmount != null ? -e.deductAmount : null);
+      addPreShipRow(`${e.isDefect ? '불량' : '반품'} - ${e.item} ${e.color || ''}${swOrder != null ? ` (${swOrder}번)` : ''}${e.note ? ` (${e.note})` : ''}`, Math.abs(e.amount), e.unitPrice, e.deductAmount != null ? -e.deductAmount : null);
     } else if (e.saleAmount != null) {
-      addPreShipRow(`${e.item}${e.note ? ` (${e.note})` : ''}`, '', '', e.saleAmount);
+      addPreShipRow(`${e.item}${swOrder != null ? ` (${swOrder}번)` : ''}${e.note ? ` (${e.note})` : ''}`, '', '', e.saleAmount);
     }
   }
   if (targetOrders.length === 0 && extraEntries.length === 0) addPreShipRow('', '', '');
+
+  // 이전에 이미 등록된(오늘 것 제외) 미수금 항목들도 선택해서 같이 뽑을 수 있게 목록으로 보여줌 (기본은 다 체크 안 된 상태 - 실수로 겹쳐 나가는 일 없게)
+  const pastUnpaid = shipmentLog.filter(e => String(e.customer).trim() === t_c && e.saleAmount != null && e.date !== todayStr() && getRemaining(e) > 0);
+  const pastWrap = document.getElementById('pre-ship-past-wrap');
+  if (pastUnpaid.length > 0) {
+    pastWrap.innerHTML = `
+      <div style="font-size:12px; font-weight:700; color:#a15c1e; margin-bottom:4px;">📋 이전 미수금 항목 (체크하면 이 명세서에 같이 포함돼요)</div>
+      ${pastUnpaid.map(e => `
+        <label style="display:flex; align-items:center; gap:6px; padding:4px 0; font-size:12px;">
+          <input type="checkbox" class="pre-ship-past-check" data-entry-id="${e.id}" style="width:auto;">
+          ${esc(e.date)} · ${esc(e.item === '이월 미수금' ? '이월 미수금' : `${e.item} ${e.color || ''}`)} - 미수금 ${getRemaining(e).toLocaleString()}원
+        </label>
+      `).join('')}
+    `;
+  } else {
+    pastWrap.innerHTML = '';
+  }
+
   document.getElementById('preShipmentModal').classList.add('open');
 }
 function closePreShipmentModal() { document.getElementById('preShipmentModal').classList.remove('open'); }
@@ -2895,13 +2916,15 @@ function printPreShipmentFromModal() {
   });
   if (extraRows.length === 0) { showToast('항목을 하나 이상 입력해주세요'); return; }
 
+  const pastEntryIds = Array.from(document.querySelectorAll('.pre-ship-past-check:checked')).map(cb => parseInt(cb.dataset.entryId));
+
   const taxIncluded = document.getElementById('pre-ship-tax').checked;
   if (taxIncluded) {
     // 별도 줄로 추가하지 않고, 각 항목의 세액(원) 칸에 나눠서 반영
     extraRows.forEach(r => { r.tax = Math.round((r.supply || 0) * 0.1); });
   }
 
-  const html = buildStatementHTML(customerName, null, null, null, true, extraRows, {
+  const html = buildStatementHTML(customerName, null, null, pastEntryIds.length > 0 ? pastEntryIds : null, true, extraRows, {
     badge: '출고 전(선수금용)',
     subtitle: '아직 출고 전인 발주 기준 예상 청구 내역이에요'
   });
@@ -3095,7 +3118,6 @@ function buildStatementHTML(customerName, startDate, endDate, entryIdFilter, inc
       <div style="flex:none;">
         ${(() => {
           const items = [];
-          items.push({ label: '총수량', value: `${Math.round(totalQty * 100) / 100}y`, color: '#1a5f8a' });
           items.push({ label: '공급가액 합계', value: `${totalSupply.toLocaleString()}원`, color: '#1a5f8a' });
           if (totalTax > 0) items.push({ label: '세액 합계', value: `${totalTax.toLocaleString()}원`, color: '#1a5f8a' });
           if (totalReturnDefect > 0) items.push({ label: '반품/불량 차감', value: `-${totalReturnDefect.toLocaleString()}원`, color: '#c0392b' });
@@ -3930,16 +3952,18 @@ function renderUnpaidSummaryList() {
 }
 
 async function toggleEntryTax(ids, checked) {
+  let skipped = 0;
   for (const id of ids) {
     const e = shipmentLog.find(x => x.id === id);
     if (!e || e.supplyAmount == null) continue;
+    if (e.payments && e.payments.length > 0) { skipped++; continue; } // 이미 입금 처리된 건 금액을 뒤늦게 바꾸면 미수금이 잘못 생기므로 건드리지 않음
     e.taxIncluded = checked;
     e.taxAmount = checked ? Math.round(e.supplyAmount * 0.1) : 0;
     e.saleAmount = e.supplyAmount + e.taxAmount + (e.extraAmount || 0);
   }
   await persistShipmentLog();
   render();
-  showToast(checked ? '부가세 포함 금액으로 바뀌었어요' : '부가세 미포함(공급가액만) 금액으로 바뀌었어요');
+  showToast((checked ? '부가세 포함 금액으로 바뀌었어요' : '부가세 미포함(공급가액만) 금액으로 바뀌었어요') + (skipped > 0 ? ` (이미 입금된 ${skipped}건은 그대로 뒀어요)` : ''));
 }
 async function memoAppendDepositCredit(customer, amount, date) {
   depositMemos.push({ id: nextMemoId++, customer, date: date || todayStr(), text: `선수금 ${Math.round(amount).toLocaleString()}원 (입금 초과분 자동기록)` });
