@@ -5422,6 +5422,7 @@ function fromDateInputValue(v) {
 let pendingReturnOrderId = null;
 let pendingReturnSaleEntryId = null; // 매출 카드에서 반품 열었을 때, 어느 매출 건 기준인지
 let pendingExtraOrderCandidates = []; // 거래처 카드에서 추가금 열었을 때, 보류 대상이 될 수 있는 진행중 발주 후보들
+let pendingExtraOrderAutoSelected = false; // 공장 그룹 버튼처럼 이미 대상이 확정된 경우, 체크박스 확인 없이 후보 전체를 그대로 씀
 let pendingReturnLinkGroupId = null; // 발주와 같이 등록되는 추가금을 서로 연결해두기 위한 값
 
 function addReturnRow(item, color, unit, note) {
@@ -5459,6 +5460,7 @@ function openDefectReturnForCustomer(customer) {
   pendingReturnOrderId = null;
   pendingReturnLinkGroupId = null;
   pendingExtraOrderCandidates = [];
+  pendingExtraOrderAutoSelected = false;
   document.getElementById('ret-extra-order-pick-wrap').classList.add('hidden');
   document.getElementById('ret-type-return-defect-wrap').classList.remove('hidden');
   document.getElementById('ret-type-extra-label').classList.remove('hidden');
@@ -5503,6 +5505,7 @@ function openReturnForFactoryGroup(customer, orderIds) {
   pendingReturnLinkGroupId = null;
   const targetOrders = orderIds.map(id => orders.find(o => o.id === id)).filter(Boolean).filter(o => !o.done);
   pendingExtraOrderCandidates = targetOrders;
+  pendingExtraOrderAutoSelected = true;
   document.getElementById('ret-extra-order-pick-wrap').classList.add('hidden'); // 이미 공장 단위로 확정됐으니 따로 체크 안 함
   document.getElementById('ret-type-return-defect-wrap').classList.add('hidden');
   document.getElementById('ret-type-extra-label').classList.remove('hidden');
@@ -5556,6 +5559,7 @@ async function openReturnFromMultiOrderForm() {
   pendingReturnOrderId = null;
   pendingReturnLinkGroupId = linkGroupId;
   pendingExtraOrderCandidates = [];
+  pendingExtraOrderAutoSelected = false;
   document.getElementById('ret-extra-order-pick-wrap').classList.add('hidden');
   document.getElementById('ret-type-return-defect-wrap').classList.add('hidden');
   document.getElementById('ret-type-extra-label').classList.remove('hidden');
@@ -5604,6 +5608,7 @@ async function openReturnFromOrderForm() {
   pendingReturnOrderId = null;
   pendingReturnLinkGroupId = linkGroupId;
   pendingExtraOrderCandidates = [];
+  pendingExtraOrderAutoSelected = false;
   document.getElementById('ret-extra-order-pick-wrap').classList.add('hidden');
   document.getElementById('ret-type-return-defect-wrap').classList.add('hidden');
   document.getElementById('ret-type-extra-label').classList.remove('hidden');
@@ -5624,6 +5629,7 @@ function openReturnFromSaleEntry(entryId) {
   pendingReturnLinkGroupId = null;
   pendingReturnSaleEntryId = entryId; // 어느 매출 건에서 열었는지 기록해둠 (반품 처리시 그 건 기준으로 재고 복원)
   pendingExtraOrderCandidates = [];
+  pendingExtraOrderAutoSelected = false;
   document.getElementById('ret-extra-order-pick-wrap').classList.add('hidden');
   document.getElementById('ret-type-return-defect-wrap').classList.add('hidden'); // 불량은 매출 탭의 "불량 처리" 버튼으로 따로 하므로 여긴 반품만
   document.querySelector('input[name="ret-type"][value="return"]').checked = true;
@@ -5640,6 +5646,7 @@ function openStandaloneReturnModal() {
   pendingReturnOrderId = null;
   pendingReturnLinkGroupId = null;
   pendingExtraOrderCandidates = [];
+  pendingExtraOrderAutoSelected = false;
   document.getElementById('ret-extra-order-pick-wrap').classList.add('hidden');
   document.getElementById('ret-type-return-defect-wrap').classList.remove('hidden');
   document.getElementById('ret-type-extra-label').classList.remove('hidden');
@@ -5653,7 +5660,7 @@ function openStandaloneReturnModal() {
   document.getElementById('returnModalTitle').textContent = '반품/불량/추가금 등록';
   document.getElementById('returnModal').classList.add('open');
 }
-function closeReturnModal() { document.getElementById('returnModal').classList.remove('open'); pendingReturnOrderId = null; pendingReturnLinkGroupId = null; pendingReturnSaleEntryId = null; pendingExtraOrderCandidates = []; }
+function closeReturnModal() { document.getElementById('returnModal').classList.remove('open'); pendingReturnOrderId = null; pendingReturnLinkGroupId = null; pendingReturnSaleEntryId = null; pendingExtraOrderCandidates = []; pendingExtraOrderAutoSelected = false; }
 function onReturnTypeChange() {
   const type = document.querySelector('input[name="ret-type"]:checked').value;
   const multiWrap = document.getElementById('ret-multi-wrap');
@@ -5681,7 +5688,7 @@ async function confirmReturn() {
     // 거래처 카드에서 연 경우, 어느 발주 것인지 정확히 골라서 그 발주(들)에만 보류
     if (pendingExtraOrderCandidates.length > 0) {
       let targetOrders;
-      if (pendingExtraOrderCandidates.length === 1) {
+      if (pendingExtraOrderAutoSelected || pendingExtraOrderCandidates.length === 1) {
         targetOrders = pendingExtraOrderCandidates;
       } else {
         const checkedIds = Array.from(document.querySelectorAll('.ret-extra-order-check:checked')).map(cb => parseInt(cb.dataset.orderId));
