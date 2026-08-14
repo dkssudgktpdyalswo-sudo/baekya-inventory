@@ -2897,11 +2897,8 @@ function printPreShipmentFromModal() {
 
   const taxIncluded = document.getElementById('pre-ship-tax').checked;
   if (taxIncluded) {
-    // 부가세 포함이면, 각 항목 공급가액에서 세액을 분리해내지 않고 합계에만 얹기보다
-    // 통일된 도구에서 세액을 항목별로 다루므로, 첫 항목에 전체 세액을 몰아서 표기
-    const totalSupplyRaw = extraRows.reduce((s, r) => s + (r.supply || 0), 0);
-    const tax = Math.round(totalSupplyRaw * 0.1);
-    extraRows.push({ date: todayStr(), desc: '부가세(10%)', note: '', qty: '', unitPrice: '', supply: tax });
+    // 별도 줄로 추가하지 않고, 각 항목의 세액(원) 칸에 나눠서 반영
+    extraRows.forEach(r => { r.tax = Math.round((r.supply || 0) * 0.1); });
   }
 
   const html = buildStatementHTML(customerName, null, null, null, true, extraRows, {
@@ -2996,10 +2993,13 @@ function buildStatementHTML(customerName, startDate, endDate, entryIdFilter, inc
   // 선수금용으로 수동 입력한 항목들(아직 실제 출고 전이라 매출기록이 없는 것들)을 같이 합침
   let extraTotal = 0;
   for (const r of extraRows) {
-    extraTotal += r.supply || 0;
-    totalSale += r.supply || 0;
+    const rTax = r.tax || 0;
+    const rAmount = (r.supply || 0) + rTax;
+    extraTotal += rAmount;
+    totalSale += rAmount;
     totalSupply += r.supply || 0;
-    saleRows.push({ date: r.date || todayStr(), desc: r.desc, note: r.note || '', qty: r.qty || '', unitPrice: r.unitPrice || '', supply: r.supply, tax: 0, amount: r.supply, color: (r.supply || 0) < 0 ? 'red' : 'black' });
+    totalTax += rTax;
+    saleRows.push({ date: r.date || todayStr(), desc: r.desc, note: r.note || '', qty: r.qty || '', unitPrice: r.unitPrice || '', supply: r.supply, tax: rTax, amount: rAmount, color: (r.supply || 0) < 0 ? 'red' : 'black' });
   }
   saleRows.sort((a, b) => String(a.date).localeCompare(String(b.date)));
   paymentRows.sort((a, b) => String(a.date).localeCompare(String(b.date)));
