@@ -1930,7 +1930,7 @@ function renderOrderCard(o, showItemAsTitle) {
   const title = showItemAsTitle ? `${esc(o.item)} ${esc(o.color || '')}` : `${esc(o.customer || '')}${dateTag}`;
   const sub = (showItemAsTitle
     ? `${esc(o.date || '')} · 공장/연락처 ${esc(o.factory || '-')}`
-    : `${esc(o.date || '')} · 공장/연락처 ${esc(o.factory || '-')}`) + (o.pendingFee ? ` · 💸 보류된 추가금 ${o.pendingFee.amount.toLocaleString()}원 (출고시 매출반영) <span onclick="event.stopPropagation();editPendingFee(${o.id})" style="color:var(--primary-dark);text-decoration:underline;cursor:pointer;">수정</span>` : '');
+    : `${esc(o.date || '')} · 공장/연락처 ${esc(o.factory || '-')}`) + (o.pendingFee ? ` · 💸 보류된 추가금 있음` : '');
   const div = document.createElement('div');
   div.className = 'order-card';
   div.innerHTML = `
@@ -2296,7 +2296,7 @@ async function confirmLogEdit() {
     const resolvedColorForRestore = resolveInventoryColor(e.item, e.color);
     if (e.deductBreakdown && e.deductBreakdown.length > 0) {
       for (const b of e.deductBreakdown) {
-        restoreToInventory(e.item, resolvedColorForRestore, existingCat, b.tang, b.qty);
+        restoreToInventory(e.item, resolvedColorForRestore, existingCat, b.tang, b.qty, b.rollId);
       }
     } else {
       restoreToInventory(e.item, resolvedColorForRestore, existingCat, 1, restoreQtyForEdit);
@@ -2336,9 +2336,18 @@ async function confirmLogEdit() {
   showToast('수정되었습니다 (재고·이월장부도 같이 반영됐어요)');
 }
 
-function restoreToInventory(item, color, cat, tang, qty) {
+function restoreToInventory(item, color, cat, tang, qty, rollId) {
   const t_item = String(item).trim();
   const t_color = String(color).trim();
+  // 1순위: 그때 그 롤(고유id)이 지금도 있으면 정확히 거기로 되돌림 (탕 자동압축으로 탕번호가 밀렸어도 안전함)
+  if (rollId != null) {
+    const exact = rolls.find(r => r.id === rollId);
+    if (exact) {
+      exact.qty = Math.round((exact.qty + qty) * 100) / 100;
+      return;
+    }
+  }
+  // 2순위: 롤이 이미 없어졌으면(삭제됨) 지금 그 탕번호에 있는 롤에 합치거나 새로 만듦 (탕번호가 밀렸을 수 있어 완전히 정확하진 않을 수 있음)
   const existing = rolls.find(r => String(r.item).trim() === t_item && String(r.color).trim() === t_color && r.tang === tang && !r.defective && r.qty > 0);
   if (existing) {
     existing.qty = Math.round((existing.qty + qty) * 100) / 100;
@@ -2386,7 +2395,7 @@ async function cancelShipmentLogEntry(logId) {
     const resolvedColorForRestore = resolveInventoryColor(entry.item, entry.color);
     if (entry.deductBreakdown && entry.deductBreakdown.length > 0) {
       for (const b of entry.deductBreakdown) {
-        restoreToInventory(entry.item, resolvedColorForRestore, existingCat, b.tang, b.qty);
+        restoreToInventory(entry.item, resolvedColorForRestore, existingCat, b.tang, b.qty, b.rollId);
       }
     } else {
       restoreToInventory(entry.item, resolvedColorForRestore, existingCat, 1, restoreQty0);
@@ -2827,14 +2836,14 @@ function openPreShipmentModal(customerName, orderIds) {
     const yards = isJeol ? Math.round(o.orderQty * 55 * 100) / 100 : o.orderQty;
     const price = findRememberedPrice(o.customer, o.item, o.color);
     const swOrder = findSwatchOrderByItemColor(o.item, o.color);
-    addPreShipRow(`${o.item} ${o.color || ''}${swOrder != null ? ` (${swOrder}번)` : ''}${o.note ? ` (${o.note})` : ''}`, yards, price);
+    addPreShipRow(`${o.item} ${o.color || ''}${swOrder != null ? ` (${swOrder}번)` : ''}`, yards, price, null, o.note || '');
   }
   // 이 발주들이랑 같이 등록했지만 아직 출고 전이라 매출로 안 잡힌(보류된) 추가금도 항목으로 미리 채워줌
   const seenFeeGroups = new Set();
   for (const o of targetOrders) {
     if (o.pendingFee && !seenFeeGroups.has(o.linkGroupId || o.id)) {
       seenFeeGroups.add(o.linkGroupId || o.id);
-      addPreShipRow(o.pendingFee.note || '추가금', '', '', o.pendingFee.amount);
+      addPreShipRow('추가금', '', '', o.pendingFee.amount, o.pendingFee.note || '');
     }
   }
   if (targetOrders.length === 0) addPreShipRow('', '', '');
@@ -2860,14 +2869,14 @@ function openPreShipmentModal(customerName, orderIds) {
   document.getElementById('preShipmentModal').classList.add('open');
 }
 function closePreShipmentModal() { document.getElementById('preShipmentModal').classList.remove('open'); }
-function addPreShipRow(desc, qty, price, presetAmount) {
+function addPreShipRow(desc, qty, price, presetAmount, noteVal) {
   const listEl = document.getElementById('pre-ship-rows');
   const row = document.createElement('div');
   row.className = 'pre-ship-row';
   row.style.cssText = 'border:1px solid var(--border); border-radius:8px; padding:8px; margin-top:6px;';
   row.innerHTML = `
     <input type="text" class="pre-ship-desc" placeholder="예: 버블 2번진청" value="${escAttr(desc || '')}" style="width:100%; padding:8px; border:1px solid var(--border); border-radius:8px; font-size:14px; margin-bottom:6px;">
-    <input type="text" class="pre-ship-note" placeholder="비고(선택 - 운임비, 반품 사유 등)" style="width:100%; padding:8px; border:1px solid var(--border); border-radius:8px; font-size:13px; margin-bottom:6px;">
+    <input type="text" class="pre-ship-note" placeholder="비고(선택 - 운임비, 반품 사유 등)" value="${escAttr(noteVal || '')}" style="width:100%; padding:8px; border:1px solid var(--border); border-radius:8px; font-size:13px; margin-bottom:6px;">
     <div style="display:flex; gap:6px; align-items:center;">
       <input type="number" step="0.1" class="pre-ship-qty" placeholder="수량(y, 선택)" value="${qty != null && qty !== '' ? qty : ''}" oninput="updatePreShipTotals()" style="flex:1; padding:8px; border:1px solid var(--border); border-radius:8px; font-size:13px;">
       <input type="number" step="1" class="pre-ship-price" placeholder="단가(원/y, 선택)" value="${price != null ? price : ''}" oninput="updatePreShipTotals()" style="flex:1; padding:8px; border:1px solid var(--border); border-radius:8px; font-size:13px;">
@@ -3069,7 +3078,6 @@ function buildStatementHTML(customerName, startDate, endDate, entryIdFilter, inc
         <td style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-size:0.85em;${pad}">${esc(r.note || '')}</td>
         <td style="text-align:right;${pad}">${esc(r.unitPrice)}</td>
         <td style="text-align:right;${pad}">${fmt(r.supply)}</td>
-        <td style="text-align:right;${pad}">${fmt(r.tax)}</td>
         <td style="text-align:right;${pad}">${fmt(r.amount)}</td>
       </tr>`;
   }).join('');
@@ -3124,7 +3132,7 @@ function buildStatementHTML(customerName, startDate, endDate, entryIdFilter, inc
       <div style="flex:1 1 auto; overflow:hidden; min-height:0;">
         <table style="font-size:${sizes.rowFont}; table-layout:fixed; width:100%;">
           <thead>
-            <tr><th style="width:8%; padding:${sizes.rowPad} 4px;">날짜</th><th style="width:15%; padding:${sizes.rowPad} 4px;">내용</th><th style="width:8%; padding:${sizes.rowPad} 4px;">수량</th><th style="width:23%; padding:${sizes.rowPad} 4px;">비고</th><th style="width:9%; padding:${sizes.rowPad} 4px;">단가(원)</th><th style="width:12%; padding:${sizes.rowPad} 4px;">공급가액(원)</th><th style="width:10%; padding:${sizes.rowPad} 4px;">세액(원)</th><th style="width:12%; padding:${sizes.rowPad} 4px;">합계(원)</th></tr>
+            <tr><th style="width:8%; padding:${sizes.rowPad} 4px;">날짜</th><th style="width:19%; padding:${sizes.rowPad} 4px;">내용</th><th style="width:8%; padding:${sizes.rowPad} 4px;">수량</th><th style="width:29%; padding:${sizes.rowPad} 4px;">비고</th><th style="width:9%; padding:${sizes.rowPad} 4px;">단가(원)</th><th style="width:14%; padding:${sizes.rowPad} 4px;">공급가액(원)</th><th style="width:13%; padding:${sizes.rowPad} 4px;">합계(원)</th></tr>
           </thead>
           <tbody>${rowsHtml}</tbody>
         </table>
@@ -3909,11 +3917,22 @@ function renderUnpaidSummaryView() {
   backBtn.onclick = exitUnpaidSummary;
   list.appendChild(backBtn);
 
+  const addBtn = document.createElement('button');
+  addBtn.textContent = '+ 거래처 미수금 추가';
+  addBtn.style.cssText = 'border:none;background:#fce8d6;color:#a15c1e;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;margin-bottom:10px;margin-left:6px;';
+  addBtn.onclick = addNewCustomerUnpaid;
+  list.appendChild(addBtn);
+
   const contentWrap = document.createElement('div');
   contentWrap.id = 'unpaid-summary-list';
   list.appendChild(contentWrap);
 
   renderUnpaidSummaryList();
+}
+async function addNewCustomerUnpaid() {
+  const customer = prompt('거래 기록이 아직 없는 거래처의 미수금을 새로 등록해요.\n거래처 이름을 입력해주세요');
+  if (customer === null || !customer.trim()) return;
+  await editCarryoverBalance(customer.trim(), null);
 }
 function renderUnpaidSummaryList() {
   const custMap = new Map(); // customer -> {unpaid, carryoverId}
@@ -4603,6 +4622,7 @@ function renderCustomerBuckets(list2) {
         ` : `<span>${esc(fkey)}</span>`) + `
           <button onclick="renameFactoryForOrders('${escAttr(fkey)}', [${allIdsInGroup.join(',')}])" style="border:none;background:#eee;color:#555;border-radius:6px;padding:2px 8px;font-size:11px;">공장/연락처 일괄수정 (${allIdsInGroup.length}건)</button>
           ${notDoneIds.length > 0 ? `<button onclick="openReturnForFactoryGroup('${escAttr(cust)}', [${notDoneIds.join(',')}])" style="border:none;background:#fce8d6;color:#a15c1e;border-radius:6px;padding:2px 8px;font-size:11px;">추가금 (이 공장건 전체)</button>` : ''}
+          ${(() => { const withFee = fItems.find(o => o.pendingFee); return withFee ? `<span style="color:#a15c1e;font-weight:600;">💸 보류된 추가금 ${withFee.pendingFee.amount.toLocaleString()}원 <span onclick="event.stopPropagation();editPendingFee(${withFee.id})" style="text-decoration:underline;cursor:pointer;">수정</span></span>` : ''; })()}
         `;
         inner.appendChild(factoryHead);
         for (const o of fItems) {
@@ -5190,7 +5210,7 @@ function deductFromInventory(item, color, amount, tang) {
   for (const r of matches) {
     if (remain <= 0) break;
     const take = Math.min(r.qty, remain);
-    if (take > 0) breakdown.push({ tang: r.tang, qty: Math.round(take * 100) / 100 });
+    if (take > 0) breakdown.push({ tang: r.tang, qty: Math.round(take * 100) / 100, rollId: r.id });
     if (r.qty <= remain) {
       remain = Math.round((remain - r.qty) * 100) / 100;
       r.qty = 0;
