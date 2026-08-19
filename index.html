@@ -196,6 +196,8 @@
     <button onclick="printSelectedMainStatements()" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">🖨 선택 인쇄 (메인 체크)</button>
     <button onclick="showCustomerLedger()" style="border:none;background:#e8edf5;color:#3d4f6b;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">📒 거래처원장</button>
     <button onclick="showPaymentLedger()" style="border:none;background:#e6f0fa;color:#1a56db;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">💰 입금장부</button>
+    <button onclick="showCustomerRanking()" style="border:none;background:#f0e6fa;color:#6b3fa0;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">📊 거래처 순위</button>
+    <button onclick="showMonthlyReport()" style="border:none;background:#e6faf0;color:#1a7a4a;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">📅 월간 리포트</button>
     <button onclick="showUnpaidSummary()" style="border:none;background:#fce8d6;color:#a15c1e;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">📋 거래처 미수금표</button>
     <button onclick="showItemMonthlyStats()" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">📊 품목출고량</button>
     <button onclick="openExpenseModal()" style="border:none;background:#fdecea;color:var(--danger);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">💰 지출/입금내역</button>
@@ -1398,6 +1400,114 @@ function toggleSortMode() {
   render();
 }
 
+function getLowStockAlerts() {
+  const LOW_STOCK_THRESHOLD = 100; // y 기준
+  const RECENT_DAYS = 30;
+  const MIN_SHIP_COUNT = 2;
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - RECENT_DAYS);
+  const cutoffStr = `${String(cutoff.getFullYear()).slice(2)}.${String(cutoff.getMonth() + 1).padStart(2, '0')}.${String(cutoff.getDate()).padStart(2, '0')}`;
+
+  // 품목+컬러별 현재고 합계
+  const stockMap = new Map(); // "item|color" -> qty
+  for (const r of rolls) {
+    if (r.defective) continue;
+    const k = `${String(r.item).trim()}|${String(r.color).trim()}`;
+    stockMap.set(k, (stockMap.get(k) || 0) + r.qty);
+  }
+  // 최근 30일 출고 횟수(반품/불량/추가금 제외) + 출고량 합계
+  const shipCountMap = new Map();
+  const shipQtyMap = new Map();
+  for (const e of shipmentLog) {
+    if (e.isReturn || e.isDefect || e.isFee || e.manualClose) continue;
+    if (!e.date || e.date < cutoffStr) continue;
+    const k = `${String(e.item).trim()}|${String(e.color || '').trim()}`;
+    shipCountMap.set(k, (shipCountMap.get(k) || 0) + 1);
+    shipQtyMap.set(k, (shipQtyMap.get(k) || 0) + (e.yardsShipped || e.amount || 0));
+  }
+
+  const dismissed = new Set(settings.dismissedLowStock || []);
+  const alerts = [];
+  for (const [k, qty] of stockMap) {
+    if (qty > LOW_STOCK_THRESHOLD) continue;
+    if ((shipCountMap.get(k) || 0) < MIN_SHIP_COUNT) continue;
+    if (dismissed.has(k)) continue;
+    const [item, color] = k.split('|');
+    alerts.push({ key: k, item, color, qty: Math.round(qty * 100) / 100, shippedRecently: Math.round((shipQtyMap.get(k) || 0) * 100) / 100 });
+  }
+  alerts.sort((a, b) => b.shippedRecently - a.shippedRecently); // 최근에 많이 빠진(잘 나간) 순 - 더 중요한 품목이 위로
+  return alerts;
+}
+function renderLowStockAlerts(list) {
+  const alerts = getLowStockAlerts();
+  const dismissedList = settings.dismissedLowStock || [];
+  if (alerts.length === 0 && dismissedList.length === 0) return;
+  const gk = 'lowstock-alert';
+  const isOpen = openGroups.has(gk);
+  const dismissedGk = 'lowstock-dismissed';
+  const dismissedOpen = openGroups.has(dismissedGk);
+
+  // 같은 품목은 컬러 달라도 하나로 묶어서 보여줌
+  const byItem = new Map();
+  for (const a of alerts) {
+    if (!byItem.has(a.item)) byItem.set(a.item, []);
+    byItem.get(a.item).push(a);
+  }
+  const itemGroupsSorted = Array.from(byItem.entries())
+    .map(([item, colors]) => ({ item, colors, totalShipped: colors.reduce((s, c) => s + c.shippedRecently, 0) }))
+    .sort((a, b) => b.totalShipped - a.totalShipped);
+
+  const banner = document.createElement('div');
+  banner.style.cssText = 'background:#fff3d6; border:1px solid #e8c98a; border-radius:10px; padding:10px 12px; margin-bottom:10px;';
+  banner.innerHTML = `
+    <div onclick="toggleGroup('${gk}')" style="display:flex; justify-content:space-between; align-items:center; cursor:pointer;">
+      <div style="font-weight:700; font-size:13px; color:#a15c1e;">⚠️ 재고 부족 알림 (${alerts.length}건)</div>
+      <div style="font-size:12px; color:#a15c1e;">${isOpen ? '접기 ▲' : '펼치기 ▼'}</div>
+    </div>
+    ${isOpen ? `
+      ${itemGroupsSorted.map(g => `
+        <div style="border-top:1px dashed #e8c98a; margin-top:6px; padding-top:6px;">
+          <div style="font-weight:600; font-size:13px;">${esc(g.item)}</div>
+          ${g.colors.map(a => `
+            <div style="display:flex; justify-content:space-between; align-items:center; padding:3px 0 3px 10px; font-size:12px;">
+              <div>${esc(a.color)} · 남은 재고 ${a.qty}y · 최근 30일 ${a.shippedRecently}y 나감</div>
+              <button onclick="event.stopPropagation();dismissLowStockAlert('${escAttr(a.key)}')" style="border:none;background:#f1eee7;color:var(--muted);border-radius:6px;padding:3px 8px;font-size:11px;">무시하기</button>
+            </div>
+          `).join('')}
+        </div>
+      `).join('')}
+      ${dismissedList.length > 0 ? `
+        <div onclick="event.stopPropagation();toggleGroup('${dismissedGk}')" style="margin-top:8px; padding-top:6px; border-top:1px dashed #e8c98a; font-size:12px; color:#a15c1e; cursor:pointer; text-decoration:underline;">
+          무시한 항목 ${dismissedList.length}개 ${dismissedOpen ? '숨기기' : '보기'}
+        </div>
+        ${dismissedOpen ? dismissedList.map(k => {
+          const [item, color] = k.split('|');
+          return `
+            <div style="display:flex; justify-content:space-between; align-items:center; padding:4px 0; font-size:12px; color:var(--muted);">
+              <div>${esc(item)} ${esc(color)}</div>
+              <button onclick="event.stopPropagation();undismissLowStockAlert('${escAttr(k)}')" style="border:none;background:#eaf3ec;color:#2f6b46;border-radius:6px;padding:3px 8px;font-size:11px;">다시 켜기</button>
+            </div>
+          `;
+        }).join('') : ''}
+      ` : ''}
+    ` : ''}
+  `;
+  list.appendChild(banner);
+}
+async function undismissLowStockAlert(key) {
+  const dismissed = new Set(settings.dismissedLowStock || []);
+  dismissed.delete(key);
+  settings = { ...settings, dismissedLowStock: Array.from(dismissed) };
+  await persistSettings();
+  render();
+}
+async function dismissLowStockAlert(key) {
+  const dismissed = new Set(settings.dismissedLowStock || []);
+  dismissed.add(key);
+  settings = { ...settings, dismissedLowStock: Array.from(dismissed) };
+  await persistSettings();
+  render();
+}
 function renderInv() {
   document.getElementById('rateBar').classList.add('hidden');
   const totalQty = rolls.reduce((s, r) => s + (r.defective ? 0 : r.qty), 0);
@@ -1452,7 +1562,8 @@ function renderInv() {
 
   const list = document.getElementById('list');
   list.innerHTML = '';
-  if (itemGroups.length === 0) { list.innerHTML = '<div class="empty">해당 조건의 재고가 없습니다</div>'; return; }
+  renderLowStockAlerts(list);
+  if (itemGroups.length === 0) { list.innerHTML += '<div class="empty">해당 조건의 재고가 없습니다</div>'; return; }
 
   for (const ig of itemGroups) {
     const itemTotal = ig.colors.reduce((s, g) => s + g.rolls.reduce((s2, r) => s2 + (r.defective ? 0 : r.qty), 0), 0);
@@ -3899,6 +4010,268 @@ function renderExpenseList() {
   }
   listEl.innerHTML = html;
 }
+let monthlyReportOffset = 0; // 0=이번달, -1=지난달 ...
+function showMonthlyReport() {
+  monthlyReportOffset = 0;
+  salesSpecialView = 'monthlyReport';
+  render();
+}
+function exitMonthlyReport() {
+  salesSpecialView = null;
+  render();
+}
+function shiftMonthlyReport(delta) {
+  monthlyReportOffset += delta;
+  render();
+}
+function renderMonthlyReportView() {
+  const list = document.getElementById('list');
+  list.innerHTML = '';
+
+  const topBar = document.createElement('div');
+  topBar.style.cssText = 'display:flex; gap:8px; align-items:center; margin-bottom:10px;';
+  const backBtn = document.createElement('button');
+  backBtn.textContent = '← 돌아가기';
+  backBtn.style.cssText = 'border:none;background:#eee;color:#555;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;';
+  backBtn.onclick = exitMonthlyReport;
+  topBar.appendChild(backBtn);
+  const prevBtn = document.createElement('button');
+  prevBtn.textContent = '◀ 이전달';
+  prevBtn.style.cssText = 'border:none;background:#eee;color:#555;border-radius:8px;padding:7px 12px;font-size:12px;';
+  prevBtn.onclick = () => shiftMonthlyReport(-1);
+  topBar.appendChild(prevBtn);
+  const nextBtn = document.createElement('button');
+  nextBtn.textContent = '다음달 ▶';
+  nextBtn.style.cssText = 'border:none;background:#eee;color:#555;border-radius:8px;padding:7px 12px;font-size:12px;';
+  nextBtn.disabled = monthlyReportOffset >= 0;
+  nextBtn.onclick = () => shiftMonthlyReport(1);
+  topBar.appendChild(nextBtn);
+  const printBtn = document.createElement('button');
+  printBtn.textContent = '🖨 이 리포트 인쇄';
+  printBtn.style.cssText = 'border:none;background:#e6faf0;color:#1a7a4a;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;';
+  printBtn.onclick = printMonthlyReport;
+  topBar.appendChild(printBtn);
+  list.appendChild(topBar);
+
+  const now = new Date();
+  const target = new Date(now.getFullYear(), now.getMonth() + monthlyReportOffset, 1);
+  const monthKey = `${String(target.getFullYear()).slice(2)}.${String(target.getMonth() + 1).padStart(2, '0')}`;
+  const prevTarget = new Date(target.getFullYear(), target.getMonth() - 1, 1);
+  const prevMonthKey = `${String(prevTarget.getFullYear()).slice(2)}.${String(prevTarget.getMonth() + 1).padStart(2, '0')}`;
+
+  const html = buildMonthlyReportHTML(monthKey, prevMonthKey, target.getFullYear(), target.getMonth() + 1);
+  const wrap = document.createElement('div');
+  wrap.id = 'monthly-report-content';
+  wrap.innerHTML = html;
+  list.appendChild(wrap);
+}
+function buildMonthlyReportHTML(monthKey, prevMonthKey, year, monthNum) {
+  const inMonth = (d) => String(d).slice(0, 5) === monthKey;
+
+  let totalSale = 0, totalProfit = 0, totalReturnDefect = 0;
+  let cashIn = 0, onlineIn = 0;
+  const itemQty = new Map();
+  for (const e of shipmentLog) {
+    if (e.item === '이월 미수금') continue;
+    if (e.saleAmount != null && inMonth(e.date)) {
+      totalSale += (e.saleAmount - (e.discount || 0));
+      if (e._profit != null) totalProfit += e._profit;
+      if (!e.isFee && e.yardsShipped) itemQty.set(e.item, (itemQty.get(e.item) || 0) + e.yardsShipped);
+    }
+    if ((e.isReturn || e.isDefect) && e.deductAmount != null && inMonth(e.date)) {
+      totalReturnDefect += e.deductAmount;
+    }
+    for (const p of (e.payments || [])) {
+      if (inMonth(p.date)) {
+        if ((p.method || 'cash') === 'cash') cashIn += p.amount; else onlineIn += p.amount;
+      }
+    }
+  }
+  totalSale -= totalReturnDefect;
+
+  // _profit이 없는 항목(단순 조회라 profit 계산이 안 돌아간 경우 대비) 대신, 원가 기준으로 재계산
+  totalProfit = 0;
+  for (const e of shipmentLog) {
+    if (e.item === '이월 미수금' || !inMonth(e.date)) continue;
+    if (e.isReturn || e.isDefect) { if (e.deductAmount != null) totalProfit -= e.deductAmount; continue; }
+    if (e.saleAmount == null) continue;
+    const effectiveRevenue = (e.supplyAmount != null ? e.supplyAmount : e.saleAmount) - (e.discount || 0) + (e.extraAmount || 0);
+    const costPerY = getCostPerYard(e.item);
+    if (costPerY != null && effectiveRevenue > 0) {
+      totalProfit += effectiveRevenue - Math.round(costPerY * e.yardsShipped);
+    } else if (!hasKnownItem(e.item) && effectiveRevenue > 0) {
+      totalProfit += effectiveRevenue;
+    }
+  }
+
+  const monthExpenses = expenses.filter(e => String(e.date).slice(0, 5) === monthKey);
+  const totalExpense = monthExpenses.filter(e => e.type !== 'income').reduce((s, e) => s + e.amount, 0);
+  const totalIncome = monthExpenses.filter(e => e.type === 'income').reduce((s, e) => s + e.amount, 0);
+  const netProfit = totalProfit - totalExpense + totalIncome;
+
+  // 지난달 매출/순이익 (증감 비교용)
+  let prevSale = 0, prevProfit = 0;
+  for (const e of shipmentLog) {
+    if (e.item === '이월 미수금' || String(e.date).slice(0, 5) !== prevMonthKey) continue;
+    if (e.isReturn || e.isDefect) { if (e.deductAmount != null) { prevSale -= e.deductAmount; prevProfit -= e.deductAmount; } continue; }
+    if (e.saleAmount == null) continue;
+    prevSale += (e.saleAmount - (e.discount || 0));
+    const effectiveRevenue = (e.supplyAmount != null ? e.supplyAmount : e.saleAmount) - (e.discount || 0) + (e.extraAmount || 0);
+    const costPerY = getCostPerYard(e.item);
+    if (costPerY != null && effectiveRevenue > 0) prevProfit += effectiveRevenue - Math.round(costPerY * e.yardsShipped);
+    else if (!hasKnownItem(e.item) && effectiveRevenue > 0) prevProfit += effectiveRevenue;
+  }
+  const salePct = prevSale > 0 ? Math.round(((totalSale - prevSale) / prevSale) * 1000) / 10 : null;
+  const profitPct = prevProfit > 0 ? Math.round(((netProfit - prevProfit) / prevProfit) * 1000) / 10 : null;
+
+  // 미수금 총액 (현재 기준 - 이번달이 이번 달일 때만 "현재"라는 의미가 정확함)
+  let totalUnpaid = 0;
+  for (const e of shipmentLog) {
+    if (e.saleAmount != null) totalUnpaid += getRemaining(e);
+    else if ((e.isReturn || e.isDefect) && e.deductAmount != null) totalUnpaid -= e.deductAmount;
+  }
+  totalUnpaid = Math.max(0, Math.round(totalUnpaid));
+
+  const topItems = Array.from(itemQty.entries()).sort((a, b) => b[1] - a[1]).slice(0, 3);
+  const fmtPct = (p) => p == null ? '' : ` (전월 ${p >= 0 ? '▲' : '▼'}${Math.abs(p)}%)`;
+
+  return `
+    <div class="group" style="padding:16px;">
+      <div style="font-weight:700; font-size:16px; margin-bottom:12px;">📅 ${year}년 ${monthNum}월 요약</div>
+      <table style="width:100%; font-size:14px; border-collapse:collapse;">
+        <tr><td style="padding:6px 0;">총매출</td><td style="text-align:right; font-weight:700;">${Math.round(totalSale).toLocaleString()}원${fmtPct(salePct)}</td></tr>
+        <tr><td style="padding:6px 0;">총순이익</td><td style="text-align:right; font-weight:700; color:#1a7a4a;">${Math.round(netProfit).toLocaleString()}원${fmtPct(profitPct)}</td></tr>
+        <tr><td style="padding:6px 0;">지출</td><td style="text-align:right; color:var(--danger);">-${totalExpense.toLocaleString()}원</td></tr>
+        <tr><td style="padding:6px 0;">입금(지출내역 쪽)</td><td style="text-align:right; color:#2f6b46;">+${totalIncome.toLocaleString()}원</td></tr>
+      </table>
+      <div style="border-top:1px dashed var(--border); margin:10px 0;"></div>
+      <div style="font-weight:600; font-size:13px; margin-bottom:6px;">실입금 현황</div>
+      <table style="width:100%; font-size:13px; border-collapse:collapse;">
+        <tr><td style="padding:4px 0;">현금</td><td style="text-align:right;">${cashIn.toLocaleString()}원</td></tr>
+        <tr><td style="padding:4px 0;">온라인</td><td style="text-align:right;">${onlineIn.toLocaleString()}원</td></tr>
+      </table>
+      <div style="border-top:1px dashed var(--border); margin:10px 0;"></div>
+      <table style="width:100%; font-size:14px; border-collapse:collapse;">
+        <tr><td style="padding:6px 0;">현재 기준 미수금 총액</td><td style="text-align:right; font-weight:700; color:var(--danger);">${totalUnpaid.toLocaleString()}원</td></tr>
+      </table>
+      <div style="border-top:1px dashed var(--border); margin:10px 0;"></div>
+      <div style="font-weight:600; font-size:13px; margin-bottom:6px;">가장 많이 나간 품목 TOP3</div>
+      ${topItems.length === 0 ? '<div style="font-size:13px; color:var(--muted);">기록 없음</div>' : topItems.map(([item, qty], i) => `
+        <div style="display:flex; justify-content:space-between; padding:3px 0; font-size:13px;">
+          <div>${i + 1}. ${esc(item)}</div>
+          <div>${Math.round(qty * 100) / 100}y</div>
+        </div>
+      `).join('')}
+    </div>
+  `;
+}
+function printMonthlyReport() {
+  const content = document.getElementById('monthly-report-content');
+  if (!content) return;
+  document.getElementById('printArea').innerHTML = `<div style="padding:10mm; font-family:-apple-system,'Malgun Gothic',sans-serif;">${content.innerHTML}</div>`;
+  setTimeout(() => window.print(), 100);
+}
+function showCustomerRanking() {
+  salesSpecialView = 'customerRanking';
+  render();
+}
+function exitCustomerRanking() {
+  salesSpecialView = null;
+  render();
+}
+function renderCustomerRankingView() {
+  const list = document.getElementById('list');
+  list.innerHTML = '';
+
+  const backBtn = document.createElement('button');
+  backBtn.textContent = '← 돌아가기';
+  backBtn.style.cssText = 'border:none;background:#eee;color:#555;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;margin-bottom:10px;';
+  backBtn.onclick = exitCustomerRanking;
+  list.appendChild(backBtn);
+
+  const now = new Date();
+  const curMonthKey = `${String(now.getFullYear()).slice(2)}.${String(now.getMonth() + 1).padStart(2, '0')}`;
+  const prevDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  const prevMonthKey = `${String(prevDate.getFullYear()).slice(2)}.${String(prevDate.getMonth() + 1).padStart(2, '0')}`;
+
+  // 거래처별 이번달/지난달 매출 합계 (반품/불량은 차감, 이월미수금은 제외)
+  const curSales = new Map(), prevSales = new Map(), lastOrderDate = new Map(), monthsWithOrders = new Map();
+  for (const e of shipmentLog) {
+    if (!e.customer || e.item === '이월 미수금') continue;
+    const cust = String(e.customer).trim();
+    let amt = 0;
+    if (e.saleAmount != null) amt = e.saleAmount - (e.discount || 0);
+    else if ((e.isReturn || e.isDefect) && e.deductAmount != null) amt = -e.deductAmount;
+    else continue;
+    const monthKey = String(e.date).slice(0, 5);
+    if (monthKey === curMonthKey) curSales.set(cust, (curSales.get(cust) || 0) + amt);
+    if (monthKey === prevMonthKey) prevSales.set(cust, (prevSales.get(cust) || 0) + amt);
+    if (!e.isReturn && !e.isDefect) {
+      if (!monthsWithOrders.has(cust)) monthsWithOrders.set(cust, new Set());
+      monthsWithOrders.get(cust).add(monthKey);
+      const cur = lastOrderDate.get(cust);
+      if (!cur || e.date > cur) lastOrderDate.set(cust, e.date);
+    }
+  }
+
+  const allCustomers = new Set([...curSales.keys(), ...prevSales.keys()]);
+  const rows = Array.from(allCustomers).map(cust => {
+    const cur = Math.round(curSales.get(cust) || 0);
+    const prev = Math.round(prevSales.get(cust) || 0);
+    let pct = null;
+    if (prev > 0) pct = Math.round(((cur - prev) / prev) * 1000) / 10;
+    else if (cur > 0) pct = 'new';
+    return { cust, cur, prev, pct };
+  }).filter(r => r.cur > 0).sort((a, b) => b.cur - a.cur);
+
+  // 뜸해진 거래처: 과거 2개월 이상 거래가 있었는데, 최근 30일간 주문이 없는 곳
+  const todayD = todayStr();
+  const cutoff30 = new Date(); cutoff30.setDate(cutoff30.getDate() - 30);
+  const cutoff30Str = `${String(cutoff30.getFullYear()).slice(2)}.${String(cutoff30.getMonth() + 1).padStart(2, '0')}.${String(cutoff30.getDate()).padStart(2, '0')}`;
+  const quiet = [];
+  for (const [cust, months] of monthsWithOrders) {
+    if (months.size < 2) continue;
+    const last = lastOrderDate.get(cust);
+    if (last && last < cutoff30Str) {
+      const daysSince = Math.floor((parseKDate(todayD) - parseKDate(last)) / 86400000);
+      quiet.push({ cust, last, daysSince });
+    }
+  }
+  quiet.sort((a, b) => b.daysSince - a.daysSince);
+
+  const rankColors = ['#d4af37', '#a8a8a8', '#b08d57'];
+  const wrap = document.createElement('div');
+  wrap.innerHTML = `
+    <div class="group" style="margin-bottom:12px;">
+      <div style="padding:10px 12px; font-weight:700; font-size:14px; border-bottom:1px solid var(--border);">📊 거래처 순위 (${curMonthKey} 기준, 지난달 대비)</div>
+      ${rows.length === 0 ? '<div class="empty">이번 달 매출 기록이 없습니다</div>' : rows.map((r, i) => `
+        <div style="display:flex; justify-content:space-between; align-items:center; padding:10px 12px; border-bottom:1px dashed var(--border);">
+          <div style="display:flex; align-items:center; gap:8px;">
+            <span style="font-weight:700; color:${rankColors[i] || 'var(--muted)'}; width:28px;">${i + 1}위</span>
+            <span style="font-weight:600;">${esc(r.cust)}</span>
+          </div>
+          <div style="text-align:right;">
+            <div style="font-weight:700;">${r.cur.toLocaleString()}원</div>
+            <div style="font-size:11px; color:${r.pct === 'new' ? '#2f6b46' : (r.pct == null ? 'var(--muted)' : (r.pct >= 0 ? '#c0392b' : '#1a56db'))};">
+              ${r.pct === 'new' ? '신규' : (r.pct == null ? '-' : `${r.pct >= 0 ? '▲' : '▼'}${Math.abs(r.pct)}%`)}
+            </div>
+          </div>
+        </div>
+      `).join('')}
+    </div>
+    ${quiet.length > 0 ? `
+      <div class="group">
+        <div style="padding:10px 12px; font-weight:700; font-size:14px; color:#a15c1e; border-bottom:1px solid var(--border);">⚠️ 최근 뜸해진 거래처</div>
+        ${quiet.map(q => `
+          <div style="padding:8px 12px; border-bottom:1px dashed var(--border); font-size:13px;">
+            <b>${esc(q.cust)}</b> - ${q.daysSince}일째 주문 없음 <span style="color:var(--muted); font-size:11px;">(마지막 주문: ${esc(q.last)})</span>
+          </div>
+        `).join('')}
+      </div>
+    ` : ''}
+  `;
+  list.appendChild(wrap);
+}
 function showUnpaidSummary() {
   salesSpecialView = 'unpaidSummary';
   render();
@@ -4161,6 +4534,16 @@ function renderSales() {
   if (salesSpecialView === 'unpaidSummary') {
     document.getElementById('stats').innerHTML = '';
     renderUnpaidSummaryView();
+    return;
+  }
+  if (salesSpecialView === 'customerRanking') {
+    document.getElementById('stats').innerHTML = '';
+    renderCustomerRankingView();
+    return;
+  }
+  if (salesSpecialView === 'monthlyReport') {
+    document.getElementById('stats').innerHTML = '';
+    renderMonthlyReportView();
     return;
   }
 
