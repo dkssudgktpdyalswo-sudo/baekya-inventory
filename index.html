@@ -3871,6 +3871,38 @@ async function quickEditPayment(entryId, idx) {
   if (salesSpecialView === 'customerLedger') renderCustomerLedgerTable();
   showToast('입금 내역을 수정했습니다');
 }
+async function deleteReturnDefectEntry(id) {
+  const e = shipmentLog.find(x => x.id === id);
+  if (!e) return;
+  if (!confirm(`이 ${e.isDefect ? '불량' : '반품'} 기록을 삭제할까요?${e.isReturn ? ' (재고에 반품으로 다시 들어갔던 만큼 도로 빠져요)' : ''}`)) return;
+
+  if (e.isReturn) {
+    // 반품 등록할 때 재고로 다시 채워넣었던 만큼, 삭제할 땐 도로 빼야 함
+    const qty = Math.abs(e.yardsShipped || e.amount || 0);
+    if (e.returnRollId != null) {
+      const roll = rolls.find(r => r.id === e.returnRollId);
+      if (roll) roll.qty = Math.round(Math.max(0, roll.qty - qty) * 100) / 100;
+    } else {
+      // 예전 기록이라 롤 정보가 없으면, 같은 품목/컬러 탕1에서 최대한 빼봄
+      const resolvedColor = resolveInventoryColor(e.item, e.color);
+      deductFromInventory(e.item, resolvedColor, qty, 1);
+    }
+    await persistRolls();
+  }
+  if (e.orderId != null && e.isReturn) {
+    const o = orders.find(x => x.id === e.orderId);
+    if (o) {
+      o.received = Math.round(Math.max(0, o.received + Math.abs(e.amount)) * 100) / 100;
+      const remain = (o.orderQty && o.orderQty > o.received) ? Math.round((o.orderQty - o.received) * 100) / 100 : 0;
+      if (remain <= 0 && !o.done) { o.done = true; o.doneDate = todayStr(); }
+      await persistOrders();
+    }
+  }
+  shipmentLog = shipmentLog.filter(x => x.id !== id);
+  await persistShipmentLog();
+  render();
+  showToast('삭제했어요');
+}
 async function quickEditReturnDefect(id) {
   const e = shipmentLog.find(x => x.id === id);
   if (!e) return;
@@ -4870,7 +4902,7 @@ function renderSales() {
     return;
   }
 
-  let sales = shipmentLog.filter(e => (e.saleAmount != null || ((e.isReturn || e.isDefect) && e.deductAmount != null)) && e.item !== '이월 미수금');
+  let sales = shipmentLog.filter(e => (e.saleAmount != null || e.isReturn || e.isDefect) && e.item !== '이월 미수금');
   if (searchTerm.trim()) {
     const t = searchTerm.trim().toLowerCase();
     sales = sales.filter(e => String(e.customer).toLowerCase().includes(t) || String(e.item).toLowerCase().includes(t));
@@ -5082,6 +5114,10 @@ function renderSales() {
               </div>
             </div>
             <div class="order-progress" style="color:var(--danger);font-weight:700;">${e.deductAmount != null ? `-${e.deductAmount.toLocaleString()}원` : '금액 미확인'}</div>
+            <div class="order-btns">
+              <button onclick="quickEditReturnDefect(${e.id})" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:6px;padding:4px 8px;font-size:11px;">수정</button>
+              <button onclick="deleteReturnDefectEntry(${e.id})" style="border:none;background:#f1eee7;color:var(--muted);border-radius:6px;padding:4px 8px;font-size:11px;">삭제</button>
+            </div>
           `;
           inner.appendChild(row);
           continue;
@@ -6146,8 +6182,8 @@ function addReturnRow(item, color, unit, note) {
   row.style.cssText = 'border:1px solid var(--border); border-radius:8px; padding:8px; margin-top:8px;';
   row.innerHTML = `
     <div class="row2">
-      <div><input type="text" class="ret-row-item" placeholder="품목 (예: 버블)" value="${escAttr(item || '')}" autocomplete="off" oninput="showItemSuggestions(this)" onfocus="showItemSuggestions(this)" onblur="hideItemSuggestionsDelayed()"></div>
-      <div><input type="text" class="ret-row-color" placeholder="칼라 (예: 2번진청)" value="${escAttr(color || '')}" autocomplete="off" oninput="showColorSuggestions(this, this.closest('.ret-row').querySelector('.ret-row-item'))" onfocus="showColorSuggestions(this, this.closest('.ret-row').querySelector('.ret-row-item'))" onblur="hideItemSuggestionsDelayed()"></div>
+      <div><input type="text" class="ret-row-item" placeholder="품목 (예: 버블)" value="${escAttr(item || '')}" autocomplete="off" oninput="showItemSuggestions(this); updateReturnRowTangHint(this)" onfocus="showItemSuggestions(this)" onblur="hideItemSuggestionsDelayed()"></div>
+      <div><input type="text" class="ret-row-color" placeholder="칼라 (예: 2번진청)" value="${escAttr(color || '')}" autocomplete="off" oninput="showColorSuggestions(this, this.closest('.ret-row').querySelector('.ret-row-item')); updateReturnRowTangHint(this)" onfocus="showColorSuggestions(this, this.closest('.ret-row').querySelector('.ret-row-item'))" onblur="hideItemSuggestionsDelayed()"></div>
     </div>
     <div style="display:flex; gap:6px; align-items:center; margin-top:6px;">
       <input type="number" step="0.1" class="ret-row-qty" placeholder="수량" style="flex:1;">
@@ -6158,11 +6194,27 @@ function addReturnRow(item, color, unit, note) {
       <input type="number" step="1" class="ret-row-price" placeholder="단가(원/y, 선택)" style="flex:1;">
     </div>
     <div style="display:flex; gap:6px; align-items:center; margin-top:6px;">
+      <label style="font-size:12px; color:var(--muted); flex:none;">반품시 재고로 넣을 탕</label>
+      <input type="number" step="1" min="1" class="ret-row-tang" value="1" style="width:60px; flex:none;">
+      <span class="ret-row-tang-hint" style="font-size:11px; color:var(--muted); flex:1;"></span>
+    </div>
+    <div style="display:flex; gap:6px; align-items:center; margin-top:6px;">
       <input type="text" class="ret-row-note" placeholder="비고(사유)" value="${escAttr(note || '')}" style="flex:1; padding:8px; border:1px solid var(--border); border-radius:8px; font-size:13px;">
       <button onclick="this.closest('.ret-row').remove();" style="border:none;background:#fdecea;color:var(--danger);border-radius:8px;padding:0 10px;font-size:12px;flex:none;height:36px;">삭제</button>
     </div>
   `;
   listEl.appendChild(row);
+  updateReturnRowTangHint(row.querySelector('.ret-row-item'));
+}
+function updateReturnRowTangHint(fromEl) {
+  const row = fromEl.closest('.ret-row');
+  const item = row.querySelector('.ret-row-item').value.trim();
+  const color = row.querySelector('.ret-row-color').value.trim();
+  const hintEl = row.querySelector('.ret-row-tang-hint');
+  if (!item) { hintEl.textContent = ''; return; }
+  const matching = rolls.filter(r => String(r.item).trim() === item && String(r.color).trim() === color && !r.defective && r.qty > 0);
+  if (matching.length === 0) { hintEl.textContent = '(지금 이 컬러 재고 없음 - 새 탕1로 들어가요)'; return; }
+  hintEl.textContent = '지금 탕: ' + matching.sort((a, b) => a.tang - b.tang).map(r => `탕${r.tang}(${r.qty}y)`).join(', ');
 }
 function resetReturnRows(item, color, unit, note) {
   document.getElementById('ret-multi-rows').innerHTML = '';
@@ -6504,11 +6556,15 @@ async function confirmReturn() {
     if (deductAmount != null) totalDeduct += deductAmount;
 
     let returnAddedToInventory = false;
+    let returnRollId = null;
+    const chosenTang = parseInt(rowEl.querySelector('.ret-row-tang').value) || 1;
     if (!isDefectType) {
       if (hasKnownItem(item)) {
         const resolvedColor = resolveInventoryColor(item, color);
         const existingCat = (rolls.find(r => String(r.item).trim() === String(item).trim()) || {}).cat || '';
-        rolls.push({ id: nextId++, cat: existingCat, item, color: resolvedColor, tang: 1, qty: yardsAmount });
+        restoreToInventory(item, resolvedColor, existingCat, chosenTang, yardsAmount);
+        const afterRoll = rolls.find(r => String(r.item).trim() === String(item).trim() && String(r.color).trim() === String(resolvedColor).trim() && r.tang === chosenTang && !r.defective);
+        returnRollId = afterRoll ? afterRoll.id : null;
         returnAddedToInventory = true;
       } else {
         anyMissingInventory = true;
@@ -6527,7 +6583,7 @@ async function confirmReturn() {
       customer, factory: o ? o.factory : '', item, color,
       amount: -amt, unit, yardsShipped: -yardsAmount, remainAfter: remain,
       isFullCompletion: false, isReturn: !isDefectType, isDefect: isDefectType, note,
-      unitPrice, deductAmount, saleAmount: null, paidAmount: 0
+      unitPrice, deductAmount, saleAmount: null, paidAmount: 0, returnRollId
     });
     processedCount++;
   }
