@@ -3904,49 +3904,114 @@ function renderCustomerLedgerTable() {
 }
 async function showAvailableBackups() {
   if (!useFirebase) { showToast('이 화면에서는 백업 기능을 쓸 수 없어요'); return; }
-  const keyMap = { '재고': 'rolls', '이월장부': 'orders', '매출장부': 'shipmentLog' };
-  const collLabel = prompt('무엇의 백업 목록을 볼까요?\n입력: 재고 / 이월장부 / 매출장부');
-  if (!collLabel) return;
-  const key = keyMap[collLabel.trim()];
-  if (!key) { showToast('"재고", "이월장부", "매출장부" 중 하나로 입력해주세요'); return; }
-
-  let snap;
-  try {
-    snap = await db.collection('inventory_backups')
-      .where(firebase.firestore.FieldPath.documentId(), '>=', `${key}_`)
-      .where(firebase.firestore.FieldPath.documentId(), '<', `${key}_\uf8ff`)
-      .get();
-  } catch (e) { showToast('백업 목록을 불러오는 중 오류가 났어요'); return; }
-  if (snap.empty) { alert(`${collLabel}의 백업이 아직 없어요.`); return; }
-
-  const dates = snap.docs.map(d => ({ date: d.id.replace(`${key}_`, ''), savedAt: d.data().savedAt || '' })).sort((a, b) => b.date.localeCompare(a.date));
-  const dateList = dates.map(d => `${d.date} (저장시각 ${d.savedAt})`).join('\n');
-  const pick = prompt(`${collLabel}의 백업 가능한 날짜예요:\n\n${dateList}\n\n어느 날짜로 되돌릴까요? (YYYY-MM-DD)`, dates[0].date);
-  if (!pick) return;
-  await restoreFromBackupDate(collLabel, key, pick.trim());
+  salesSpecialView = 'backupManager';
+  render();
 }
-async function restoreFromBackupDate(collLabel, key, date) {
+function exitBackupManager() {
+  salesSpecialView = null;
+  render();
+}
+async function renderBackupManagerList() {
+  const list = document.getElementById('list');
+  list.innerHTML = '';
+
+  const topBar = document.createElement('div');
+  topBar.style.cssText = 'display:flex; gap:8px; margin-bottom:10px; flex-wrap:wrap;';
+  const backBtn = document.createElement('button');
+  backBtn.textContent = '← 돌아가기';
+  backBtn.style.cssText = 'border:none;background:#eee;color:#555;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;';
+  backBtn.onclick = exitBackupManager;
+  topBar.appendChild(backBtn);
+  const nowBtn = document.createElement('button');
+  nowBtn.textContent = '📸 지금 이 순간 백업하기 (재고+이월+매출 한번에)';
+  nowBtn.style.cssText = 'border:none;background:#eaf3ec;color:#2f6b46;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;';
+  nowBtn.onclick = async () => { await manualBackupNow(); await renderBackupManagerList(); };
+  topBar.appendChild(nowBtn);
+  list.appendChild(topBar);
+
+  const loadingMsg = document.createElement('div');
+  loadingMsg.className = 'empty';
+  loadingMsg.textContent = '백업 목록 불러오는 중...';
+  list.appendChild(loadingMsg);
+
   let snap;
   try {
-    snap = await db.collection('inventory_backups').doc(`${key}_${date}`).get();
-  } catch (e) { showToast('백업을 불러오는 중 오류가 났어요'); return; }
-  if (!snap.exists) { alert(`${date}에는 ${collLabel} 백업이 없어요.`); return; }
+    snap = await db.collection('inventory_backups').get();
+  } catch (e) { loadingMsg.textContent = '백업 목록을 불러오는 중 오류가 났어요'; return; }
 
-  const backupJSON = snap.data().data;
-  const savedAt = snap.data().savedAt || '';
-  let preview = '(내용 확인 불가)';
-  try { preview = `${JSON.parse(backupJSON).length}건`; } catch (e) {}
+  const keyLabels = { rolls: '재고', orders: '이월장부', shipmentLog: '매출장부' };
+  // 문서id는 "rolls_2026-08-19" 또는 "rolls_manual_26.08.19_1704" 형태 - 시점(라벨) 기준으로 묶음
+  const byMoment = new Map(); // label -> { savedAt, items: { rolls: docId, orders: docId, shipmentLog: docId } }
+  snap.forEach(doc => {
+    const id = doc.id;
+    const keyMatch = Object.keys(keyLabels).find(k => id.startsWith(k + '_'));
+    if (!keyMatch) return;
+    const label = id.slice(keyMatch.length + 1);
+    if (!byMoment.has(label)) byMoment.set(label, { savedAt: doc.data().savedAt || '', items: {} });
+    byMoment.get(label).items[keyMatch] = { docId: id, data: doc.data().data };
+    if (doc.data().savedAt) byMoment.get(label).savedAt = doc.data().savedAt;
+  });
 
-  if (!confirm(`${date} 백업(저장시각: ${savedAt})으로 ${collLabel}을(를) 되돌릴게요.\n(${preview})\n\n⚠️ 지금 있는 최신 데이터는 이 백업 내용으로 완전히 덮어써져요. 계속할까요?`)) return;
-  if (!confirm(`정말요? 되돌리기 전에 혹시 최근에 입력하신 게 있다면 그건 사라져요. 그래도 진행할까요?`)) return;
+  list.removeChild(loadingMsg);
+  if (byMoment.size === 0) { list.innerHTML += '<div class="empty">아직 백업이 없어요</div>'; return; }
 
-  const ref = db.collection('inventory').doc(key);
+  const moments = Array.from(byMoment.entries()).sort((a, b) => (b[1].savedAt || '').localeCompare(a[1].savedAt || ''));
+
+  for (const [label, info] of moments) {
+    const card = document.createElement('div');
+    card.className = 'group';
+    card.style.marginBottom = '8px';
+    const itemsHtml = Object.keys(keyLabels).map(k => {
+      const item = info.items[k];
+      return `<span style="display:inline-block; margin-right:10px; font-size:12px; color:${item ? 'var(--text)' : 'var(--muted)'};">${item ? '✓' : '✕'} ${keyLabels[k]}</span>`;
+    }).join('');
+    const docIdsJson = escJsonAttr(Object.values(info.items).map(i => i.docId));
+    card.innerHTML = `
+      <div style="padding:10px 12px;">
+        <div style="font-weight:700; font-size:13px; margin-bottom:2px;">${esc(label)}</div>
+        <div style="font-size:11px; color:var(--muted); margin-bottom:6px;">저장시각: ${esc(info.savedAt || '-')}</div>
+        <div style="margin-bottom:8px;">${itemsHtml}</div>
+        <div style="display:flex; gap:8px;">
+          <button onclick="restoreBackupMoment('${escAttr(label)}', '${docIdsJson}')" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:6px;padding:6px 10px;font-size:12px;font-weight:600;">이 시점으로 통째로 복구하기</button>
+          <button onclick="deleteBackupMoment('${escAttr(label)}', '${docIdsJson}')" style="border:none;background:#fdecea;color:var(--danger);border-radius:6px;padding:6px 10px;font-size:12px;">이 백업 삭제</button>
+        </div>
+      </div>
+    `;
+    list.appendChild(card);
+  }
+}
+async function restoreBackupMoment(label, docIdsJson) {
+  let docIds;
+  try { docIds = JSON.parse(docIdsJson); } catch (e) { return; }
+  if (docIds.length === 0) { showToast('이 시점엔 복구할 백업이 없어요'); return; }
+  if (!confirm(`"${label}" 시점으로 재고/이월장부/매출장부를 한 번에 통째로 되돌릴게요.\n\n⚠️ 지금 있는 최신 데이터는 덮어써져요. 계속할까요?`)) return;
+  if (!confirm('정말요? 최근에 입력하신 게 있다면 사라져요. 그래도 진행할까요?')) return;
+
   try {
-    await ref.set({ data: backupJSON });
+    for (const docId of docIds) {
+      const key = docId.split('_')[0]; // "rolls_..." -> "rolls"
+      const snap = await db.collection('inventory_backups').doc(docId).get();
+      if (!snap.exists) continue;
+      await db.collection('inventory').doc(key).set({ data: snap.data().data });
+    }
     alert('복구했어요. 화면을 새로고침할게요.');
     location.reload();
   } catch (e) {
     showToast('복구 중 오류가 났어요');
+  }
+}
+async function deleteBackupMoment(label, docIdsJson) {
+  let docIds;
+  try { docIds = JSON.parse(docIdsJson); } catch (e) { return; }
+  if (!confirm(`"${label}" 백업을 삭제할까요? (되돌릴 수 없어요)`)) return;
+  try {
+    for (const docId of docIds) {
+      await db.collection('inventory_backups').doc(docId).delete();
+    }
+    showToast('백업을 삭제했어요');
+    await renderBackupManagerList();
+  } catch (e) {
+    showToast('삭제 중 오류가 났어요');
   }
 }
 function openExpenseModal() {
@@ -4544,6 +4609,11 @@ function renderSales() {
   if (salesSpecialView === 'monthlyReport') {
     document.getElementById('stats').innerHTML = '';
     renderMonthlyReportView();
+    return;
+  }
+  if (salesSpecialView === 'backupManager') {
+    document.getElementById('stats').innerHTML = '';
+    renderBackupManagerList();
     return;
   }
 
