@@ -1045,7 +1045,14 @@ async function manualBackupNow() {
     await db.collection('inventory_backups').doc(`rolls_manual_${stamp}`).set({ data: JSON.stringify(rolls), savedAt: now.toISOString() });
     await db.collection('inventory_backups').doc(`orders_manual_${stamp}`).set({ data: JSON.stringify(orders), savedAt: now.toISOString() });
     await db.collection('inventory_backups').doc(`shipmentLog_manual_${stamp}`).set({ data: JSON.stringify(shipmentLog), savedAt: now.toISOString() });
-    alert(`지금(${stamp.replace('_', ' ')}) 상태로 재고/이월장부/매출장부 백업을 만들었어요.\n안심하세요 - 이 백업은 이 순간 그대로 남아있어요.`);
+    await db.collection('inventory_backups').doc(`swatchInfo_manual_${stamp}`).set({ data: JSON.stringify(swatchInfo), savedAt: now.toISOString() });
+    await db.collection('inventory_backups').doc(`settings_manual_${stamp}`).set({ data: JSON.stringify(settings), savedAt: now.toISOString() });
+    await db.collection('inventory_backups').doc(`costs_manual_${stamp}`).set({ data: JSON.stringify(costs), savedAt: now.toISOString() });
+    await db.collection('inventory_backups').doc(`priceBook_manual_${stamp}`).set({ data: JSON.stringify(priceBook), savedAt: now.toISOString() });
+    await db.collection('inventory_backups').doc(`depositMemos_manual_${stamp}`).set({ data: JSON.stringify(depositMemos), savedAt: now.toISOString() });
+    await db.collection('inventory_backups').doc(`customerList_manual_${stamp}`).set({ data: JSON.stringify(customerList), savedAt: now.toISOString() });
+    await db.collection('inventory_backups').doc(`expenses_manual_${stamp}`).set({ data: JSON.stringify(expenses), savedAt: now.toISOString() });
+    alert(`지금(${stamp.replace('_', ' ')}) 상태로 사이트의 모든 데이터(재고/이월장부/매출장부/스왓치정보/사업자정보/원가표/단가장부/거래처목록/선입금메모/지출내역) 백업을 만들었어요.\n안심하세요 - 이 백업은 이 순간 그대로 남아있어요.`);
   } catch (e) {
     showToast('백업 중 오류가 났어요');
   }
@@ -3939,7 +3946,7 @@ async function renderBackupManagerList() {
     snap = await db.collection('inventory_backups').get();
   } catch (e) { loadingMsg.textContent = '백업 목록을 불러오는 중 오류가 났어요'; return; }
 
-  const keyLabels = { rolls: '재고', orders: '이월장부', shipmentLog: '매출장부' };
+  const keyLabels = { rolls: '재고', orders: '이월장부', shipmentLog: '매출장부', swatchInfo: '스왓치정보', settings: '사업자정보/설정', costs: '원가표', priceBook: '단가장부', depositMemos: '선입금메모', customerList: '거래처목록', expenses: '지출내역' };
   // 문서id는 "rolls_2026-08-19" 또는 "rolls_manual_26.08.19_1704" 형태 - 시점(라벨) 기준으로 묶음
   const byMoment = new Map(); // label -> { savedAt, items: { rolls: docId, orders: docId, shipmentLog: docId } }
   snap.forEach(doc => {
