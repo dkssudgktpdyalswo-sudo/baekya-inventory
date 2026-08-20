@@ -178,6 +178,7 @@
   <div class="chip-row" id="chipRow"></div>
   <div id="invTools" class="hidden" style="display:flex; gap:6px; margin-top:6px; flex-wrap:wrap;">
     <button id="sortToggleBtn" onclick="toggleSortMode()" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;"></button>
+    <button onclick="showStockCheck()" style="border:none;background:#fce8d6;color:#a15c1e;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">📋 재고 실사(오늘 출고분)</button>
   </div>
   <div id="orderTools" class="hidden" style="display:flex; gap:6px; margin-top:6px; flex-wrap:wrap;">
     <button id="orderGroupToggleBtn" onclick="toggleOrderGroupMode()" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;"></button>
@@ -725,7 +726,7 @@ const PASSWORD = "3059";
 const ADMIN_PASSWORD = "9503"; // 매출/미수금 탭 전용 - 필요하면 이 값만 바꿔서 변경 가능
 const LOW_STOCK_THRESHOLD = 100;
 const DATA_VERSION = "2026-08-03-v4"; // 재고/이월장부 씨앗 데이터를 바꿀 때마다 이 값을 새로 바꿔주세요
-const APP_CODE_VERSION = "2026-08-10-b"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
+const APP_CODE_VERSION = "2026-08-20-a"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
 
 const firebaseConfig = {
   apiKey: "AIzaSyA4Qrz16VpQuBVxTzGMyoAD9BtzIgXV0cQ",
@@ -825,6 +826,9 @@ let priceBook = []; // {id, customer, item, color, unitPrice}
 let nextPriceId = 1;
 let searchTerm = "";
 let openGroups = new Set();
+let inventorySpecialView = null; // 'stockCheck'
+let stockCheckDate = null; // null이면 오늘
+let stockCheckHideDone = false;
 let pendingOut = null;
 let editingCostId = null;
 let editingOrderId = null;
@@ -1541,6 +1545,12 @@ async function dismissLowStockAlert(key) {
 }
 function renderInv() {
   document.getElementById('rateBar').classList.add('hidden');
+  if (inventorySpecialView === 'stockCheck') {
+    document.getElementById('stats').innerHTML = '';
+    document.getElementById('chipRow').innerHTML = '';
+    renderStockCheckView();
+    return;
+  }
   const totalQty = rolls.reduce((s, r) => s + (r.defective ? 0 : r.qty), 0);
   const defectiveQty = rolls.reduce((s, r) => s + (r.defective ? r.qty : 0), 0);
   const items = new Set(rolls.map(r => r.item)).size;
@@ -1708,6 +1718,139 @@ function renderInv() {
   }
 }
 
+function showStockCheck() {
+  inventorySpecialView = 'stockCheck';
+  stockCheckDate = null;
+  render();
+}
+function exitStockCheck() {
+  inventorySpecialView = null;
+  render();
+}
+function shiftStockCheckDate(delta) {
+  const base = stockCheckDate ? parseKDate(stockCheckDate) : new Date();
+  base.setDate(base.getDate() + delta);
+  const yy = String(base.getFullYear()).slice(2);
+  const mm = String(base.getMonth() + 1).padStart(2, '0');
+  const dd = String(base.getDate()).padStart(2, '0');
+  stockCheckDate = `${yy}.${mm}.${dd}`;
+  render();
+}
+function getStockCheckItems(date) {
+  const map = new Map(); // "item|color" -> {item, color, shippedQty}
+  for (const e of shipmentLog) {
+    if (e.isFee || e.isDefect) continue;
+    if (e.date !== date) continue;
+    if (!e.item || e.item === '이월 미수금') continue;
+    const k = `${String(e.item).trim()}|${String(e.color || '').trim()}`;
+    const qty = e.isReturn ? -(e.yardsShipped || Math.abs(e.amount) || 0) : (e.yardsShipped || e.amount || 0);
+    if (!map.has(k)) map.set(k, { item: e.item, color: e.color || '', shippedQty: 0 });
+    map.get(k).shippedQty += qty;
+  }
+  return Array.from(map.values());
+}
+function renderStockCheckView() {
+  const list = document.getElementById('list');
+  list.innerHTML = '';
+  const date = stockCheckDate || todayStr();
+
+  const topBar = document.createElement('div');
+  topBar.style.cssText = 'display:flex; gap:8px; align-items:center; margin-bottom:10px; flex-wrap:wrap;';
+  const backBtn = document.createElement('button');
+  backBtn.textContent = '← 돌아가기';
+  backBtn.style.cssText = 'border:none;background:#eee;color:#555;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;';
+  backBtn.onclick = exitStockCheck;
+  topBar.appendChild(backBtn);
+  const prevBtn = document.createElement('button');
+  prevBtn.textContent = '◀';
+  prevBtn.style.cssText = 'border:none;background:#eee;color:#555;border-radius:8px;padding:7px 10px;font-size:12px;';
+  prevBtn.onclick = () => shiftStockCheckDate(-1);
+  topBar.appendChild(prevBtn);
+  const dateLabel = document.createElement('span');
+  dateLabel.textContent = date;
+  dateLabel.style.cssText = 'font-weight:600; font-size:13px;';
+  topBar.appendChild(dateLabel);
+  const nextBtn = document.createElement('button');
+  nextBtn.textContent = '▶';
+  nextBtn.style.cssText = 'border:none;background:#eee;color:#555;border-radius:8px;padding:7px 10px;font-size:12px;';
+  nextBtn.onclick = () => shiftStockCheckDate(1);
+  topBar.appendChild(nextBtn);
+  const filterBtn = document.createElement('button');
+  filterBtn.textContent = stockCheckHideDone ? '전체 보기' : '안 한 것만 보기';
+  filterBtn.style.cssText = 'border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;';
+  filterBtn.onclick = () => { stockCheckHideDone = !stockCheckHideDone; render(); };
+  topBar.appendChild(filterBtn);
+  const resetBtn = document.createElement('button');
+  resetBtn.textContent = '초기화';
+  resetBtn.style.cssText = 'border:none;background:#fdecea;color:var(--danger);border-radius:8px;padding:7px 12px;font-size:12px;';
+  resetBtn.onclick = () => resetStockCheckDate(date);
+  topBar.appendChild(resetBtn);
+  list.appendChild(topBar);
+
+  const items = getStockCheckItems(date);
+  const progress = (settings.stockCheckProgress && settings.stockCheckProgress[date]) || [];
+  const doneSet = new Set(progress);
+
+  const countLabel = document.createElement('div');
+  countLabel.style.cssText = 'font-size:13px; color:var(--muted); margin-bottom:8px;';
+  countLabel.textContent = `${doneSet.size}/${items.length} 확인함`;
+  list.appendChild(countLabel);
+
+  if (items.length === 0) { list.innerHTML += '<div class="empty">이 날짜에 출고/반품된 품목이 없습니다</div>'; return; }
+
+  let shown = items;
+  if (stockCheckHideDone) shown = items.filter(it => !doneSet.has(`${it.item}|${it.color}`));
+
+  for (const it of shown) {
+    const k = `${it.item}|${it.color}`;
+    const checked = doneSet.has(k);
+    const itemRolls = rolls.filter(r => String(r.item).trim() === it.item.trim() && String(r.color).trim() === it.color.trim() && !r.defective).sort((a, b) => a.tang - b.tang);
+    const currentStock = itemRolls.reduce((s, r) => s + r.qty, 0);
+    const detailKey = 'stockcheck-detail:' + k;
+    const detailOpen = openGroups.has(detailKey);
+    const card = document.createElement('div');
+    card.className = 'order-card';
+    card.style.cssText = (checked ? 'opacity:0.6;' : '');
+    card.innerHTML = `
+      <div style="display:flex; justify-content:space-between; align-items:center; cursor:pointer;" onclick="toggleStockCheckItem('${escAttr(date)}', '${escAttr(k)}')">
+        <div>
+          <div style="font-weight:600; font-size:14px;">${checked ? '✅' : '⬜'} ${esc(it.item)} ${esc(it.color)}</div>
+          <div style="font-size:12px; color:var(--muted);">${it.shippedQty >= 0 ? `그날 출고 ${Math.round(it.shippedQty * 100) / 100}y` : `그날 반품 +${Math.round(-it.shippedQty * 100) / 100}y`} · 현재 재고 ${Math.round(currentStock * 100) / 100}y</div>
+        </div>
+        <button onclick="event.stopPropagation(); toggleGroup('${escAttr(detailKey)}')" style="border:none;background:#eee;color:#555;border-radius:6px;padding:4px 8px;font-size:11px;">${detailOpen ? '탕별 접기' : '탕별로 보고 수정'}</button>
+      </div>
+      ${detailOpen ? `
+        <div style="margin-top:8px; padding-top:8px; border-top:1px dashed var(--border);">
+          ${itemRolls.length === 0 ? '<div style="font-size:12px; color:var(--muted);">재고 없음</div>' : itemRolls.map(r => `
+            <div style="display:flex; justify-content:space-between; align-items:center; padding:4px 0; font-size:13px;">
+              <div>탕${r.tang} · ${r.qty}y</div>
+              <button onclick="event.stopPropagation(); openRollEditModal(${r.id})" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:6px;padding:3px 8px;font-size:11px;">수정</button>
+            </div>
+          `).join('')}
+          <button onclick="event.stopPropagation(); openRollAddModalFor('${escAttr(it.item)}', '${escAttr(it.color)}')" style="border:none;background:#eaf3ec;color:#2f6b46;border-radius:6px;padding:4px 8px;font-size:11px;margin-top:4px;">+ 입고(새 탕 추가)</button>
+        </div>
+      ` : ''}
+    `;
+    list.appendChild(card);
+  }
+}
+async function toggleStockCheckItem(date, key) {
+  const progress = { ...(settings.stockCheckProgress || {}) };
+  const list = new Set(progress[date] || []);
+  if (list.has(key)) list.delete(key); else list.add(key);
+  progress[date] = Array.from(list);
+  settings = { ...settings, stockCheckProgress: progress };
+  await persistSettings();
+  render();
+}
+async function resetStockCheckDate(date) {
+  if (!confirm(`${date}의 체크 상태를 초기화할까요?`)) return;
+  const progress = { ...(settings.stockCheckProgress || {}) };
+  delete progress[date];
+  settings = { ...settings, stockCheckProgress: progress };
+  await persistSettings();
+  render();
+}
 function toggleGroup(k) { if (openGroups.has(k)) openGroups.delete(k); else openGroups.add(k); render(); }
 function toggleSalesDropdown(id) { document.getElementById(id).classList.toggle('hidden'); }
 
@@ -4198,7 +4341,7 @@ function renderMonthlyReportView() {
   printBtn.onclick = printMonthlyReport;
   topBar.appendChild(printBtn);
   const fixedCostBtn = document.createElement('button');
-  fixedCostBtn.textContent = fixedCostUnlocked ? '🔓 고정비 관리' : '🔒 고정비 반영 (사장님 전용)';
+  fixedCostBtn.textContent = fixedCostUnlocked ? '🔓 고정비 관리' : '📁 회계장부';
   fixedCostBtn.style.cssText = 'border:none;background:#f1eee7;color:var(--muted);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;';
   fixedCostBtn.onclick = unlockFixedCosts;
   topBar.appendChild(fixedCostBtn);
