@@ -476,6 +476,7 @@
       <input id="ret-note" placeholder="예: 급송비">
       <label>공장/연락처 (선택 - 어느 건으로 나가는지 헷갈릴 수 있으면 적어주세요)</label>
       <input id="ret-extra-factory" placeholder="예: 010-0000-0000 또는 매장">
+      <label style="display:flex;align-items:center;gap:6px;font-size:14px;color:var(--text);margin-top:6px;"><input type="checkbox" id="ret-extra-tax" style="width:auto;"> 부가세 10% 포함해서 청구 (입력한 금액은 공급가액 기준)</label>
       <div id="ret-extra-order-pick-wrap" class="hidden">
         <label>이 추가금, 어느 발주 거예요? (체크한 발주가 출고될 때 같이 매출로 잡혀요)</label>
         <div id="ret-extra-order-pick-list" style="max-height:160px; overflow-y:auto; border:1px solid var(--border); border-radius:8px; padding:6px;"></div>
@@ -5833,23 +5834,11 @@ async function confirmOrderReceiveInner(o) {
 
   // 이 발주(같은 그룹)에 보류해둔 추가금이 있으면, 첫 출고 시점에 같이 매출로 반영
   let feeMsg = '';
-  if (o.pendingFee) {
-    const fee = o.pendingFee;
-    shipmentLog.push({
-      id: nextLogId++, date: todayStr(), orderId: null,
-      customer: o.customer, factory: fee.factory || o.factory, item: '추가금', color: '', isFee: true, linkGroupId: o.linkGroupId,
-      amount: 1, unit: 'y', yardsShipped: 1, remainAfter: 0, isFullCompletion: true,
-      unitPrice: fee.amount, supplyAmount: fee.amount, taxAmount: 0, saleAmount: fee.amount, paidAmount: 0,
-      note: fee.note || ''
-    });
+  const releasedFee = releasePendingFeeForOrder(o);
+  if (releasedFee) {
     await persistShipmentLog();
-    if (o.linkGroupId) {
-      for (const other of orders) { if (other.linkGroupId === o.linkGroupId) delete other.pendingFee; }
-    } else {
-      delete o.pendingFee;
-    }
     await persistOrders();
-    feeMsg = ` · 보류돼있던 추가금 ${fee.amount.toLocaleString()}원도 같이 매출로 잡혔어요`;
+    feeMsg = ` · 보류돼있던 추가금 ${releasedFee.amount.toLocaleString()}원도 같이 매출로 잡혔어요`;
   }
 
   closeOrderReceiveModal(); render();
@@ -5953,6 +5942,26 @@ function openDefectReturnForCustomer(customer) {
   onReturnTypeChange();
   document.getElementById('returnModalTitle').textContent = '반품/불량/추가금 등록';
   document.getElementById('returnModal').classList.add('open');
+}
+function releasePendingFeeForOrder(o) {
+  // 체크(있는지 확인)와 지우기를 그 사이에 await 하나도 없이 바로 붙여서 처리함
+  // (연타나 겹친 클릭으로 같은 보류 추가금이 두 번 매출로 잡히는 걸 막기 위함)
+  if (!o.pendingFee) return null;
+  const fee = o.pendingFee;
+  if (o.linkGroupId) {
+    for (const other of orders) { if (other.linkGroupId === o.linkGroupId) delete other.pendingFee; }
+  } else {
+    delete o.pendingFee;
+  }
+  const taxAmt = fee.taxIncluded ? Math.round(fee.amount * 0.1) : 0;
+  shipmentLog.push({
+    id: nextLogId++, date: todayStr(), orderId: null,
+    customer: o.customer, factory: fee.factory || o.factory, item: '추가금', color: '', isFee: true, linkGroupId: o.linkGroupId,
+    amount: 1, unit: 'y', yardsShipped: 1, remainAfter: 0, isFullCompletion: true,
+    unitPrice: fee.amount, supplyAmount: fee.amount, taxAmount: taxAmt, saleAmount: fee.amount + taxAmt, paidAmount: 0, taxIncluded: !!fee.taxIncluded,
+    note: fee.note || ''
+  });
+  return fee;
 }
 async function editPendingFee(orderId) {
   const o = orders.find(x => x.id === orderId);
@@ -6162,6 +6171,7 @@ async function confirmReturn() {
     const amount = parseFloat(document.getElementById('ret-extra-amount').value);
     const note = document.getElementById('ret-note').value.trim();
     const extraFactory = document.getElementById('ret-extra-factory').value.trim();
+    const taxIncluded = document.getElementById('ret-extra-tax').checked;
     if (!customer) { showToast('거래처를 확인해주세요'); return; }
     if (!amount || amount <= 0) { showToast('금액을 확인해주세요'); return; }
 
@@ -6178,7 +6188,7 @@ async function confirmReturn() {
       const linkGroupId = targetOrders.find(o => o.linkGroupId)?.linkGroupId || ('link-' + Date.now());
       for (const o of targetOrders) {
         o.linkGroupId = linkGroupId;
-        o.pendingFee = { amount, note, factory: extraFactory };
+        o.pendingFee = { amount, note, factory: extraFactory, taxIncluded };
       }
       await persistOrders();
       closeReturnModal();
@@ -6193,7 +6203,7 @@ async function confirmReturn() {
       const linkedOrders = orders.filter(o => o.linkGroupId === pendingReturnLinkGroupId);
       if (linkedOrders.length > 0) {
         for (const o of linkedOrders) {
-          o.pendingFee = { amount, note, factory: extraFactory };
+          o.pendingFee = { amount, note, factory: extraFactory, taxIncluded };
         }
         await persistOrders();
         closeReturnModal();
@@ -6203,11 +6213,12 @@ async function confirmReturn() {
       }
     }
 
+    const taxAmt = taxIncluded ? Math.round(amount * 0.1) : 0;
     shipmentLog.push({
       id: nextLogId++, date: todayStr(), orderId: null,
       customer, factory: extraFactory, item: '추가금', color: '', isFee: true, linkGroupId: pendingReturnLinkGroupId,
       amount: 1, unit: 'y', yardsShipped: 1, remainAfter: 0, isFullCompletion: true,
-      unitPrice: amount, supplyAmount: amount, taxAmount: 0, saleAmount: amount, paidAmount: 0,
+      unitPrice: amount, supplyAmount: amount, taxAmount: taxAmt, saleAmount: amount + taxAmt, paidAmount: 0, taxIncluded,
       note: note || ''
     });
     await persistShipmentLog();
@@ -6344,23 +6355,11 @@ async function markOrderDone(id) {
   await persistShipmentLog();
 
   let feeMsg = '';
-  if (o.pendingFee) {
-    const fee = o.pendingFee;
-    shipmentLog.push({
-      id: nextLogId++, date: todayStr(), orderId: null,
-      customer: o.customer, factory: fee.factory || o.factory, item: '추가금', color: '', isFee: true, linkGroupId: o.linkGroupId,
-      amount: 1, unit: 'y', yardsShipped: 1, remainAfter: 0, isFullCompletion: true,
-      unitPrice: fee.amount, supplyAmount: fee.amount, taxAmount: 0, saleAmount: fee.amount, paidAmount: 0,
-      note: fee.note || ''
-    });
+  const releasedFee2 = releasePendingFeeForOrder(o);
+  if (releasedFee2) {
     await persistShipmentLog();
-    if (o.linkGroupId) {
-      for (const other of orders) { if (other.linkGroupId === o.linkGroupId) delete other.pendingFee; }
-    } else {
-      delete o.pendingFee;
-    }
     await persistOrders();
-    feeMsg = ` · 보류돼있던 추가금 ${fee.amount.toLocaleString()}원도 같이 매출로 잡혔어요`;
+    feeMsg = ` · 보류돼있던 추가금 ${releasedFee2.amount.toLocaleString()}원도 같이 매출로 잡혔어요`;
   }
 
   render();
