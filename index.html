@@ -190,17 +190,23 @@
     <button onclick="shiftSalesDayFilter(1)" style="border:none;background:#eee;color:#555;border-radius:8px;padding:7px 10px;font-size:12px;">▶</button>
     <span style="font-size:12px; color:var(--muted);">~</span>
     <input id="sales-day-picker-end" type="date" onchange="salesDayFilterEnd=fromDateInputValue(this.value); render();" style="padding:6px 8px; border:1px solid var(--border); border-radius:8px; font-size:12px; width:auto;">
-    <button onclick="addCustomerName()" style="border:none;background:#eaf3ec;color:#2f6b46;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">+ 거래처 추가</button>
     <button onclick="toggleAllMainFlags(true)" style="border:none;background:#eee;color:#555;border-radius:8px;padding:7px 12px;font-size:12px;">전체 선택</button>
     <button onclick="toggleAllMainFlags(false)" style="border:none;background:#eee;color:#555;border-radius:8px;padding:7px 12px;font-size:12px;">전체 해제</button>
     <button onclick="printSelectedMainStatements()" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">🖨 선택 인쇄 (메인 체크)</button>
+    <button onclick="openExpenseModal()" style="border:none;background:#fdecea;color:var(--danger);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">💰 지출/입금내역</button>
+    <button onclick="toggleSalesDropdown('sales-dd-reports')" style="border:none;background:#f0e6fa;color:#6b3fa0;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">📊 조회/리포트 ▾</button>
+    <button onclick="toggleSalesDropdown('sales-dd-manage')" style="border:none;background:#f1eee7;color:var(--muted);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">⚙️ 관리 ▾</button>
+  </div>
+  <div id="sales-dd-reports" class="hidden" style="display:flex; gap:6px; margin-top:6px; flex-wrap:wrap; align-items:center; padding:8px; background:#faf6ff; border-radius:10px;">
+    <button onclick="addCustomerName()" style="border:none;background:#eaf3ec;color:#2f6b46;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">+ 거래처 추가</button>
     <button onclick="showCustomerLedger()" style="border:none;background:#e8edf5;color:#3d4f6b;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">📒 거래처원장</button>
     <button onclick="showPaymentLedger()" style="border:none;background:#e6f0fa;color:#1a56db;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">💰 입금장부</button>
     <button onclick="showCustomerRanking()" style="border:none;background:#f0e6fa;color:#6b3fa0;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">📊 거래처 순위</button>
     <button onclick="showMonthlyReport()" style="border:none;background:#e6faf0;color:#1a7a4a;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">📅 월간 리포트</button>
     <button onclick="showUnpaidSummary()" style="border:none;background:#fce8d6;color:#a15c1e;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">📋 거래처 미수금표</button>
     <button onclick="showItemMonthlyStats()" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">📊 품목출고량</button>
-    <button onclick="openExpenseModal()" style="border:none;background:#fdecea;color:var(--danger);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">💰 지출/입금내역</button>
+  </div>
+  <div id="sales-dd-manage" class="hidden" style="display:flex; gap:6px; margin-top:6px; flex-wrap:wrap; align-items:center; padding:8px; background:#f6f4f0; border-radius:10px;">
     <button onclick="exportSalesLog()" style="border:none;background:#fff3d6;color:#a15c1e;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">📤 매출장부 내보내기</button>
     <button onclick="archiveOldSalesLog()" style="border:none;background:#fff3d6;color:#a15c1e;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">🗑 매출장부 내보내기+정리</button>
     <button onclick="openBizInfoModal()" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">사업자 정보 설정</button>
@@ -534,6 +540,23 @@
 </div>
 
 <!-- 지출/입금 내역 -->
+<!-- 고정비 관리 (사장님 전용) -->
+<div class="modal-overlay" id="fixedCostModal">
+  <div class="modal" style="max-width:420px;">
+    <h3>🔒 고정비 관리</h3>
+    <p style="font-size:12px;color:var(--muted);margin-top:-6px;">직원 월급, 임대료 등 매달 나가는 고정비예요. 월간 리포트의 "진짜 순이익"에 매달 반영돼요.</p>
+    <div class="row2">
+      <div><label>항목</label><input id="fixed-cost-label" placeholder="예: 직원 월급"></div>
+      <div><label>월 금액(원)</label><input id="fixed-cost-amount" type="number" step="1" placeholder="예: 2500000"></div>
+    </div>
+    <button onclick="addFixedCost()" style="border:none;background:#eaf3ec;color:#2f6b46;border-radius:8px;padding:9px 14px;font-size:13px;font-weight:600;margin-top:8px;width:100%;">+ 추가</button>
+    <div id="fixed-cost-list" style="margin-top:12px; max-height:280px; overflow-y:auto;"></div>
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="closeFixedCostModal()">닫기</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-overlay" id="expenseModal">
   <div class="modal" style="max-width:480px;">
     <h3>💰 지출/입금내역</h3>
@@ -1686,6 +1709,7 @@ function renderInv() {
 }
 
 function toggleGroup(k) { if (openGroups.has(k)) openGroups.delete(k); else openGroups.add(k); render(); }
+function toggleSalesDropdown(id) { document.getElementById(id).classList.toggle('hidden'); }
 
 function openRollAddModal() {
   document.getElementById('f-date').value = toDateInputValue(todayStr());
@@ -4084,6 +4108,8 @@ function renderExpenseList() {
   listEl.innerHTML = html;
 }
 let monthlyReportOffset = 0; // 0=이번달, -1=지난달 ...
+let fixedCostUnlocked = false; // 이 화면 켜져있는 동안만 유지 (새로고침하면 다시 잠김)
+const FIXED_COST_PASSWORD = '7080';
 function showMonthlyReport() {
   monthlyReportOffset = 0;
   salesSpecialView = 'monthlyReport';
@@ -4096,6 +4122,53 @@ function exitMonthlyReport() {
 function shiftMonthlyReport(delta) {
   monthlyReportOffset += delta;
   render();
+}
+function unlockFixedCosts() {
+  if (!fixedCostUnlocked) {
+    const pw = prompt('사장님 전용 비밀번호를 입력해주세요');
+    if (pw === null) return;
+    if (pw !== FIXED_COST_PASSWORD) { showToast('비밀번호가 틀렸어요'); return; }
+    fixedCostUnlocked = true;
+  }
+  openFixedCostModal();
+}
+function openFixedCostModal() {
+  const listEl = document.getElementById('fixed-cost-list');
+  const items = settings.fixedCosts || [];
+  listEl.innerHTML = items.length === 0 ? '<div class="empty">아직 등록된 고정비가 없어요</div>' : items.map((c, i) => `
+    <div style="display:flex; justify-content:space-between; align-items:center; padding:6px 4px; border-bottom:1px dashed var(--border);">
+      <div style="font-size:13px;">${esc(c.label)}</div>
+      <div style="display:flex; align-items:center; gap:8px;">
+        <span style="font-weight:600;">${c.amount.toLocaleString()}원/월</span>
+        <button onclick="deleteFixedCost(${i})" style="border:none;background:none;color:var(--muted);font-size:11px;">삭제</button>
+      </div>
+    </div>
+  `).join('');
+  document.getElementById('fixed-cost-label').value = '';
+  document.getElementById('fixed-cost-amount').value = '';
+  document.getElementById('fixedCostModal').classList.add('open');
+}
+function closeFixedCostModal() {
+  document.getElementById('fixedCostModal').classList.remove('open');
+  renderMonthlyReportView();
+}
+async function addFixedCost() {
+  const label = document.getElementById('fixed-cost-label').value.trim();
+  const amount = parseFloat(document.getElementById('fixed-cost-amount').value);
+  if (!label) { showToast('항목을 적어주세요'); return; }
+  if (!amount || amount <= 0) { showToast('금액을 확인해주세요'); return; }
+  const items = settings.fixedCosts || [];
+  items.push({ label, amount });
+  settings = { ...settings, fixedCosts: items };
+  await persistSettings();
+  openFixedCostModal();
+}
+async function deleteFixedCost(idx) {
+  const items = (settings.fixedCosts || []).slice();
+  items.splice(idx, 1);
+  settings = { ...settings, fixedCosts: items };
+  await persistSettings();
+  openFixedCostModal();
 }
 function renderMonthlyReportView() {
   const list = document.getElementById('list');
@@ -4124,6 +4197,11 @@ function renderMonthlyReportView() {
   printBtn.style.cssText = 'border:none;background:#e6faf0;color:#1a7a4a;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;';
   printBtn.onclick = printMonthlyReport;
   topBar.appendChild(printBtn);
+  const fixedCostBtn = document.createElement('button');
+  fixedCostBtn.textContent = fixedCostUnlocked ? '🔓 고정비 관리' : '🔒 고정비 반영 (사장님 전용)';
+  fixedCostBtn.style.cssText = 'border:none;background:#f1eee7;color:var(--muted);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;';
+  fixedCostBtn.onclick = unlockFixedCosts;
+  topBar.appendChild(fixedCostBtn);
   list.appendChild(topBar);
 
   const now = new Date();
@@ -4208,6 +4286,10 @@ function buildMonthlyReportHTML(monthKey, prevMonthKey, year, monthNum) {
   const topItems = Array.from(itemQty.entries()).sort((a, b) => b[1] - a[1]).slice(0, 3);
   const fmtPct = (p) => p == null ? '' : ` (전월 ${p >= 0 ? '▲' : '▼'}${Math.abs(p)}%)`;
 
+  const fixedCostItems = settings.fixedCosts || [];
+  const totalFixedCost = fixedCostItems.reduce((s, c) => s + c.amount, 0);
+  const trueNetProfit = netProfit - totalFixedCost;
+
   return `
     <div class="group" style="padding:16px;">
       <div style="font-weight:700; font-size:16px; margin-bottom:12px;">📅 ${year}년 ${monthNum}월 요약</div>
@@ -4217,6 +4299,14 @@ function buildMonthlyReportHTML(monthKey, prevMonthKey, year, monthNum) {
         <tr><td style="padding:6px 0;">지출</td><td style="text-align:right; color:var(--danger);">-${totalExpense.toLocaleString()}원</td></tr>
         <tr><td style="padding:6px 0;">입금(지출내역 쪽)</td><td style="text-align:right; color:#2f6b46;">+${totalIncome.toLocaleString()}원</td></tr>
       </table>
+      ${fixedCostUnlocked ? `
+        <div style="border-top:1px dashed var(--border); margin:10px 0;"></div>
+        <div style="font-weight:600; font-size:13px; margin-bottom:6px; color:#a15c1e;">🔒 고정비 (사장님 전용)</div>
+        <table style="width:100%; font-size:13px; border-collapse:collapse;">
+          ${fixedCostItems.map(c => `<tr><td style="padding:3px 0;">${esc(c.label)}</td><td style="text-align:right; color:var(--danger);">-${c.amount.toLocaleString()}원</td></tr>`).join('')}
+          <tr><td style="padding:6px 0; font-weight:700;">진짜 순이익 (고정비 반영)</td><td style="text-align:right; font-weight:700; color:${trueNetProfit >= 0 ? '#1a7a4a' : 'var(--danger)'};">${Math.round(trueNetProfit).toLocaleString()}원</td></tr>
+        </table>
+      ` : ''}
       <div style="border-top:1px dashed var(--border); margin:10px 0;"></div>
       <div style="font-weight:600; font-size:13px; margin-bottom:6px;">실입금 현황</div>
       <table style="width:100%; font-size:13px; border-collapse:collapse;">
@@ -4588,7 +4678,6 @@ function renderSales() {
   document.getElementById('sales-day-picker').value = salesDayFilter ? toDateInputValue(salesDayFilter) : '';
   document.getElementById('sales-day-picker-end').value = salesDayFilterEnd ? toDateInputValue(salesDayFilterEnd) : '';
   document.getElementById('chipRow').innerHTML = '';
-
   if (salesSpecialView === 'itemMonthly') {
     document.getElementById('stats').innerHTML = '';
     renderItemMonthlyStatsView();
