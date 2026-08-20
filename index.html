@@ -3002,6 +3002,18 @@ async function confirmPaymentModal() {
   }
 
   const sorted = entries.slice().sort((a, b) => String(a.date).localeCompare(String(b.date)));
+  const totalRemainingNow = entries.reduce((s, e) => s + getRemaining(e), 0);
+  let shortfall = Math.round((totalRemainingNow - amt) * 100) / 100;
+  let discountApplied = 0;
+  if (shortfall > 0) {
+    if (confirm(`입력하신 금액이 ${shortfall.toLocaleString()}원 부족해요.\n이 차액을 공제(불량/네고 등)로 처리하고 전부 완불로 마감할까요?\n("취소"를 누르면 부족한 만큼 미수금으로 남아요, 오래된 것부터 채워져요)`)) {
+      // 가장 최근 건에 부족분을 몰아서 공제 처리 (전체가 완불로 마감되게)
+      const mostRecent = sorted[sorted.length - 1];
+      mostRecent.discount = Math.round(((mostRecent.discount || 0) + shortfall) * 100) / 100;
+      discountApplied = shortfall;
+      amt = Math.round((amt + shortfall) * 100) / 100; // 공제분만큼 입력금액에 얹어서, 아래 루프에서 전부 소진되게 함
+    }
+  }
   for (const e of sorted) {
     if (amt <= 0) break;
     const remain = getRemaining(e);
@@ -3013,7 +3025,8 @@ async function confirmPaymentModal() {
   }
   await persistShipmentLog();
   closePaymentModal(); render();
-  showToast(amt > 0 ? `입금 처리했습니다 (${amt.toLocaleString()}원은 입력 금액이 남아 반영 안 됐어요)` : '입금 처리했습니다');
+  let msg = discountApplied > 0 ? `입금 처리했습니다 (차액 ${discountApplied.toLocaleString()}원 공제 처리하고 전부 완불 마감)` : (amt > 0 ? `입금 처리했습니다 (${amt.toLocaleString()}원은 입력 금액이 남아 반영 안 됐어요)` : '입금 처리했습니다');
+  showToast(msg);
 }
 
 function toggleAllMainFlags(checked) {
