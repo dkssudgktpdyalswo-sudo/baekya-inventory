@@ -2,6 +2,21 @@
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
+<script>
+  // 통신사/브라우저가 예전 파일을 저장해뒀다가 그대로 보여주는 걸 막기 위해,
+  // 이번에 새로 켠 것(세션)이면 "지금 이 순간" 표시를 새로 붙여서 곧바로 다시 불러옴.
+  // 홈 화면 아이콘처럼 주소가 고정으로 저장돼있어도, 켤 때마다 매번 새 표시로 갈아끼워서 항상 최신을 받아옴.
+  (function () {
+    try {
+      if (!sessionStorage.getItem('_cachebust_done')) {
+        sessionStorage.setItem('_cachebust_done', '1');
+        var params = new URLSearchParams(location.search);
+        params.set('_v', Date.now().toString());
+        location.replace(location.pathname + '?' + params.toString() + location.hash);
+      }
+    } catch (e) {}
+  })();
+</script>
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
@@ -751,7 +766,7 @@ const PASSWORD = "3059";
 const ADMIN_PASSWORD = "9503"; // 매출/미수금 탭 전용 - 필요하면 이 값만 바꿔서 변경 가능
 const LOW_STOCK_THRESHOLD = 100;
 const DATA_VERSION = "2026-08-03-v4"; // 재고/이월장부 씨앗 데이터를 바꿀 때마다 이 값을 새로 바꿔주세요
-const APP_CODE_VERSION = "2026-08-20-a"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
+const APP_CODE_VERSION = "2026-08-20-b"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
 const SCHEMA_STAMP = 2; // 서버 저장규칙이 확인하는 "최신 앱 도장" - 절대 자주 바꾸지 않음(이 값을 아는 코드만 저장 가능하게 서버에서 막을 때 씀)
 
 const firebaseConfig = {
