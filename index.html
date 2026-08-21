@@ -276,6 +276,9 @@
     <label id="c-price-label">중국단가 (위안/미터)</label>
     <input id="c-price" type="number" step="0.1" placeholder="예: 12.5">
     <p id="c-price-hint" style="font-size:12px;color:var(--muted);">최종원가 = 중국단가 × 환율 × 야드환산 + 운임비 (자동 계산됩니다)</p>
+    <label>국내 기모/가공비 추가 (원/y, 선택)</label>
+    <input id="c-processing-fee" type="number" step="1" placeholder="예: 3000">
+    <p style="font-size:12px;color:var(--muted);margin-top:-6px;">컬러 이름에 "기모"나 "가공"이 붙어있는 것만, 이 금액을 위 원가에 자동으로 더해요. (예: "#82회색 기모" 컬러에만 적용)</p>
     <div class="modal-actions">
       <button class="btn-cancel" onclick="closeCostModal()">취소</button>
       <button class="btn-save" onclick="saveCost()">저장</button>
@@ -381,6 +384,8 @@
       <div id="or-jeol-tang-section" class="hidden" style="margin-top:12px;">
         <label>탕별로 실제 나갈 야드를 입력하세요</label>
         <div id="or-jeol-tang-list"></div>
+        <div id="or-jeol-new-tang-list" style="margin-top:6px;"></div>
+        <button onclick="addJeolNewTangRow()" style="border:none;background:#fff3d6;color:#a15c1e;border-radius:8px;padding:6px 10px;font-size:12px;margin-top:6px;">+ 새 탕(기존 재고에 없는 물량) 추가</button>
         <div style="display:flex; justify-content:space-between; align-items:center; margin-top:6px; font-size:13px;">
           <button onclick="autoFillJeolTangs()" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:8px;padding:6px 10px;font-size:12px;">자동 채우기</button>
           <span>합계: <b id="or-jeol-tang-total">0</b>y</span>
@@ -646,6 +651,16 @@
     </div>
     <label>출고 수량(y)</label>
     <input id="sale-edit-yards" type="number" step="0.1">
+    <div id="sale-edit-breakdown-wrap" class="hidden">
+      <label id="sale-edit-breakdown-wrap-label">롤별로 나눠서 수정 (자동 채우기로 조정 가능)</label>
+      <div id="sale-edit-breakdown-list"></div>
+      <div id="sale-edit-new-tang-list" style="margin-top:6px;"></div>
+      <button onclick="addSaleEditNewTangRow()" style="border:none;background:#fff3d6;color:#a15c1e;border-radius:8px;padding:6px 10px;font-size:12px;margin-top:6px;">+ 새 탕(기존 재고에 없는 물량) 추가</button>
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-top:8px; font-size:13px;">
+        <button onclick="autoFillSaleEditRolls()" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:8px;padding:6px 10px;font-size:12px;">자동 채우기</button>
+        <span>합계: <b id="sale-edit-breakdown-total">0</b>y</span>
+      </div>
+    </div>
     <label>판매단가(원/y)</label>
     <input id="sale-edit-price" type="number" step="1">
     <label style="display:flex;align-items:center;gap:6px;font-size:14px;color:var(--text);margin-top:8px;"><input type="checkbox" id="sale-edit-tax" style="width:auto;"> 부가세 10% 포함</label>
@@ -702,6 +717,16 @@
     <input id="log-edit-date" type="date">
     <label id="log-edit-qty-label">처리 수량</label>
     <input id="log-edit-qty" type="number" step="0.1">
+    <div id="log-edit-breakdown-wrap" class="hidden">
+      <label id="log-edit-breakdown-wrap-label">롤별로 나눠서 수정 (자동 채우기로 조정 가능)</label>
+      <div id="log-edit-breakdown-list"></div>
+      <div id="log-edit-new-tang-list" style="margin-top:6px;"></div>
+      <button onclick="addLogEditNewTangRow()" style="border:none;background:#fff3d6;color:#a15c1e;border-radius:8px;padding:6px 10px;font-size:12px;margin-top:6px;">+ 새 탕(기존 재고에 없는 물량) 추가</button>
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-top:8px; font-size:13px;">
+        <button id="log-edit-autofill-btn" onclick="autoFillLogEditRolls()" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:8px;padding:6px 10px;font-size:12px;">자동 채우기</button>
+        <span>합계: <b id="log-edit-breakdown-total">0</b>y</span>
+      </div>
+    </div>
     <label>비고</label>
     <input id="log-edit-note" placeholder="선택사항">
     <p style="font-size:12px;color:var(--muted);">수량을 바꾸면 재고와 이월장부 진행상황도 자동으로 다시 맞춰져요.</p>
@@ -1070,21 +1095,28 @@ async function manualBackupNow() {
   if (!useFirebase) { showToast('이 화면에서는 백업 기능을 쓸 수 없어요'); return; }
   const now = new Date();
   const stamp = `${todayStr()}_${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}`;
-  try {
-    await db.collection('inventory_backups').doc(`rolls_manual_${stamp}`).set({ data: JSON.stringify(rolls), savedAt: now.toISOString() });
-    await db.collection('inventory_backups').doc(`orders_manual_${stamp}`).set({ data: JSON.stringify(orders), savedAt: now.toISOString() });
-    await db.collection('inventory_backups').doc(`shipmentLog_manual_${stamp}`).set({ data: JSON.stringify(shipmentLog), savedAt: now.toISOString() });
-    await db.collection('inventory_backups').doc(`swatchInfo_manual_${stamp}`).set({ data: JSON.stringify(swatchInfo), savedAt: now.toISOString() });
-    await db.collection('inventory_backups').doc(`settings_manual_${stamp}`).set({ data: JSON.stringify(settings), savedAt: now.toISOString() });
-    await db.collection('inventory_backups').doc(`costs_manual_${stamp}`).set({ data: JSON.stringify(costs), savedAt: now.toISOString() });
-    await db.collection('inventory_backups').doc(`priceBook_manual_${stamp}`).set({ data: JSON.stringify(priceBook), savedAt: now.toISOString() });
-    await db.collection('inventory_backups').doc(`depositMemos_manual_${stamp}`).set({ data: JSON.stringify(depositMemos), savedAt: now.toISOString() });
-    await db.collection('inventory_backups').doc(`customerList_manual_${stamp}`).set({ data: JSON.stringify(customerList), savedAt: now.toISOString() });
-    await db.collection('inventory_backups').doc(`expenses_manual_${stamp}`).set({ data: JSON.stringify(expenses), savedAt: now.toISOString() });
-    alert(`지금(${stamp.replace('_', ' ')}) 상태로 사이트의 모든 데이터(재고/이월장부/매출장부/스왓치정보/사업자정보/원가표/단가장부/거래처목록/선입금메모/지출내역) 백업을 만들었어요.\n안심하세요 - 이 백업은 이 순간 그대로 남아있어요.`);
-  } catch (e) {
-    showToast('백업 중 오류가 났어요');
+  const items = [
+    ['rolls', rolls, '재고'], ['orders', orders, '이월장부'], ['shipmentLog', shipmentLog, '매출장부'],
+    ['swatchInfo', swatchInfo, '스왓치정보'], ['settings', settings, '사업자정보/설정'], ['costs', costs, '원가표'],
+    ['priceBook', priceBook, '단가장부'], ['depositMemos', depositMemos, '선입금메모'], ['customerList', customerList, '거래처목록'], ['expenses', expenses, '지출내역']
+  ];
+  const ok = [], failed = [];
+  for (const [key, data, label] of items) {
+    try {
+      const json = JSON.stringify(data);
+      if (json.length > 900000) {
+        failed.push(`${label} (용량이 너무 커서 저장 못 함 - "매출장부 내보내기+정리"로 줄여주세요)`);
+        continue;
+      }
+      await db.collection('inventory_backups').doc(`${key}_manual_${stamp}`).set({ data: json, savedAt: now.toISOString() });
+      ok.push(label);
+    } catch (e) {
+      failed.push(label);
+    }
   }
+  let msg = `지금(${stamp.replace('_', ' ')}) 상태로 백업했어요: ${ok.join(', ')}`;
+  if (failed.length > 0) msg += `\n\n❌ 백업 실패한 것: ${failed.join(', ')}`;
+  alert(msg);
 }
 async function backupIfNeededInTx(tx, key, currentJSON) {
   // 하루에 한 번, 저장 직전의(=아직 안전했던) 상태를 백업용으로 남겨둠. 실패해도 본 저장은 막지 않음
@@ -1191,11 +1223,20 @@ async function persistCustomerList() { await persistGuarded('customerList', 'cus
 async function persistExpenses() { await persistGuarded('expenses', 'expenses', expenses); }
 
 // ---------- 원가 계산 ----------
-function finalCost(c) {
+function finalCost(c, color) {
   // c: {type, price} 또는 과거 데이터 호환을 위해 price 숫자만 올 수도 있음
   if (typeof c === 'number') c = { type: 'import', price: c };
-  if (c.type === 'domestic') return c.price;
-  return c.price * settings.rate * settings.yard + settings.ship;
+  let base;
+  if (c.type === 'domestic') base = c.price;
+  else base = c.price * settings.rate * settings.yard + settings.ship;
+  // 컬러 이름에 "기모"나 "가공"이 붙어있으면, 등록해둔 국내 가공비를 추가로 더함 (재고는 품목이 같아도 컬러로만 기모/무지가 구분되는 구조라서)
+  if (color != null && c.processingFee) {
+    const t_color = String(color);
+    if (t_color.includes('기모') || t_color.includes('가공')) {
+      base += c.processingFee;
+    }
+  }
+  return base;
 }
 function updateRateBar() {
   document.getElementById('rateDisplay').textContent = settings.rate.toLocaleString();
@@ -1215,6 +1256,11 @@ function switchTab(tab) {
   }
   currentTab = tab;
   salesSpecialView = null;
+  openGroups = new Set(); // 탭 넘어갈 때 열어놨던 카드들 다 접힌 상태로 초기화
+  const ddReports = document.getElementById('sales-dd-reports');
+  const ddManage = document.getElementById('sales-dd-manage');
+  if (ddReports) ddReports.classList.add('hidden');
+  if (ddManage) ddManage.classList.add('hidden');
   document.getElementById('tab-inv').classList.toggle('active', tab === 'inv');
   document.getElementById('tab-cost').classList.toggle('active', tab === 'cost');
   document.getElementById('tab-order').classList.toggle('active', tab === 'order');
@@ -2088,6 +2134,7 @@ function renderCost() {
         <div class="name">${esc(c.item)}</div>
         <div class="sub">분류 ${esc(c.cat)} · ${c.type === 'domestic' ? '국내산 고정가' : ('중국단가 ' + c.price + '위안/m')}</div>
         ${c.type === 'domestic' ? '<div class="sub" style="color:#2f6b46;">환율 미적용 (적혀있는 금액 그대로)</div>' : ''}
+        ${c.processingFee ? `<div class="sub" style="color:#a15c1e;">기모/가공 컬러는 +${c.processingFee.toLocaleString()}원/y</div>` : ''}
         <div class="btns">
           <button class="btn-out" onclick="openCostEditModal(${c.id})">수정</button>
           <button class="btn-del" onclick="deleteCost(${c.id})">삭제</button>
@@ -2123,6 +2170,7 @@ function openCostAddModal() {
   document.getElementById('c-cat').value = '';
   document.getElementById('c-item').value = '';
   document.getElementById('c-price').value = '';
+  document.getElementById('c-processing-fee').value = '';
   document.querySelector('input[name="c-type"][value="import"]').checked = true;
   onCostTypeChange();
   document.getElementById('costModal').classList.add('open');
@@ -2135,6 +2183,7 @@ function openCostEditModal(id) {
   document.getElementById('c-cat').value = c.cat;
   document.getElementById('c-item').value = c.item;
   document.getElementById('c-price').value = c.price;
+  document.getElementById('c-processing-fee').value = c.processingFee || '';
   document.querySelector(`input[name="c-type"][value="${c.type === 'domestic' ? 'domestic' : 'import'}"]`).checked = true;
   onCostTypeChange();
   document.getElementById('costModal').classList.add('open');
@@ -2145,12 +2194,14 @@ async function saveCost() {
   const item = document.getElementById('c-item').value.trim();
   const price = parseFloat(document.getElementById('c-price').value);
   const type = document.querySelector('input[name="c-type"]:checked').value;
+  const processingFeeRaw = document.getElementById('c-processing-fee').value;
+  const processingFee = processingFeeRaw ? parseFloat(processingFeeRaw) : 0;
   if (!item || !price || price <= 0) { showToast('품목과 가격을 확인해주세요'); return; }
   if (editingCostId !== null) {
     const c = costs.find(x => x.id === editingCostId);
-    c.cat = cat || '미분류'; c.item = item; c.price = price; c.type = type;
+    c.cat = cat || '미분류'; c.item = item; c.price = price; c.type = type; c.processingFee = processingFee;
   } else {
-    costs.push({ id: nextCostId++, cat: cat || '미분류', item, price, type });
+    costs.push({ id: nextCostId++, cat: cat || '미분류', item, price, type, processingFee });
   }
   await persistCosts(); closeCostModal(); render(); showToast('저장되었습니다');
 }
@@ -2544,14 +2595,88 @@ function openLogEditModal(logId) {
   const canEditQty = !(e.isReturn || e.isDefect || e.manualClose);
   const qtyWrap = document.getElementById('log-edit-qty');
   const qtyLabel = document.getElementById('log-edit-qty-label');
+  const breakdownWrap = document.getElementById('log-edit-breakdown-wrap');
+  const breakdownList = document.getElementById('log-edit-breakdown-list');
+  document.getElementById('log-edit-new-tang-list').innerHTML = '';
   if (canEditQty) {
     qtyLabel.classList.remove('hidden'); qtyWrap.classList.remove('hidden');
     qtyLabel.textContent = `처리 수량(${e.unit || 'y'})`;
     qtyWrap.value = Math.abs(e.amount);
+    if (hasKnownItem(e.item)) {
+      // 그 컬러의 지금 있는 롤 전부 + 이번에 나갔던 롤(지금은 없어졌어도) 다 같이 보여줌 - 출고할 때랑 똑같은 인터페이스
+      const isJeol = (e.unit || 'y') === '절';
+      if (isJeol) qtyLabel.textContent = `절 개수`;
+      const resolvedColor = resolveInventoryColor(e.item, e.color);
+      const currentRolls = rolls.filter(r => String(r.item).trim() === String(e.item).trim() && String(r.color).trim() === String(resolvedColor).trim() && !r.defective);
+      const origBreakdown = (e.deductBreakdown || []).filter(b => b.rollId != null);
+      const origNewTang = (e.deductBreakdown || []).filter(b => b.rollId == null); // 예전에 "새 탕"으로 처리됐던 부분
+      const rollMap = new Map(currentRolls.map(r => [r.id, r]));
+      for (const b of origBreakdown) { if (!rollMap.has(b.rollId)) rollMap.set(b.rollId, { id: b.rollId, tang: b.tang, qty: 0, _gone: true }); }
+      const allRolls = Array.from(rollMap.values()).sort((a, b) => a.tang - b.tang);
+
+      breakdownWrap.classList.remove('hidden');
+      breakdownWrap.dataset.isJeol = isJeol ? '1' : '0';
+      document.getElementById('log-edit-autofill-btn').classList.toggle('hidden', isJeol);
+      document.getElementById('log-edit-breakdown-wrap-label').textContent = isJeol ? '탕별 실제 야드 (절 개수와는 별개, 참고용)' : '롤별로 나눠서 수정 (자동 채우기로 조정 가능)';
+      breakdownList.innerHTML = allRolls.map(r => {
+        const orig = origBreakdown.find(b => b.rollId === r.id);
+        const origQty = orig ? orig.qty : 0;
+        const availableToShow = r._gone ? origQty : Math.round((r.qty + origQty) * 100) / 100; // 지금 남은 것 + 이번 건이 원래 뺐던 만큼 (다시 채워질 상한)
+        return `
+          <div style="display:flex; align-items:center; gap:8px; padding:5px 0; border-bottom:1px dashed var(--border);">
+            <span style="font-size:13px; width:60px; flex:none;">탕${r.tang}${r._gone ? ' (삭제됨)' : ''}</span>
+            <span style="font-size:11px; color:var(--muted); width:70px; flex:none;">최대 ${availableToShow}y</span>
+            <input type="number" step="0.1" min="0" max="${availableToShow}" class="log-edit-tang-qty" data-roll-id="${r.id}" data-tang="${r.tang}" data-orig-qty="${origQty}" data-max="${availableToShow}" value="${origQty}" oninput="updateLogEditTotal()" style="flex:1;">
+          </div>
+        `;
+      }).join('');
+      // 예전에 "새 탕"(재고 연결 없이)으로 잡혔던 분량도 새 탕 목록에 미리 채워둠
+      for (const nt of origNewTang) { addLogEditNewTangRow(nt.tang, nt.qty); }
+      updateLogEditTotal();
+    } else {
+      breakdownWrap.classList.add('hidden');
+      breakdownList.innerHTML = '';
+    }
   } else {
     qtyLabel.classList.add('hidden'); qtyWrap.classList.add('hidden');
+    breakdownWrap.classList.add('hidden');
+    breakdownList.innerHTML = '';
   }
   document.getElementById('logEditModal').classList.add('open');
+}
+function addLogEditNewTangRow(tang, qty) {
+  const listEl = document.getElementById('log-edit-new-tang-list');
+  const row = document.createElement('div');
+  row.className = 'log-edit-new-tang-row';
+  row.style.cssText = 'display:flex; align-items:center; gap:8px; padding:6px 0; border-bottom:1px dashed var(--border);';
+  row.innerHTML = `
+    <span style="font-size:13px; color:#a15c1e; flex:none;">새 탕</span>
+    <input type="number" min="1" placeholder="탕번호" class="log-edit-new-tang-num" value="${tang != null ? tang : ''}" style="width:70px; padding:6px; border:1px solid var(--border); border-radius:6px; font-size:13px;">
+    <input type="number" step="0.1" placeholder="마수(y)" class="log-edit-new-tang-qty" value="${qty != null ? qty : ''}" oninput="updateLogEditTotal()" style="flex:1; padding:6px; border:1px solid var(--border); border-radius:6px; font-size:13px;">
+    <button onclick="this.closest('.log-edit-new-tang-row').remove(); updateLogEditTotal();" style="border:none;background:#fdecea;color:var(--danger);border-radius:6px;padding:0 8px;font-size:12px;flex:none;height:32px;">삭제</button>
+  `;
+  listEl.appendChild(row);
+}
+function updateLogEditTotal() {
+  let sum = 0;
+  document.querySelectorAll('.log-edit-tang-qty').forEach(i => sum += (parseFloat(i.value) || 0));
+  document.querySelectorAll('.log-edit-new-tang-qty').forEach(i => sum += (parseFloat(i.value) || 0));
+  sum = Math.round(sum * 100) / 100;
+  document.getElementById('log-edit-breakdown-total').textContent = sum;
+  const isJeol = document.getElementById('log-edit-breakdown-wrap').dataset.isJeol === '1';
+  if (!isJeol) document.getElementById('log-edit-qty').value = sum; // 절이면 "처리 수량"은 절 개수라서, 야드 합계로 안 덮어씀
+}
+function autoFillLogEditRolls() {
+  const target = parseFloat(document.getElementById('log-edit-qty').value) || 0;
+  let need = target;
+  document.querySelectorAll('.log-edit-tang-qty').forEach(inp => {
+    const max = parseFloat(inp.dataset.max) || 0;
+    const take = Math.min(max, Math.max(0, need));
+    inp.value = Math.round(take * 100) / 100;
+    need = Math.round((need - take) * 100) / 100;
+  });
+  document.querySelectorAll('.log-edit-new-tang-qty').forEach(inp => { inp.value = 0; });
+  updateLogEditTotal();
 }
 function closeLogEditModal() { document.getElementById('logEditModal').classList.remove('open'); pendingLogEditId = null; }
 
@@ -2571,10 +2696,71 @@ async function confirmLogEdit() {
     return;
   }
 
+  const o = e.orderId != null ? orders.find(x => x.id === e.orderId) : null;
+  const tangInputs = document.querySelectorAll('.log-edit-tang-qty');
+  const usingTangBreakdown = tangInputs.length > 0 && !document.getElementById('log-edit-breakdown-wrap').classList.contains('hidden');
+
+  if (usingTangBreakdown) {
+    // 기존 롤들: 델타만큼만 정확히 조정 (더 뺐으면 더 차감, 덜 뺐으면 그만큼 복원)
+    let newBreakdown = [];
+    let newTotal = 0;
+    tangInputs.forEach(input => {
+      const rollId = parseInt(input.dataset.rollId);
+      const tang = parseInt(input.dataset.tang);
+      const origQty = parseFloat(input.dataset.origQty) || 0;
+      const newTangQty = Math.max(0, parseFloat(input.value) || 0);
+      const delta = newTangQty - origQty; // 양수면 이번에 더 뺀 것
+      if (delta !== 0) {
+        const roll = rolls.find(r => r.id === rollId);
+        if (roll) {
+          roll.qty = Math.round(Math.max(0, roll.qty - delta) * 100) / 100;
+        } else if (delta < 0) {
+          // 삭제됐던 롤인데 이번에 줄여서 복원해야 하면, 새로 만들어서 되돌려줌
+          const existingCat = (rolls.find(r => String(r.item).trim() === String(e.item).trim()) || {}).cat || '';
+          rolls.push({ id: nextId++, cat: existingCat, item: e.item, color: resolveInventoryColor(e.item, e.color), tang, qty: -delta });
+        }
+      }
+      if (newTangQty > 0) { newBreakdown.push({ tang, qty: Math.round(newTangQty * 100) / 100, rollId }); newTotal += newTangQty; }
+    });
+    // 새 탕(재고 연결 없는 분량)
+    document.querySelectorAll('.log-edit-new-tang-row').forEach(row => {
+      const tang = parseInt(row.querySelector('.log-edit-new-tang-num').value) || 0;
+      const qty = parseFloat(row.querySelector('.log-edit-new-tang-qty').value) || 0;
+      if (qty > 0) { newBreakdown.push({ tang, qty: Math.round(qty * 100) / 100, rollId: null }); newTotal += qty; }
+    });
+    if (newTotal <= 0) { showToast('수량을 확인해주세요'); return; }
+    await persistRolls();
+    e.deductBreakdown = newBreakdown;
+    e.invDeductedAmount = newBreakdown.filter(b => b.rollId != null).reduce((s, b) => s + b.qty, 0);
+    newTotal = Math.round(newTotal * 100) / 100;
+    const isJeol = (e.unit || 'y') === '절';
+    const countInput = parseFloat(document.getElementById('log-edit-qty').value);
+    const newCountOrQty = isJeol ? (countInput || 0) : newTotal; // 절이면 "처리 수량"칸(절 개수)을 그대로 씀, y면 야드 합계를 씀
+    if (isJeol && (!newCountOrQty || newCountOrQty <= 0)) { showToast('절 개수를 확인해주세요'); return; }
+
+    if (o) {
+      o.received = Math.round(Math.max(0, o.received - e.amount + newCountOrQty) * 100) / 100;
+      const remain = (o.orderQty && o.orderQty > o.received) ? Math.round((o.orderQty - o.received) * 100) / 100 : 0;
+      o.done = remain <= 0;
+      if (o.done && !o.doneDate) o.doneDate = newDate;
+      e.remainAfter = remain;
+      e.isFullCompletion = remain <= 0;
+      await persistOrders();
+    }
+    e.date = newDate;
+    e.note = newNote;
+    e.amount = newCountOrQty;
+    e.yardsShipped = newTotal; // 야드는 항상 탕별 합계 (절이든 y든)
+    if (e.unitPrice) e.saleAmount = Math.round(e.unitPrice * newTotal);
+    await persistShipmentLog();
+    closeLogEditModal();
+    render();
+    showToast('수정되었습니다 (재고·이월장부도 같이 반영됐어요)');
+    return;
+  }
+
   const newQty = parseFloat(document.getElementById('log-edit-qty').value);
   if (!newQty || newQty <= 0 || isNaN(newQty)) { showToast('수량을 확인해주세요'); return; }
-
-  const o = e.orderId != null ? orders.find(x => x.id === e.orderId) : null;
 
   // 1) 기존 효과 되돌리기: 재고 다시 채우고, 주문 진행량 되돌리기
   const restoreQtyForEdit = e.invDeductedAmount != null ? e.invDeductedAmount : e.yardsShipped;
@@ -2656,6 +2842,9 @@ async function cancelShipmentLogEntry(logId) {
     : `${entry.item} ${entry.color || ''} ${entry.amount}${entry.unit} 출고`;
   if (!confirm(`이 기록(${desc})을 취소할까요?\n이월장부와 재고가 이 처리 이전 상태로 되돌아가요.`)) return;
 
+  // 확인 즉시(그 사이 await 하나도 없이) 목록에서 빼서, 연타나 겹친 클릭으로 같은 취소가 두 번 처리되는 걸 막음
+  shipmentLog = shipmentLog.filter(e => e.id !== logId);
+
   const o = orders.find(x => x.id === entry.orderId);
   if (o) {
     if (!entry.manualClose && !entry.isPreInvoice) {
@@ -2690,7 +2879,6 @@ async function cancelShipmentLogEntry(logId) {
     await persistRolls();
   }
 
-  shipmentLog = shipmentLog.filter(e => e.id !== logId);
   await persistShipmentLog();
   render();
   showToast('출고 기록을 취소하고 되돌렸습니다');
@@ -2717,6 +2905,74 @@ let pendingDefectLogId = null;
 
 let pendingSaleEditId = null; // null이면 신규 추가 모드
 let pendingSaleAddCustomer = null;
+function populateSaleEditBreakdown(entry) {
+  const wrap = document.getElementById('sale-edit-breakdown-wrap');
+  const listEl = document.getElementById('sale-edit-breakdown-list');
+  document.getElementById('sale-edit-new-tang-list').innerHTML = '';
+  const canBreakdown = !(entry.isReturn || entry.isDefect || entry.isFee || entry.manualClose) && hasKnownItem(entry.item);
+  if (!canBreakdown) {
+    wrap.classList.add('hidden');
+    listEl.innerHTML = '';
+    return;
+  }
+  document.getElementById('sale-edit-breakdown-wrap-label').textContent = '롤별로 나눠서 수정 (자동 채우기로 조정 가능)';
+  const resolvedColor = resolveInventoryColor(entry.item, entry.color);
+  const currentRolls = rolls.filter(r => String(r.item).trim() === String(entry.item).trim() && String(r.color).trim() === String(resolvedColor).trim() && !r.defective);
+  const origBreakdown = (entry.deductBreakdown || []).filter(b => b.rollId != null);
+  const origNewTang = (entry.deductBreakdown || []).filter(b => b.rollId == null);
+  const rollMap = new Map(currentRolls.map(r => [r.id, r]));
+  for (const b of origBreakdown) { if (!rollMap.has(b.rollId)) rollMap.set(b.rollId, { id: b.rollId, tang: b.tang, qty: 0, _gone: true }); }
+  const allRolls = Array.from(rollMap.values()).sort((a, b) => a.tang - b.tang);
+
+  wrap.classList.remove('hidden');
+  listEl.innerHTML = allRolls.map(r => {
+    const orig = origBreakdown.find(b => b.rollId === r.id);
+    const origQty = orig ? orig.qty : 0;
+    const availableToShow = r._gone ? origQty : Math.round((r.qty + origQty) * 100) / 100;
+    return `
+      <div style="display:flex; align-items:center; gap:8px; padding:5px 0; border-bottom:1px dashed var(--border);">
+        <span style="font-size:13px; width:60px; flex:none;">탕${r.tang}${r._gone ? ' (삭제됨)' : ''}</span>
+        <span style="font-size:11px; color:var(--muted); width:70px; flex:none;">최대 ${availableToShow}y</span>
+        <input type="number" step="0.1" min="0" max="${availableToShow}" class="sale-edit-tang-qty" data-roll-id="${r.id}" data-tang="${r.tang}" data-orig-qty="${origQty}" data-max="${availableToShow}" value="${origQty}" oninput="updateSaleEditTotal()" style="flex:1;">
+      </div>
+    `;
+  }).join('');
+  for (const nt of origNewTang) { addSaleEditNewTangRow(nt.tang, nt.qty); }
+  updateSaleEditTotal();
+}
+function addSaleEditNewTangRow(tang, qty) {
+  const listEl = document.getElementById('sale-edit-new-tang-list');
+  const row = document.createElement('div');
+  row.className = 'sale-edit-new-tang-row';
+  row.style.cssText = 'display:flex; align-items:center; gap:8px; padding:6px 0; border-bottom:1px dashed var(--border);';
+  row.innerHTML = `
+    <span style="font-size:13px; color:#a15c1e; flex:none;">새 탕</span>
+    <input type="number" min="1" placeholder="탕번호" class="sale-edit-new-tang-num" value="${tang != null ? tang : ''}" style="width:70px; padding:6px; border:1px solid var(--border); border-radius:6px; font-size:13px;">
+    <input type="number" step="0.1" placeholder="마수(y)" class="sale-edit-new-tang-qty" value="${qty != null ? qty : ''}" oninput="updateSaleEditTotal()" style="flex:1; padding:6px; border:1px solid var(--border); border-radius:6px; font-size:13px;">
+    <button onclick="this.closest('.sale-edit-new-tang-row').remove(); updateSaleEditTotal();" style="border:none;background:#fdecea;color:var(--danger);border-radius:6px;padding:0 8px;font-size:12px;flex:none;height:32px;">삭제</button>
+  `;
+  listEl.appendChild(row);
+}
+function updateSaleEditTotal() {
+  let sum = 0;
+  document.querySelectorAll('.sale-edit-tang-qty').forEach(i => sum += (parseFloat(i.value) || 0));
+  document.querySelectorAll('.sale-edit-new-tang-qty').forEach(i => sum += (parseFloat(i.value) || 0));
+  sum = Math.round(sum * 100) / 100;
+  document.getElementById('sale-edit-breakdown-total').textContent = sum;
+  document.getElementById('sale-edit-yards').value = sum;
+}
+function autoFillSaleEditRolls() {
+  const target = parseFloat(document.getElementById('sale-edit-yards').value) || 0;
+  let need = target;
+  document.querySelectorAll('.sale-edit-tang-qty').forEach(inp => {
+    const max = parseFloat(inp.dataset.max) || 0;
+    const take = Math.min(max, Math.max(0, need));
+    inp.value = Math.round(take * 100) / 100;
+    need = Math.round((need - take) * 100) / 100;
+  });
+  document.querySelectorAll('.sale-edit-new-tang-qty').forEach(inp => { inp.value = 0; });
+  updateSaleEditTotal();
+}
 function openSaleEditModal(logId) {
   const entry = shipmentLog.find(e => e.id === logId);
   if (!entry) return;
@@ -2729,6 +2985,7 @@ function openSaleEditModal(logId) {
   document.getElementById('sale-edit-item').value = entry.item || '';
   document.getElementById('sale-edit-color').value = entry.color || '';
   document.getElementById('sale-edit-yards').value = entry.yardsShipped + (entry.defectYards || 0);
+  populateSaleEditBreakdown(entry);
   document.getElementById('sale-edit-price').value = entry.unitPrice || '';
   document.getElementById('sale-edit-tax').checked = !!entry.taxIncluded;
   document.getElementById('sale-edit-discount').value = entry.discount || '';
@@ -2749,6 +3006,9 @@ function openSaleAddModal(customer) {
   document.getElementById('sale-edit-item').value = '';
   document.getElementById('sale-edit-color').value = '';
   document.getElementById('sale-edit-yards').value = '';
+  document.getElementById('sale-edit-breakdown-wrap').classList.add('hidden');
+  document.getElementById('sale-edit-breakdown-list').innerHTML = '';
+  document.getElementById('sale-edit-new-tang-list').innerHTML = '';
   document.getElementById('sale-edit-price').value = '';
   document.getElementById('sale-edit-tax').checked = false;
   document.getElementById('sale-edit-discount').value = '';
@@ -2827,6 +3087,38 @@ async function confirmSaleEdit() {
   entry.extraAmount = extraAmount;
   entry.extraReason = extraAmount > 0 ? extraReason : '';
   entry.saleAmount = saleAmount;
+  if ((entry.unit || 'y') !== '절') entry.amount = yardsRaw; // 절이면 amount는 "절 개수"라서 야드로 덮어쓰면 안 됨 (여긴 늘 야드만 다룸)
+
+  // 롤별로 수정하는 UI가 떠있었으면, 그 탕들에 정확히 델타만큼 재고 반영
+  const tangInputs = document.querySelectorAll('.sale-edit-tang-qty');
+  if (tangInputs.length > 0 && !document.getElementById('sale-edit-breakdown-wrap').classList.contains('hidden')) {
+    let newBreakdown = [];
+    tangInputs.forEach(input => {
+      const rollId = parseInt(input.dataset.rollId);
+      const tang = parseInt(input.dataset.tang);
+      const origQty = parseFloat(input.dataset.origQty) || 0;
+      const newTangQty = Math.max(0, parseFloat(input.value) || 0);
+      const delta = newTangQty - origQty;
+      if (delta !== 0) {
+        const roll = rolls.find(r => r.id === rollId);
+        if (roll) {
+          roll.qty = Math.round(Math.max(0, roll.qty - delta) * 100) / 100;
+        } else if (delta < 0) {
+          const existingCat = (rolls.find(r => String(r.item).trim() === String(entry.item).trim()) || {}).cat || '';
+          rolls.push({ id: nextId++, cat: existingCat, item: entry.item, color: resolveInventoryColor(entry.item, entry.color), tang, qty: -delta });
+        }
+      }
+      if (newTangQty > 0) newBreakdown.push({ tang, qty: Math.round(newTangQty * 100) / 100, rollId });
+    });
+    document.querySelectorAll('.sale-edit-new-tang-row').forEach(row => {
+      const tang = parseInt(row.querySelector('.sale-edit-new-tang-num').value) || 0;
+      const qty = parseFloat(row.querySelector('.sale-edit-new-tang-qty').value) || 0;
+      if (qty > 0) newBreakdown.push({ tang, qty: Math.round(qty * 100) / 100, rollId: null });
+    });
+    entry.deductBreakdown = newBreakdown;
+    entry.invDeductedAmount = newBreakdown.filter(b => b.rollId != null).reduce((s, b) => s + b.qty, 0);
+    await persistRolls();
+  }
 
   await rememberPrice(entry.customer, entry.item, entry.color, priceRaw);
   await persistShipmentLog();
@@ -3614,10 +3906,10 @@ function renderItemMonthlyStatsView() {
   }
 }
 
-function getCostPerYard(item) {
+function getCostPerYard(item, color) {
   const costMatch = findCostFor(item);
   if (!costMatch) return null;
-  return finalCost(costMatch);
+  return finalCost(costMatch, color);
 }
 
 function showPaymentLedger() {
@@ -4150,6 +4442,14 @@ async function renderBackupManagerList() {
   topBar.appendChild(nowBtn);
   list.appendChild(topBar);
 
+  const shipLogSize = JSON.stringify(shipmentLog).length;
+  if (shipLogSize > 700000) {
+    const warnBanner = document.createElement('div');
+    warnBanner.style.cssText = 'background:#fdecea; border:1px solid #f0b8b8; border-radius:10px; padding:10px 12px; margin-bottom:10px; font-size:13px; color:var(--danger);';
+    warnBanner.innerHTML = `⚠️ 매출장부 용량이 커지고 있어요 (${Math.round(shipLogSize / 1024)}KB). 너무 커지면 백업이 조용히 실패해서 나중에 복구가 안 될 수 있어요. "관리" 메뉴의 "매출장부 내보내기+정리"로 오래되고 정산 끝난 건들을 정리해주시는 걸 추천드려요.`;
+    list.appendChild(warnBanner);
+  }
+
   const loadingMsg = document.createElement('div');
   loadingMsg.className = 'empty';
   loadingMsg.textContent = '백업 목록 불러오는 중...';
@@ -4208,18 +4508,26 @@ async function restoreBackupMoment(label, docIdsJson) {
   if (!confirm(`"${label}" 시점으로 재고/이월장부/매출장부를 한 번에 통째로 되돌릴게요.\n\n⚠️ 지금 있는 최신 데이터는 덮어써져요. 계속할까요?`)) return;
   if (!confirm('정말요? 최근에 입력하신 게 있다면 사라져요. 그래도 진행할까요?')) return;
 
-  try {
-    for (const docId of docIds) {
-      const key = docId.split('_')[0]; // "rolls_..." -> "rolls"
+  const keyLabels = { rolls: '재고', orders: '이월장부', shipmentLog: '매출장부', swatchInfo: '스왓치정보', settings: '사업자정보/설정', costs: '원가표', priceBook: '단가장부', depositMemos: '선입금메모', customerList: '거래처목록', expenses: '지출내역' };
+  const restored = [];
+  const missing = [];
+  const failed = [];
+  for (const docId of docIds) {
+    const key = docId.split('_')[0]; // "rolls_..." -> "rolls"
+    try {
       const snap = await db.collection('inventory_backups').doc(docId).get();
-      if (!snap.exists) continue;
+      if (!snap.exists) { missing.push(keyLabels[key] || key); continue; }
       await db.collection('inventory').doc(key).set({ data: snap.data().data, stamp: SCHEMA_STAMP });
+      restored.push(keyLabels[key] || key);
+    } catch (e) {
+      failed.push(keyLabels[key] || key);
     }
-    alert('복구했어요. 화면을 새로고침할게요.');
-    location.reload();
-  } catch (e) {
-    showToast('복구 중 오류가 났어요');
   }
+  let msg = `복구 완료: ${restored.join(', ') || '없음'}`;
+  if (missing.length > 0) msg += `\n\n⚠️ 이 시점엔 백업이 없어서 그대로 남겨둔 것: ${missing.join(', ')}\n(이것들은 최신 상태 그대로예요 - 되돌아간 게 아니에요)`;
+  if (failed.length > 0) msg += `\n\n❌ 복구 중 오류가 난 것: ${failed.join(', ')} (다시 시도해주세요)`;
+  alert(msg + '\n\n화면을 새로고침할게요.');
+  location.reload();
 }
 async function deleteBackupMoment(label, docIdsJson) {
   let docIds;
@@ -4436,7 +4744,7 @@ function buildMonthlyReportHTML(monthKey, prevMonthKey, year, monthNum) {
     if (e.isReturn || e.isDefect) { if (e.deductAmount != null) totalProfit -= e.deductAmount; continue; }
     if (e.saleAmount == null) continue;
     const effectiveRevenue = (e.supplyAmount != null ? e.supplyAmount : e.saleAmount) - (e.discount || 0) + (e.extraAmount || 0);
-    const costPerY = getCostPerYard(e.item);
+    const costPerY = getCostPerYard(e.item, e.color);
     if (costPerY != null && effectiveRevenue > 0) {
       totalProfit += effectiveRevenue - Math.round(costPerY * e.yardsShipped);
     } else if (!hasKnownItem(e.item) && effectiveRevenue > 0) {
@@ -4457,7 +4765,7 @@ function buildMonthlyReportHTML(monthKey, prevMonthKey, year, monthNum) {
     if (e.saleAmount == null) continue;
     prevSale += (e.saleAmount - (e.discount || 0));
     const effectiveRevenue = (e.supplyAmount != null ? e.supplyAmount : e.saleAmount) - (e.discount || 0) + (e.extraAmount || 0);
-    const costPerY = getCostPerYard(e.item);
+    const costPerY = getCostPerYard(e.item, e.color);
     if (costPerY != null && effectiveRevenue > 0) prevProfit += effectiveRevenue - Math.round(costPerY * e.yardsShipped);
     else if (!hasKnownItem(e.item) && effectiveRevenue > 0) prevProfit += effectiveRevenue;
   }
@@ -4919,7 +5227,7 @@ function renderSales() {
   // 각 건마다 원가/순이익/마진율 계산 (공제액 차감한 실제 매출 기준) - 반품/불량 항목은 대상 아님
   for (const e of sales) {
     if (e.isReturn || e.isDefect) { e._cost = null; e._profit = null; e._margin = null; continue; }
-    const costPerY = getCostPerYard(e.item);
+    const costPerY = getCostPerYard(e.item, e.color);
     const effectiveRevenue = (e.supplyAmount != null ? e.supplyAmount : e.saleAmount) - (e.discount || 0) + (e.extraAmount || 0); // 추가금(운임비 등)은 원가 없이 그대로 순이익에 더해짐
     if (costPerY != null && effectiveRevenue > 0) {
       e._cost = Math.round(costPerY * e.yardsShipped);
@@ -5154,7 +5462,7 @@ function renderSales() {
           <div class="order-top">
             <div>
               <div class="order-name">${esc(e.item)} ${esc(e.color || '')}</div>
-              <div class="order-sub">${e.item === '이월 미수금' ? `${(e.saleAmount || 0).toLocaleString()}원` : `${e.amount}${e.unit}${e.unit === '절' ? ` (${e.yardsShipped}y${e.yardsEstimated ? ' 추정' : ''})` : ''} 출고${e.yardsEstimated ? ' <span style="color:var(--danger);">· 추정치</span>' : ''}`}</div>
+              <div class="order-sub">${e.item === '이월 미수금' ? `${(e.saleAmount || 0).toLocaleString()}원` : `${e.amount}${e.unit}${e.unit === '절' ? ` (${e.yardsShipped}y${e.yardsEstimated ? ' 추정' : ''})` : ''}${e.deductBreakdown && e.deductBreakdown.length > 1 ? ` <span style="color:var(--muted);">(${e.deductBreakdown.map(b => `탕${b.tang}:${b.qty}y`).join('+')})</span>` : ''} 출고${e.yardsEstimated ? ' <span style="color:var(--danger);">· 추정치</span>' : ''}`}</div>
             </div>
             <div class="order-status ${statusClass2}">${statusLabel2}</div>
           </div>
@@ -5252,7 +5560,7 @@ function renderShipmentLog() {
               </div>
               <div class="order-status ${(e.isReturn || e.isDefect) ? 'status-wait' : (e.isFullCompletion ? 'status-done' : 'status-partial')}">${e.isDefect ? '불량' : e.isReturn ? '반품' : (e.isFullCompletion ? '전량완료' : '부분출고')}</div>
             </div>
-            <div class="order-progress">${(e.isReturn || e.isDefect) ? `<span style="color:var(--danger);font-weight:700;">${e.isDefect ? '불량' : '반품'} ${Math.abs(e.amount)}${e.unit}${e.deductAmount != null ? ` (-${e.deductAmount.toLocaleString()}원)` : ''}</span>${e.note ? ` · ${esc(e.note)}` : ''}` : e.isFee ? `${(e.saleAmount || 0).toLocaleString()}원${e.note ? ` · ${esc(e.note)}` : ''}` : e.manualClose ? `수동 완료 처리${e.note ? ' · ' + esc(e.note) : ''}` : `출고 ${e.amount}${e.unit}${e.unit === '절' && e.yardsShipped ? ` (${e.yardsShipped}y${e.yardsEstimated ? ' 추정' : ''})` : ''}${e.remainAfter > 0 ? ` <span style="color:var(--muted);font-size:12px;">(잔여 ${e.remainAfter}${e.unit})</span>` : ''}${e.note ? ` · ${esc(e.note)}` : ''}`}</div>
+            <div class="order-progress">${(e.isReturn || e.isDefect) ? `<span style="color:var(--danger);font-weight:700;">${e.isDefect ? '불량' : '반품'} ${Math.abs(e.amount)}${e.unit}${e.deductAmount != null ? ` (-${e.deductAmount.toLocaleString()}원)` : ''}</span>${e.note ? ` · ${esc(e.note)}` : ''}` : e.isFee ? `${(e.saleAmount || 0).toLocaleString()}원${e.note ? ` · ${esc(e.note)}` : ''}` : e.manualClose ? `수동 완료 처리${e.note ? ' · ' + esc(e.note) : ''}` : `출고 ${e.amount}${e.unit}${e.unit === '절' && e.yardsShipped ? ` (${e.yardsShipped}y${e.yardsEstimated ? ' 추정' : ''})` : ''}${e.deductBreakdown && e.deductBreakdown.length > 1 ? ` <span style="color:var(--muted);font-size:12px;">(${e.deductBreakdown.map(b => `탕${b.tang}:${b.qty}y`).join('+')})</span>` : ''}${e.remainAfter > 0 ? ` <span style="color:var(--muted);font-size:12px;">(잔여 ${e.remainAfter}${e.unit})</span>` : ''}${e.note ? ` · ${esc(e.note)}` : ''}`}</div>
             <div class="order-btns">
               <button class="btn-out" onclick="openLogEditModal(${e.id})">수정</button>
               <button class="btn-del" onclick="cancelShipmentLogEntry(${e.id})">이 출고 취소</button>
@@ -5746,6 +6054,7 @@ function openOrderReceiveModal(id) {
       `).join('');
       tangSection.classList.remove('hidden');
       jeolManualWrap.classList.add('hidden');
+      document.getElementById('or-jeol-new-tang-list').innerHTML = '';
       updateJeolTangTotal();
     } else {
       stockInfoEl.innerHTML = `현재 이 컬러 재고가 없어요 (0y)`;
@@ -5822,10 +6131,24 @@ function updateJeolTotal() {
   document.getElementById('or-jeol-total').textContent = Math.round(total * 100) / 100;
 }
 
+function addJeolNewTangRow() {
+  const listEl = document.getElementById('or-jeol-new-tang-list');
+  const row = document.createElement('div');
+  row.className = 'or-jeol-new-tang-row';
+  row.style.cssText = 'display:flex; align-items:center; gap:8px; padding:6px 0; border-bottom:1px dashed var(--border);';
+  row.innerHTML = `
+    <span style="font-size:13px; color:#a15c1e; flex:none;">새 탕</span>
+    <input type="number" min="1" placeholder="탕번호" class="or-jeol-new-tang-num" style="width:70px; padding:6px; border:1px solid var(--border); border-radius:6px; font-size:13px;">
+    <input type="number" step="0.1" placeholder="야드(y)" class="or-jeol-new-tang-qty" oninput="updateJeolTangTotal()" style="flex:1; padding:6px; border:1px solid var(--border); border-radius:6px; font-size:13px;">
+    <button onclick="this.closest('.or-jeol-new-tang-row').remove(); updateJeolTangTotal();" style="border:none;background:#fdecea;color:var(--danger);border-radius:6px;padding:0 8px;font-size:12px;flex:none;height:32px;">삭제</button>
+  `;
+  listEl.appendChild(row);
+}
 function updateJeolTangTotal() {
   const inputs = document.querySelectorAll('#or-jeol-tang-list input[data-roll-id]');
   let total = 0;
   inputs.forEach(inp => { total += parseFloat(inp.value) || 0; });
+  document.querySelectorAll('.or-jeol-new-tang-qty').forEach(inp => { total += parseFloat(inp.value) || 0; });
   document.getElementById('or-jeol-tang-total').textContent = Math.round(total * 100) / 100;
 }
 function autoFillJeolTangs() {
@@ -6000,20 +6323,29 @@ async function confirmOrderReceiveInner(o) {
         const amt = parseFloat(inp.value) || 0;
         if (amt > 0) allocations.push({ rollId: parseInt(inp.dataset.rollId), amt });
       });
-      if (allocations.length === 0) { showToast('롤별로 뺄 양을 입력해주세요'); return; }
-      yardsShipped = Math.round(allocations.reduce((s, a) => s + a.amt, 0) * 100) / 100;
+      if (allocations.length === 0 && document.querySelectorAll('.or-jeol-new-tang-qty').length === 0) { showToast('롤별로 뺄 양을 입력해주세요'); return; }
+      let newTangYards = 0;
+      const newTangEntries = [];
+      document.querySelectorAll('.or-jeol-new-tang-row').forEach(row => {
+        const tang = parseInt(row.querySelector('.or-jeol-new-tang-num').value) || 0;
+        const qty = parseFloat(row.querySelector('.or-jeol-new-tang-qty').value) || 0;
+        if (qty > 0) { newTangYards += qty; newTangEntries.push({ tang, qty: Math.round(qty * 100) / 100 }); }
+      });
+      yardsShipped = Math.round((allocations.reduce((s, a) => s + a.amt, 0) + newTangYards) * 100) / 100;
       raw = jeolCount;
       const jeolBreakdown = [];
       for (const a of allocations) {
         const roll = rolls.find(r => r.id === a.rollId);
         if (!roll) continue;
-        const take = Math.min(roll.qty, a.amt);
-        roll.qty = Math.round((roll.qty - take) * 100) / 100;
-        if (take > 0) jeolBreakdown.push({ tang: roll.tang, qty: Math.round(take * 100) / 100 });
+        // 실제 실측이 재고 기록보다 많을 수 있음(적혀있던 것보다 더 나올 수 있음) - 입력한 양을 그대로 믿고 출고, 재고는 그만큼 빠짐(0 밑으로는 안 내려감)
+        const take = a.amt;
+        roll.qty = Math.round(Math.max(0, roll.qty - take) * 100) / 100;
+        if (take > 0) jeolBreakdown.push({ tang: roll.tang, qty: Math.round(take * 100) / 100, rollId: roll.id });
       }
       cleanupDepletedRolls(o.item, resolveInventoryColor(o.item, o.color), allocations.map(a => a.rollId));
       await persistRolls();
-      inv = { ok: true, deducted: yardsShipped, shortBy: 0, breakdown: jeolBreakdown };
+      const deductedFromStock = Math.round(allocations.reduce((s, a) => s + a.amt, 0) * 100) / 100;
+      inv = { ok: true, deducted: deductedFromStock, shortBy: 0, breakdown: [...jeolBreakdown, ...newTangEntries] };
     } else {
       const inputs = document.querySelectorAll('.or-jeol-yard-input');
       const yards = [];
@@ -6039,21 +6371,25 @@ async function confirmOrderReceiveInner(o) {
       });
       const newTangRows = document.querySelectorAll('.or-new-tang-row');
       let newTangTotal = 0;
+      const newTangEntriesY = [];
       newTangRows.forEach(row => {
+        const tang = parseInt(row.querySelector('.or-new-tang-num').value) || 0;
         const amt = parseFloat(row.querySelector('.or-new-tang-qty').value) || 0;
-        newTangTotal += amt;
+        if (amt > 0) { newTangTotal += amt; newTangEntriesY.push({ tang, qty: Math.round(amt * 100) / 100, rollId: null }); }
       });
       if (allocations.length === 0 && newTangTotal <= 0) { showToast('롤별로 출고할 양을 입력해주세요'); return; }
       const breakdown = [];
       for (const a of allocations) {
         const roll = rolls.find(r => r.id === a.rollId);
         if (!roll) continue;
-        const take = Math.min(roll.qty, a.amt);
-        roll.qty = Math.round((roll.qty - take) * 100) / 100;
+        // 실제 실측이 재고 기록보다 많을 수 있음 - 입력한 양을 그대로 믿고 출고, 재고는 그만큼 빠짐(0 밑으로는 안 내려감)
+        const take = a.amt;
+        roll.qty = Math.round(Math.max(0, roll.qty - take) * 100) / 100;
         yardsShipped += take;
         deductedFromStock += take;
-        if (take > 0) breakdown.push({ tang: roll.tang, qty: Math.round(take * 100) / 100 });
+        if (take > 0) breakdown.push({ tang: roll.tang, qty: Math.round(take * 100) / 100, rollId: roll.id });
       }
+      breakdown.push(...newTangEntriesY);
       yardsShipped = Math.round((yardsShipped + newTangTotal) * 100) / 100; // 새 탕 물량은 기존 재고 차감 없이 그대로 출고량에 포함
       deductedFromStock = Math.round(deductedFromStock * 100) / 100; // 새 탕분은 여기 안 들어감 - 취소해도 복원 안 되게
       cleanupDepletedRolls(o.item, resolveInventoryColor(o.item, o.color), allocations.map(a => a.rollId));
@@ -7137,12 +7473,12 @@ async function fixMeiWonNameIfNeeded() {
 }
 
 async function applyDataVersionIfNeeded() {
-  if (settings.dataVersion === DATA_VERSION) return; // 이미 최신
-  await hardResetAll(true);
-  await hardResetOrders(true);
-  settings = { ...settings, dataVersion: DATA_VERSION };
-  await persistSettings();
-  showToast('최신 재고·이월장부 파일로 자동 업데이트됐어요');
+  // 2026년 8월 초, 재고/이월장부를 새 파일 기준으로 한 번 맞춰야 했던 일회성 작업이었어요.
+  // 그 작업은 이미 끝났고, 이제 이 함수는 아무것도 안 해요.
+  // (예전엔 여기서 DATA_VERSION이 안 맞으면 재고/이월장부 전체를 씨앗 데이터로 자동/조용히 덮어썼는데,
+  //  나중에 실수로 DATA_VERSION 값을 건드리기만 해도 모든 기기의 데이터가 통째로 사라질 수 있는 위험한 구조라 없앴어요.
+  //  hardResetAll/hardResetOrders 함수 자체는 아래에 남아있지만, 지금은 아무 버튼도 이 함수들을 안 불러요 - 완전히 안 쓰이는 상태예요.)
+  return;
 }
 
 async function fixLegacyFeeEntriesIfNeeded() {
