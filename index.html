@@ -23,6 +23,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>원단 재고·원가 관리</title>
 <style>
+  @keyframes savingPulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.25; } }
+  #savingBadgeDot { animation: savingPulse 1s infinite; }
   :root {
     --primary: #2c5f7c; --primary-dark: #1e4258; --accent: #d98e4a;
     --bg: #f5f3ef; --card: #ffffff; --danger: #c0392b; --danger-bg: #fdecea;
@@ -182,7 +184,7 @@
   </div>
 </header>
 
-<div id="savingBadge" style="display:none; position:fixed; top:10px; right:10px; background:#333; color:#fff; padding:6px 12px; border-radius:20px; font-size:12px; z-index:100; box-shadow:0 2px 8px rgba(0,0,0,0.2);">💾 저장 중...</div>
+<div id="savingBadge" style="display:none; position:fixed; top:0; left:0; right:0; background:#1a1a1a; color:#fff; padding:12px 16px; font-size:14px; font-weight:700; z-index:2147483647; text-align:center; align-items:center; justify-content:center; gap:8px; box-shadow:0 2px 10px rgba(0,0,0,0.3);"><span id="savingBadgeDot" style="display:inline-block; width:9px; height:9px; border-radius:50%; background:#fff; margin-right:6px;"></span>저장 중이에요 - 저장이 끝날 때까지 화면을 벗어나지 마세요</div>
 <div class="rate-bar" id="rateBar">
   환율 <b id="rateDisplay">-</b>원/위안 · 야드환산 <b id="yardDisplay">-</b> · 운임 <b id="shipDisplay">-</b>원
   <button onclick="openRateModal()">환율 수정</button>
@@ -782,7 +784,7 @@ const PASSWORD = "3059";
 const ADMIN_PASSWORD = "9503"; // 매출/미수금 탭 전용 - 필요하면 이 값만 바꿔서 변경 가능
 const LOW_STOCK_THRESHOLD = 100;
 const DATA_VERSION = "2026-08-03-v4"; // 재고/이월장부 씨앗 데이터를 바꿀 때마다 이 값을 새로 바꿔주세요
-const APP_CODE_VERSION = "2026-08-21-f"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
+const APP_CODE_VERSION = "2026-08-21-i"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
 const SCHEMA_STAMP = 2; // 서버 저장규칙이 확인하는 "최신 앱 도장" - 절대 자주 바꾸지 않음(이 값을 아는 코드만 저장 가능하게 서버에서 막을 때 씀)
 
 const firebaseConfig = {
@@ -1164,7 +1166,7 @@ let pendingWriteCount = 0; // 지금 서버로 저장 중인 작업 개수 - 0�
 function beginWrite() {
   pendingWriteCount++;
   const badge = document.getElementById('savingBadge');
-  if (badge) badge.style.display = 'block';
+  if (badge) badge.style.display = 'flex';
 }
 function endWrite() {
   pendingWriteCount = Math.max(0, pendingWriteCount - 1);
@@ -7769,7 +7771,7 @@ function showVersionOutdatedBanner() {
   if (document.getElementById('versionOutdatedBanner')) return;
   const overlay = document.createElement('div');
   overlay.id = 'versionOutdatedBanner';
-  overlay.style.cssText = 'position:fixed; inset:0; background:rgba(20,20,20,0.92); color:#fff; z-index:99999; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; padding:24px;';
+  overlay.style.cssText = 'position:fixed; inset:0; background:rgba(20,20,20,0.92); color:#fff; z-index:2147483647; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; padding:24px; touch-action:none;';
   overlay.innerHTML = `
     <div style="font-size:42px; margin-bottom:14px;">⚠️</div>
     <div style="font-size:19px; font-weight:800; margin-bottom:8px;">새 버전이 있어요</div>
@@ -7777,8 +7779,40 @@ function showVersionOutdatedBanner() {
     <button onclick="location.reload()" style="border:none;background:#fff;color:#111;border-radius:10px;padding:14px 30px;font-size:16px;font-weight:800;">지금 새로고침</button>
   `;
   document.body.appendChild(overlay);
+  document.body.style.overflow = 'hidden'; // 뒤에서 스크롤도 안 되게
+
+  // 일부 모바일 브라우저는 z-index로 위에 띄우는 것만으론 뒤에 있는 화면의 터치까지 완전히 안 막힐 수 있어서,
+  // 문서 전체에서 터치/클릭 자체를 강제로 가로채서 막음 (경고창 안, 즉 새로고침 버튼은 예외로 허용)
+  const blockOutside = (e) => {
+    if (overlay.contains(e.target)) return;
+    e.preventDefault();
+    e.stopPropagation();
+  };
+  document.addEventListener('touchstart', blockOutside, { capture: true, passive: false });
+  document.addEventListener('touchend', blockOutside, { capture: true, passive: false });
+  document.addEventListener('touchmove', blockOutside, { capture: true, passive: false });
+  document.addEventListener('mousedown', blockOutside, { capture: true });
+  document.addEventListener('click', blockOutside, { capture: true });
+
   setTimeout(() => location.reload(), 3000); // 혹시 못 누르는 상황이어도 잠시 후 자동으로 넘어가게
 }
+
+// 모바일은 앱을 완전히 새로 켜는 게 아니라, 백그라운드에 있다가 그대로 화면만 다시 보여주는 경우가 흔함
+// (홈 화면 아이콘 등) - 그 경우 새로고침이 아예 안 일어나서 예전 코드가 계속 이어질 수 있어서, 화면이 다시 보일 때마다 최신인지 재확인함
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState !== 'visible' || !useFirebase || !db) return;
+  db.collection('inventory').doc('appVersion').get().then((doc) => {
+    const remoteVersion = doc.exists ? doc.data().version : null;
+    if (remoteVersion != null && remoteVersion > APP_CODE_VERSION) {
+      showVersionOutdatedBanner();
+    }
+  }).catch(() => {});
+});
+// 브라우저가 예전 화면을 통째로 기억해뒀다가(뒤로가기 등) 그대로 복원하는 경우도, 안전하게 강제로 새로고침시킴
+window.addEventListener('pageshow', (event) => {
+  if (event.persisted) location.reload();
+});
+
 async function init() {
   document.getElementById('rateBar').classList.add('hidden');
   watchAppVersion();
