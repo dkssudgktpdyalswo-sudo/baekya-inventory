@@ -782,7 +782,7 @@ const PASSWORD = "3059";
 const ADMIN_PASSWORD = "9503"; // 매출/미수금 탭 전용 - 필요하면 이 값만 바꿔서 변경 가능
 const LOW_STOCK_THRESHOLD = 100;
 const DATA_VERSION = "2026-08-03-v4"; // 재고/이월장부 씨앗 데이터를 바꿀 때마다 이 값을 새로 바꿔주세요
-const APP_CODE_VERSION = "2026-08-21-b"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
+const APP_CODE_VERSION = "2026-08-21-d"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
 const SCHEMA_STAMP = 2; // 서버 저장규칙이 확인하는 "최신 앱 도장" - 절대 자주 바꾸지 않음(이 값을 아는 코드만 저장 가능하게 서버에서 막을 때 씀)
 
 const firebaseConfig = {
@@ -2193,16 +2193,16 @@ function renderCost() {
 
     const div = document.createElement('div');
     div.className = 'cost-row';
+    if (colorsForItem.length > 0) { div.style.cursor = 'pointer'; div.onclick = () => toggleGroup(gk); }
     div.innerHTML = `
       <div>
-        <div class="name">${esc(c.item)}</div>
+        <div class="name">${esc(c.item)}${colorsForItem.length > 0 ? ` <span style="font-size:11px; color:var(--muted); font-weight:400;">${isOpen ? '(컬러별 접기 ▲)' : '(눌러서 컬러별 보기 ▼)'}</span>` : ''}</div>
         <div class="sub">분류 ${esc(c.cat)} · ${c.type === 'domestic' ? '국내산 고정가' : ('중국단가 ' + c.price + '위안/m')}</div>
         ${c.type === 'domestic' ? '<div class="sub" style="color:#2f6b46;">환율 미적용 (적혀있는 금액 그대로)</div>' : ''}
         ${overridesForItem.length > 0 ? `<div class="sub" style="color:#a15c1e;">가공비 추가된 컬러 ${overridesForItem.length}개</div>` : ''}
         <div class="btns">
-          <button class="btn-out" onclick="openCostEditModal(${c.id})">수정</button>
-          <button class="btn-del" onclick="deleteCost(${c.id})">삭제</button>
-          ${colorsForItem.length > 0 ? `<button class="btn-out" onclick="toggleGroup('${escAttr(gk)}')">${isOpen ? '컬러별 접기' : '컬러별 보기/수정'}</button>` : ''}
+          <button class="btn-out" onclick="event.stopPropagation(); openCostEditModal(${c.id})">수정</button>
+          <button class="btn-del" onclick="event.stopPropagation(); deleteCost(${c.id})">삭제</button>
         </div>
       </div>
       <div class="price">
@@ -2216,25 +2216,30 @@ function renderCost() {
       const colorWrap = document.createElement('div');
       colorWrap.style.cssText = 'background:#faf8f4; border-radius:10px; padding:10px 12px; margin:-6px 0 10px;';
       colorWrap.innerHTML = `
-        <div style="font-size:12px; color:var(--muted); margin-bottom:6px;">기본은 위 원가(${won.toLocaleString()}원/y, 환율 바뀌면 자동으로 같이 바뀌어요)가 그대로 적용돼요. 이 컬러만 다르면 아래에서 바꾸세요 (둘 다 넣어도 돼요).</div>
+        <div style="font-size:12px; color:var(--muted); margin-bottom:6px;">기본은 위 원가(${won.toLocaleString()}원/y, 환율 바뀌면 자동으로 같이 바뀌어요)가 그대로 적용돼요. 이 컬러만 다르면 아래에 적으세요 - 입력하고 다른 곳 누르면 자동으로 저장돼요.</div>
         ${colorsForItem.map(color => {
           const override = overridesForItem.find(x => String(x.color).trim() === color);
           const priceInputId = `cost-color-price-${c.id}-${escAttr(color).replace(/[^a-zA-Z0-9]/g, '_')}`;
           const feeInputId = `cost-color-fee-${c.id}-${escAttr(color).replace(/[^a-zA-Z0-9]/g, '_')}`;
+          const wonDisplayId = `cost-color-won-${c.id}-${escAttr(color).replace(/[^a-zA-Z0-9]/g, '_')}`;
+          const colorWon = Math.round(getCostPerYard(c.item, color));
+          const isDifferent = colorWon !== won;
           return `
             <div style="padding:6px 0; border-bottom:1px dashed var(--border);">
-              <div style="font-size:13px; font-weight:600; margin-bottom:4px;">${esc(color)}</div>
+              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+                <span style="font-size:13px; font-weight:600;">${esc(color)}</span>
+                <span id="${wonDisplayId}" style="font-size:13px; font-weight:700; color:${isDifferent ? '#a15c1e' : 'var(--muted)'};">${colorWon.toLocaleString()}원/y</span>
+              </div>
               <div style="display:flex; align-items:center; gap:6px; margin-bottom:4px;">
                 <span style="font-size:11px; color:var(--muted); width:100px; flex:none;">이 컬러만 중국단가</span>
-                <input type="number" step="0.1" id="${priceInputId}" placeholder="${c.type === 'domestic' ? '해당없음(국내산)' : '품목 기본단가 사용'}" value="${override && override.price != null ? override.price : ''}" ${c.type === 'domestic' ? 'disabled' : ''} style="width:100px; padding:6px; border:1px solid var(--border); border-radius:6px; font-size:13px;">
+                <input type="number" step="0.1" id="${priceInputId}" placeholder="${c.type === 'domestic' ? '해당없음(국내산)' : '품목 기본단가 사용'}" value="${override && override.price != null ? override.price : ''}" ${c.type === 'domestic' ? 'disabled' : ''} onblur="autoSaveCostColorOverride('${escAttr(c.item)}', '${escAttr(color)}', '${priceInputId}', '${feeInputId}', '${wonDisplayId}')" style="width:100px; padding:6px; border:1px solid var(--border); border-radius:6px; font-size:13px;">
                 <span style="font-size:11px; color:var(--muted);">위안/m (환율 자동 적용)</span>
               </div>
               <div style="display:flex; align-items:center; gap:6px;">
                 <span style="font-size:11px; color:var(--muted); width:100px; flex:none;">가공비 추가</span>
-                <input type="number" step="1" id="${feeInputId}" placeholder="0" value="${override && override.fee ? override.fee : ''}" style="width:100px; padding:6px; border:1px solid var(--border); border-radius:6px; font-size:13px;">
+                <input type="number" step="1" id="${feeInputId}" placeholder="0" value="${override && override.fee ? override.fee : ''}" onblur="autoSaveCostColorOverride('${escAttr(c.item)}', '${escAttr(color)}', '${priceInputId}', '${feeInputId}', '${wonDisplayId}')" style="width:100px; padding:6px; border:1px solid var(--border); border-radius:6px; font-size:13px;">
                 <span style="font-size:11px; color:var(--muted);">원/y (고정, 환율 영향 없음)</span>
               </div>
-              <button onclick="saveCostColorOverride('${escAttr(c.item)}', '${escAttr(color)}', '${priceInputId}', '${feeInputId}')" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:6px;padding:5px 10px;font-size:11px;margin-top:4px;">저장</button>
             </div>
           `;
         }).join('')}
@@ -2243,31 +2248,28 @@ function renderCost() {
     }
   }
 }
-async function saveCostColorOverride(item, color, priceInputId, feeInputId) {
+async function autoSaveCostColorOverride(item, color, priceInputId, feeInputId, wonDisplayId) {
   const priceRaw = document.getElementById(priceInputId).value;
   const feeRaw = document.getElementById(feeInputId).value;
   const existing = costs.find(x => String(x.item).trim() === String(item).trim() && x.color && String(x.color).trim() === String(color).trim());
   const price = priceRaw.trim() === '' ? null : parseFloat(priceRaw);
   const fee = feeRaw.trim() === '' ? 0 : parseFloat(feeRaw);
-  if ((priceRaw.trim() !== '' && (isNaN(price) || price <= 0)) || isNaN(fee) || fee < 0) { showToast('금액을 확인해주세요'); return; }
+  if ((priceRaw.trim() !== '' && (isNaN(price) || price <= 0)) || isNaN(fee) || fee < 0) return; // 잘못된 값이면 조용히 무시 (포커스 벗어날 때마다 매번 물어보면 번거로우니까)
+
   if (price == null && fee === 0) {
-    // 둘 다 비워두면(또는 0), 이 컬러의 등록 자체를 지워서 기본값만 쓰게 함
-    if (existing) {
-      costs = costs.filter(x => x.id !== existing.id);
-      await persistCosts();
-      render();
-      showToast('기본값을 다시 쓰도록 되돌렸어요');
-    }
-    return;
-  }
-  if (existing) {
-    existing.price = price; existing.fee = fee;
+    if (existing) { costs = costs.filter(x => x.id !== existing.id); await persistCosts(); }
+  } else if (existing) {
+    existing.price = price; existing.fee = fee; await persistCosts();
   } else {
-    costs.push({ id: nextCostId++, item, color, isColorFee: true, price, fee });
+    costs.push({ id: nextCostId++, item, color, isColorFee: true, price, fee }); await persistCosts();
   }
-  await persistCosts();
-  render();
-  showToast(`${color} 원가를 저장했어요`);
+
+  // 화면 전체를 다시 그리면 입력 중이던 포커스가 끊기니까, 이 컬러의 미리보기 금액만 딱 바로 갱신
+  const wonEl = document.getElementById(wonDisplayId);
+  if (wonEl) {
+    const newWon = Math.round(getCostPerYard(item, color));
+    wonEl.textContent = `${newWon.toLocaleString()}원/y`;
+  }
 }
 
 function onCostTypeChange() {
