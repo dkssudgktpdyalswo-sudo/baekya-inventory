@@ -241,20 +241,15 @@
 <div class="modal-overlay" id="addModal">
   <div class="modal">
     <h3>새 롤 입고</h3>
-    <p style="font-size:12px;color:var(--muted);margin-top:-6px;">새 품목이면 자유롭게 적어주시고, 기존 품목이면 목록에서 골라주세요.</p>
+    <p style="font-size:12px;color:var(--muted);margin-top:-6px;">새 품목이면 자유롭게 적어주시고, 기존 품목이면 목록에서 골라주세요. 컬러는 여러 개를 한 번에 등록할 수 있어요.</p>
     <label>입고날짜</label>
     <input id="f-date" type="date">
     <label>품번</label>
-    <input id="f-item" placeholder="예: 350" autocomplete="off" oninput="showItemSuggestions(this); updateAddModalStockInfo();" onfocus="showItemSuggestions(this)" onblur="hideItemSuggestionsDelayed()">
-    <label>칼라</label>
-    <input id="f-color" placeholder="예: 검정 (기존 컬러면 목록에서 선택)" autocomplete="off" oninput="showColorSuggestions(this,'f-item'); updateAddModalStockInfo();" onfocus="showColorSuggestions(this,'f-item')" onblur="hideItemSuggestionsDelayed()">
-    <div id="f-stock-info" class="hidden" style="font-size:13px; color:var(--primary-dark); background:#eef3f8; border-radius:8px; padding:8px 10px; margin-bottom:8px;"></div>
-    <label>스왓치 순번 (선택 - 지정하면 그 번호로 넣고 기존 컬러들은 자동으로 한 칸씩 밀려요)</label>
-    <input id="f-swatch-order" type="number" min="1" placeholder="예: 8">
+    <input id="f-item" placeholder="예: 350" autocomplete="off" oninput="showItemSuggestions(this)" onfocus="showItemSuggestions(this)" onblur="hideItemSuggestionsDelayed()">
 
-    <label>탕별 마수 (한 번에 여러 탕 입고 가능)</label>
-    <div id="f-roll-list"></div>
-    <button onclick="addRollRow()" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;margin-top:6px;">+ 탕 추가</button>
+    <label style="margin-top:10px;">컬러별로 입고</label>
+    <div id="f-color-blocks"></div>
+    <button onclick="addColorBlock()" style="border:none;background:#fff3d6;color:#a15c1e;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;margin-top:6px;">+ 컬러 추가</button>
 
     <div class="modal-actions">
       <button class="btn-cancel" onclick="closeAddModal()">취소</button>
@@ -784,7 +779,7 @@ const PASSWORD = "3059";
 const ADMIN_PASSWORD = "9503"; // 매출/미수금 탭 전용 - 필요하면 이 값만 바꿔서 변경 가능
 const LOW_STOCK_THRESHOLD = 100;
 const DATA_VERSION = "2026-08-03-v4"; // 재고/이월장부 씨앗 데이터를 바꿀 때마다 이 값을 새로 바꿔주세요
-const APP_CODE_VERSION = "2026-08-24-a"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
+const APP_CODE_VERSION = "2026-08-24-d"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
 const SCHEMA_STAMP = 2; // 서버 저장규칙이 확인하는 "최신 앱 도장" - 절대 자주 바꾸지 않음(이 값을 아는 코드만 저장 가능하게 서버에서 막을 때 씀)
 
 const firebaseConfig = {
@@ -1740,7 +1735,7 @@ function renderInv() {
         <div class="group-head" onclick="event.stopPropagation(); toggleGroup('${escAttr(ck)}')">
           ${sw && sw.order != null ? `<div class="swatch-num">${sw.order}</div>` : `<div class="swatch-num swatch-num-empty">-</div>`}
           <div class="info">
-            <div class="name">${esc(g.color)}</div>
+            <div class="name">${esc(g.color)}${sw && sw.chinaCode ? ` <span style="font-size:11px; color:var(--muted); font-weight:400;">(중국품번 ${esc(sw.chinaCode)})</span>` : ''}</div>
             <div class="sub">${total > 0 ? `롤 ${normalRolls.length}개` : '재고 없음'}${defectiveTotal > 0 ? ` · <span style="color:var(--danger);font-weight:700;">불량 ${defectiveTotal.toLocaleString()}y</span>` : ''}</div>
             <div style="margin-top:4px; display:flex; gap:4px; flex-wrap:wrap;">
               <button onclick="event.stopPropagation(); openSwatchEditModal('${escAttr(g.cat)}','${escAttr(g.item)}','${escAttr(g.color)}')" style="border:none;background:#f1eee7;color:var(--muted);border-radius:6px;padding:3px 8px;font-size:11px;">스왓치·중국품번 수정</button>
@@ -1951,26 +1946,48 @@ function toggleSalesDropdown(id) { document.getElementById(id).classList.toggle(
 function openRollAddModal() {
   document.getElementById('f-date').value = toDateInputValue(todayStr());
   document.getElementById('f-item').value = '';
-  document.getElementById('f-color').value = '';
-  document.getElementById('f-swatch-order').value = '';
-  document.getElementById('f-stock-info').classList.add('hidden');
-  document.getElementById('f-roll-list').innerHTML = '';
-  addRollRow();
+  document.getElementById('f-color-blocks').innerHTML = '';
+  addColorBlock();
   document.getElementById('addModal').classList.add('open');
 }
 function openRollAddModalFor(item, color) {
   document.getElementById('f-date').value = toDateInputValue(todayStr());
   document.getElementById('f-item').value = item;
-  document.getElementById('f-color').value = color;
-  document.getElementById('f-roll-list').innerHTML = '';
-  addRollRow();
-  updateAddModalStockInfo();
+  document.getElementById('f-color-blocks').innerHTML = '';
+  addColorBlock(color);
   document.getElementById('addModal').classList.add('open');
 }
-function updateAddModalStockInfo() {
+let colorBlockSeq = 0;
+function addColorBlock(colorVal) {
+  colorBlockSeq++;
+  const listEl = document.getElementById('f-color-blocks');
+  const block = document.createElement('div');
+  block.className = 'f-color-block';
+  block.dataset.seq = colorBlockSeq;
+  block.style.cssText = 'border:1px solid var(--border); border-radius:10px; padding:10px; margin-top:10px; background:#faf8f4;';
+  block.innerHTML = `
+    <div style="display:flex; gap:8px; align-items:center;">
+      <input type="text" class="f-block-color" placeholder="칼라 (예: 검정)" value="${escAttr(colorVal || '')}" autocomplete="off" oninput="showColorSuggestions(this, document.getElementById('f-item')); updateBlockStockInfo(this)" onfocus="showColorSuggestions(this, document.getElementById('f-item'))" onblur="hideItemSuggestionsDelayed()" style="flex:1;">
+      <button onclick="this.closest('.f-color-block').remove()" style="border:none;background:#fdecea;color:var(--danger);border-radius:8px;padding:0 10px;font-size:12px;flex:none;height:38px;">이 컬러 삭제</button>
+    </div>
+    <div class="f-block-stock-info hidden" style="font-size:12px; color:var(--primary-dark); background:#eef3f8; border-radius:8px; padding:6px 8px; margin-top:6px;"></div>
+    <div class="row2" style="margin-top:6px;">
+      <div><label style="font-size:12px;">중국품번 (선택 - 공장 다르면 다르게)</label><input type="text" class="f-block-chinacode" placeholder="예: A-1234"></div>
+      <div><label style="font-size:12px;">스왓치 순번 (선택)</label><input type="number" min="1" class="f-block-swatch" placeholder="예: 8"></div>
+    </div>
+    <label style="font-size:12px; margin-top:6px;">탕별 마수 (한 번에 여러 탕 입고 가능)</label>
+    <div class="f-block-rolls"></div>
+    <button onclick="addRollRowToBlock(this)" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:8px;padding:6px 10px;font-size:12px;font-weight:600;margin-top:6px;">+ 탕 추가</button>
+  `;
+  listEl.appendChild(block);
+  addRollRowToBlock(block.querySelector('.f-block-rolls'));
+  if (colorVal) updateBlockStockInfo(block.querySelector('.f-block-color'));
+}
+function updateBlockStockInfo(colorInputEl) {
+  const block = colorInputEl.closest('.f-color-block');
   const item = document.getElementById('f-item').value.trim();
-  const color = document.getElementById('f-color').value.trim();
-  const infoEl = document.getElementById('f-stock-info');
+  const color = colorInputEl.value.trim();
+  const infoEl = block.querySelector('.f-block-stock-info');
   if (!item || !color) { infoEl.classList.add('hidden'); return; }
   const existing = findInventoryRolls(item, color);
   if (existing.length === 0) {
@@ -1982,12 +1999,15 @@ function updateAddModalStockInfo() {
   for (const r of existing) byTang.set(r.tang, Math.round(((byTang.get(r.tang) || 0) + r.qty) * 100) / 100);
   const maxTang = Math.max(...existing.map(r => r.tang));
   const tangText = Array.from(byTang.entries()).sort((a, b) => a[0] - b[0]).map(([t, q]) => `탕${t}(${q}y)`).join(' · ');
-  infoEl.innerHTML = `현재 재고: ${tangText} — 새 탕이면 <b>탕${maxTang + 1}</b>로 입력하시면 돼요`;
+  // 0y로 비어있는 탕(예전에 다 나가서 빈 채로 남아있는 것)이 있으면, 새 탕번호로 건너뛰지 말고 그 빈 탕을 먼저 채우도록 제안
+  const emptyTang = Array.from(byTang.entries()).find(([t, q]) => q === 0);
+  const suggestion = emptyTang ? `<b>탕${emptyTang[0]}</b>(지금 비어있음)` : `새 탕이면 <b>탕${maxTang + 1}</b>`;
+  infoEl.innerHTML = `현재 재고: ${tangText} — ${suggestion}로 입력하시면 돼요`;
   infoEl.classList.remove('hidden');
 }
 function closeAddModal() { document.getElementById('addModal').classList.remove('open'); }
-function addRollRow() {
-  const listEl = document.getElementById('f-roll-list');
+function addRollRowToBlock(elInBlock) {
+  const listEl = elInBlock.classList && elInBlock.classList.contains('f-block-rolls') ? elInBlock : elInBlock.closest('.f-color-block').querySelector('.f-block-rolls');
   const existingRows = listEl.querySelectorAll('.f-roll-tang');
   const lastTangVal = existingRows.length > 0 ? existingRows[existingRows.length - 1].value : '1';
   const row = document.createElement('div');
@@ -1996,6 +2016,7 @@ function addRollRow() {
   row.style.padding = '8px';
   row.style.border = '1px solid var(--border)';
   row.style.borderRadius = '8px';
+  row.style.background = '#fff';
   row.innerHTML = `
     <div style="display:flex; gap:8px; align-items:center;">
       <input type="number" min="1" value="${lastTangVal || 1}" placeholder="탕번호" class="f-roll-tang" style="flex:1;">
@@ -2024,52 +2045,85 @@ function autoDeriveCat(item) {
 }
 async function saveAdd() {
   const item = document.getElementById('f-item').value.trim();
-  const color = document.getElementById('f-color').value.trim();
-  if (!item || !color) { showToast('품번, 칼라를 확인해주세요'); return; }
+  if (!item) { showToast('품번을 확인해주세요'); return; }
   const inDate = fromDateInputValue(document.getElementById('f-date').value) || todayStr();
-
-  const rowEls = document.querySelectorAll('.f-roll-row');
-  const entries = [];
-  rowEls.forEach(rowEl => {
-    const tang = parseInt(rowEl.querySelector('.f-roll-tang').value) || 1;
-    const qty = parseFloat(rowEl.querySelector('.f-roll-qty').value);
-    const defective = rowEl.querySelector('.f-roll-defective').checked;
-    const reason = rowEl.querySelector('.f-roll-reason').value.trim();
-    const costRaw = rowEl.querySelector('.f-roll-cost').value;
-    const costPerY = costRaw ? parseFloat(costRaw) : null;
-    if (!isNaN(qty) && qty >= 0) entries.push({ tang, qty, defective, reason, costPerY }); // 0을 입력하면 재고 없이 품목만 미리 등록됨
-  });
-  if (entries.length === 0) { showToast('마수를 입력해주세요 (재고 없이 미리 등록만 하시려면 0을 입력하세요)'); return; }
-
   const cat = autoDeriveCat(item);
-  // 이 컬러에 남아있던 0y짜리 자리표시용 롤은 정리 (실재고가 새로 들어오니까)
-  rolls = rolls.filter(r => !(String(r.item).trim() === item && String(r.color).trim() === color && r.qty === 0 && !r.defective));
-  for (const en of entries) {
-    rolls.push({ id: nextId++, cat, item, color, tang: en.tang, qty: en.qty, defective: en.defective, defectReason: en.defective ? en.reason : '', inDate, costPerY: en.costPerY });
-  }
-  await persistRolls();
 
-  const orderRaw = document.getElementById('f-swatch-order').value.trim();
-  if (orderRaw !== '') {
-    const order = parseInt(orderRaw);
-    let sw = findExactSwatch(cat, item, color);
-    const conflict = swatchInfo.some(s => String(s.item).trim() === String(item).trim() && s.order === order && String(s.color).trim() !== String(color).trim());
-    if (conflict) {
-      const t_item = String(item).trim();
-      const toShift = swatchInfo.filter(s => String(s.item).trim() === t_item && s.order != null && s.order >= order && String(s.color).trim() !== String(color).trim());
-      toShift.sort((a, b) => b.order - a.order);
-      for (const s of toShift) s.order = s.order + 1;
+  const blocks = document.querySelectorAll('.f-color-block');
+  if (blocks.length === 0) { showToast('컬러를 하나 이상 추가해주세요'); return; }
+
+  let totalEntries = 0;
+  let totalColors = 0;
+  for (const block of blocks) {
+    const color = block.querySelector('.f-block-color').value.trim();
+    if (!color) continue;
+    const chinaRaw = block.querySelector('.f-block-chinacode').value.trim();
+    const swatchRaw = block.querySelector('.f-block-swatch').value.trim();
+
+    const rowEls = block.querySelectorAll('.f-roll-row');
+    const entries = [];
+    rowEls.forEach(rowEl => {
+      const tang = parseInt(rowEl.querySelector('.f-roll-tang').value) || 1;
+      const qty = parseFloat(rowEl.querySelector('.f-roll-qty').value);
+      const defective = rowEl.querySelector('.f-roll-defective').checked;
+      const reason = rowEl.querySelector('.f-roll-reason').value.trim();
+      const costRaw = rowEl.querySelector('.f-roll-cost').value;
+      const costPerY = costRaw ? parseFloat(costRaw) : null;
+      if (!isNaN(qty) && qty >= 0) entries.push({ tang, qty, defective, reason, costPerY });
+    });
+    if (entries.length === 0) continue;
+
+    // 이 컬러에 남아있던 0y짜리 자리표시용 롤은 정리 (실재고가 새로 들어오니까)
+    rolls = rolls.filter(r => !(String(r.item).trim() === item && String(r.color).trim() === color && r.qty === 0 && !r.defective));
+    for (const en of entries) {
+      if (en.defective) {
+        rolls.push({ id: nextId++, cat, item, color, tang: en.tang, qty: en.qty, defective: true, defectReason: en.reason, inDate, costPerY: en.costPerY });
+        continue;
+      }
+      const conflict = rolls.find(r => String(r.item).trim() === item && String(r.color).trim() === color && r.tang === en.tang && !r.defective && r.qty > 0);
+      if (conflict) {
+        if (confirm(`탕${en.tang}에 이미 재고 ${conflict.qty}y가 있어요.\n이번에 입고한 ${en.qty}y를 여기에 합칠까요?\n("취소"를 누르면 다른 탕 번호로 새로 등록해주세요 - 이번 탕은 건너뛸게요)`)) {
+          conflict.qty = Math.round((conflict.qty + en.qty) * 100) / 100;
+          if (en.costPerY != null) conflict.costPerY = en.costPerY;
+        } else {
+          showToast(`탕${en.tang}은(는) 건너뛰었어요 - 다른 탕 번호로 다시 등록해주세요`);
+        }
+        continue;
+      }
+      rolls.push({ id: nextId++, cat, item, color, tang: en.tang, qty: en.qty, defective: false, defectReason: '', inDate, costPerY: en.costPerY });
     }
-    if (!sw) {
-      sw = { id: nextSwatchId++, cat, item, color, order: null, chinaCode: null };
-      swatchInfo.push(sw);
+    totalEntries += entries.length;
+    totalColors++;
+
+    // 스왓치 순번/중국품번 처리 - 컬러마다 독립적으로
+    if (swatchRaw !== '' || chinaRaw !== '') {
+      let sw = findExactSwatch(cat, item, color);
+      if (swatchRaw !== '') {
+        const order = parseInt(swatchRaw);
+        const conflict = swatchInfo.some(s => String(s.item).trim() === String(item).trim() && s.order === order && String(s.color).trim() !== String(color).trim());
+        if (conflict) {
+          const t_item = String(item).trim();
+          const toShift = swatchInfo.filter(s => String(s.item).trim() === t_item && s.order != null && s.order >= order && String(s.color).trim() !== String(color).trim());
+          toShift.sort((a, b) => b.order - a.order);
+          for (const s of toShift) s.order = s.order + 1;
+        }
+        if (!sw) { sw = { id: nextSwatchId++, cat, item, color, order: null, chinaCode: null }; swatchInfo.push(sw); }
+        sw.order = order;
+      }
+      if (chinaRaw !== '') {
+        if (!sw) { sw = { id: nextSwatchId++, cat, item, color, order: null, chinaCode: null }; swatchInfo.push(sw); }
+        sw.chinaCode = chinaRaw;
+      }
     }
-    sw.order = order;
-    await persistSwatchInfo();
   }
+
+  if (totalEntries === 0) { showToast('컬러와 마수를 확인해주세요 (재고 없이 미리 등록만 하시려면 0을 입력하세요)'); return; }
+
+  await persistRolls();
+  await persistSwatchInfo();
 
   closeAddModal(); render();
-  showToast(`입고 등록되었습니다 (${entries.length}개 탕)`);
+  showToast(`입고 등록되었습니다 (컬러 ${totalColors}개, 탕 ${totalEntries}개)`);
 }
 
 function openOutModal(id) {
@@ -2097,6 +2151,30 @@ async function confirmOut() {
 async function openRollEditModal(id) {
   const r = rolls.find(x => x.id === id);
   if (!r) return;
+
+  const tangRaw = prompt(`${r.item} · ${r.color} · 지금 탕${r.tang}\n탕 번호를 잘못 입력하셨으면 여기서 고치세요 (안 바꾸시려면 그대로 확인만 눌러주세요)`, String(r.tang));
+  if (tangRaw === null) return;
+  const newTang = parseInt(tangRaw);
+  if (isNaN(newTang) || newTang < 1) { showToast('탕 번호를 확인해주세요'); return; }
+  if (newTang !== r.tang) {
+    const conflict = rolls.find(x => x.id !== r.id && String(x.item).trim() === String(r.item).trim() && String(x.color).trim() === String(r.color).trim() && x.tang === newTang && !x.defective);
+    if (conflict) {
+      if (!confirm(`탕${newTang}에 이미 다른 재고(${conflict.qty}y)가 있어요.\n합칠까요? ("취소"를 누르면 탕 번호는 안 바뀌고 그대로 진행돼요)`)) {
+        // 합치기 취소 - 탕 번호는 그대로 두고 마수 수정으로만 진행
+      } else {
+        conflict.qty = Math.round((conflict.qty + r.qty) * 100) / 100;
+        if (r.costPerY != null && conflict.costPerY == null) conflict.costPerY = r.costPerY;
+        rolls = rolls.filter(x => x.id !== r.id);
+        await persistRolls();
+        render();
+        showToast(`탕${newTang}으로 합쳤습니다`);
+        return;
+      }
+    } else {
+      r.tang = newTang;
+    }
+  }
+
   const raw = prompt(`${r.item} · ${r.color} · 탕${r.tang}\n새 마수(y)를 입력하세요 (0을 입력하면 "재고 없음"으로 처리돼요)`, String(r.qty));
   if (raw === null) return;
   const newQty = parseFloat(raw);
@@ -6814,7 +6892,7 @@ function addReturnRow(item, color, unit, note) {
     </div>
     <div style="display:flex; gap:6px; align-items:center; margin-top:6px;">
       <label style="font-size:12px; color:var(--muted); flex:none;">반품시 재고로 넣을 탕</label>
-      <input type="number" step="1" min="1" class="ret-row-tang" value="1" style="width:60px; flex:none;">
+      <input type="number" step="1" min="1" class="ret-row-tang" value="1" oninput="this.dataset.userEdited='1'" style="width:60px; flex:none;">
       <span class="ret-row-tang-hint" style="font-size:11px; color:var(--muted); flex:1;"></span>
     </div>
     <div style="display:flex; gap:6px; align-items:center; margin-top:6px;">
@@ -6830,10 +6908,26 @@ function updateReturnRowTangHint(fromEl) {
   const item = row.querySelector('.ret-row-item').value.trim();
   const color = row.querySelector('.ret-row-color').value.trim();
   const hintEl = row.querySelector('.ret-row-tang-hint');
+  const tangInput = row.querySelector('.ret-row-tang');
   if (!item) { hintEl.textContent = ''; return; }
-  const matching = rolls.filter(r => String(r.item).trim() === item && String(r.color).trim() === color && !r.defective && r.qty > 0);
-  if (matching.length === 0) { hintEl.textContent = '(지금 이 컬러 재고 없음 - 새 탕1로 들어가요)'; return; }
-  hintEl.textContent = '지금 탕: ' + matching.sort((a, b) => a.tang - b.tang).map(r => `탕${r.tang}(${r.qty}y)`).join(', ');
+  const allMatching = rolls.filter(r => String(r.item).trim() === item && String(r.color).trim() === color && !r.defective);
+  const stocked = allMatching.filter(r => r.qty > 0);
+  if (allMatching.length === 0) {
+    hintEl.textContent = '(지금 이 컬러 재고 없음 - 새 탕1로 들어가요)';
+    if (!tangInput.dataset.userEdited) tangInput.value = 1;
+    return;
+  }
+  hintEl.textContent = '지금 탕: ' + stocked.sort((a, b) => a.tang - b.tang).map(r => `탕${r.tang}(${r.qty}y)`).join(', ');
+  // 사용자가 직접 탕번호를 안 건드렸으면, 실수로 기존 재고에 합쳐지지 않게 자동으로 빈 탕/새 탕 번호를 채워줌
+  if (!tangInput.dataset.userEdited) {
+    const emptyTang = allMatching.find(r => r.qty === 0);
+    if (emptyTang) {
+      tangInput.value = emptyTang.tang;
+    } else {
+      const maxTang = allMatching.length > 0 ? Math.max(...allMatching.map(r => r.tang)) : 0;
+      tangInput.value = maxTang + 1;
+    }
+  }
 }
 function resetReturnRows(item, color, unit, note) {
   document.getElementById('ret-multi-rows').innerHTML = '';
@@ -7175,10 +7269,21 @@ async function confirmReturn() {
       if (hasKnownItem(item)) {
         const resolvedColor = resolveInventoryColor(item, color);
         const existingCat = (rolls.find(r => String(r.item).trim() === String(item).trim()) || {}).cat || '';
-        restoreToInventory(item, resolvedColor, existingCat, chosenTang, yardsAmount);
-        const afterRoll = rolls.find(r => String(r.item).trim() === String(item).trim() && String(r.color).trim() === String(resolvedColor).trim() && r.tang === chosenTang && !r.defective);
-        returnRollId = afterRoll ? afterRoll.id : null;
-        returnAddedToInventory = true;
+        const targetRoll = rolls.find(r => String(r.item).trim() === String(item).trim() && String(r.color).trim() === String(resolvedColor).trim() && r.tang === chosenTang && !r.defective && r.qty > 0);
+        if (targetRoll) {
+          if (!confirm(`탕${chosenTang}에 이미 재고 ${targetRoll.qty}y가 있어요.\n반품 ${yardsAmount}y를 여기에 합칠까요?\n("취소"를 누르면 이 건 반품은 재고에 반영 안 되고 등록만 돼요 - 나중에 직접 재고를 맞춰주세요)`)) {
+            anyMissingInventory = true;
+          } else {
+            restoreToInventory(item, resolvedColor, existingCat, chosenTang, yardsAmount);
+            returnRollId = targetRoll.id;
+            returnAddedToInventory = true;
+          }
+        } else {
+          restoreToInventory(item, resolvedColor, existingCat, chosenTang, yardsAmount);
+          const afterRoll = rolls.find(r => String(r.item).trim() === String(item).trim() && String(r.color).trim() === String(resolvedColor).trim() && r.tang === chosenTang && !r.defective);
+          returnRollId = afterRoll ? afterRoll.id : null;
+          returnAddedToInventory = true;
+        }
       } else {
         anyMissingInventory = true;
       }
