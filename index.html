@@ -784,7 +784,7 @@ const PASSWORD = "3059";
 const ADMIN_PASSWORD = "9503"; // 매출/미수금 탭 전용 - 필요하면 이 값만 바꿔서 변경 가능
 const LOW_STOCK_THRESHOLD = 100;
 const DATA_VERSION = "2026-08-03-v4"; // 재고/이월장부 씨앗 데이터를 바꿀 때마다 이 값을 새로 바꿔주세요
-const APP_CODE_VERSION = "2026-08-21-i"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
+const APP_CODE_VERSION = "2026-08-24-a"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
 const SCHEMA_STAMP = 2; // 서버 저장규칙이 확인하는 "최신 앱 도장" - 절대 자주 바꾸지 않음(이 값을 아는 코드만 저장 가능하게 서버에서 막을 때 씀)
 
 const firebaseConfig = {
@@ -1256,12 +1256,15 @@ async function persistCustomerList() { await persistGuarded('customerList', 'cus
 async function persistExpenses() { await persistGuarded('expenses', 'expenses', expenses); }
 
 // ---------- 원가 계산 ----------
-function finalCost(c, color, skipKeywordFee) {
+function finalCost(c, color, skipKeywordFee, rateOverride) {
   // c: {type, price} 또는 과거 데이터 호환을 위해 price 숫자만 올 수도 있음
   if (typeof c === 'number') c = { type: 'import', price: c };
+  const rate = rateOverride ? rateOverride.rate : settings.rate;
+  const yard = rateOverride ? rateOverride.yard : settings.yard;
+  const ship = rateOverride ? rateOverride.ship : settings.ship;
   let base;
   if (c.type === 'domestic') base = c.price;
-  else base = c.price * settings.rate * settings.yard + settings.ship;
+  else base = c.price * rate * yard + ship;
   if (!skipKeywordFee) base += getProcessingFeeForColor(color);
   return base;
 }
@@ -2190,7 +2193,24 @@ function renderCost() {
     const gk = 'cost-colors:' + c.item;
     const isOpen = openGroups.has(gk);
     // 이 품목의 컬러 목록은 재고(rolls)에 등록된 걸 기준으로 뽑음
-    const colorsForItem = Array.from(new Set(rolls.filter(r => String(r.item).trim() === String(c.item).trim() && !r.defective).map(r => String(r.color).trim()))).sort((a, b) => a.localeCompare(b, 'ko'));
+    const colorsForItem = Array.from(new Set(rolls.filter(r => String(r.item).trim() === String(c.item).trim() && !r.defective).map(r => String(r.color).trim())))
+      .sort((a, b) => {
+        const sortInfo = (colorName) => {
+          const isKimo = colorName.endsWith(' 기모');
+          const baseColor = isKimo ? colorName.slice(0, -3).trim() : colorName;
+          const swExact = findSwatchFor(c.cat, c.item, colorName);
+          let order = swExact ? swExact.order : null;
+          if (order == null && isKimo) {
+            const swBase = findSwatchFor(c.cat, c.item, baseColor);
+            order = swBase ? swBase.order : null;
+          }
+          return { order: order != null ? order : Infinity, isKimo: isKimo ? 1 : 0 };
+        };
+        const ai = sortInfo(a), bi = sortInfo(b);
+        if (ai.order !== bi.order) return ai.order - bi.order;
+        if (ai.isKimo !== bi.isKimo) return ai.isKimo - bi.isKimo;
+        return a.localeCompare(b, 'ko');
+      });
     const overridesForItem = costs.filter(x => x.color && String(x.item).trim() === String(c.item).trim());
 
     const div = document.createElement('div');
@@ -2228,10 +2248,12 @@ function renderCost() {
           const colorWon = Math.round(getCostPerYard(c.item, color));
           const isDifferent = colorWon !== won;
           const keywordFee = getProcessingFeeForColor(color);
+          const swInfo = findSwatchFor(c.cat, c.item, color);
+          const swLabel = swInfo && swInfo.order != null ? ` (${swInfo.order}번)` : '';
           return `
             <div style="padding:6px 0; border-bottom:1px dashed var(--border);">
               <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
-                <span style="font-size:13px; font-weight:600;">${esc(color)}</span>
+                <span style="font-size:13px; font-weight:600;">${esc(color)}${swLabel}</span>
                 <span id="${wonDisplayId}" style="font-size:13px; font-weight:700; color:${isDifferent ? '#a15c1e' : 'var(--muted)'};">${colorWon.toLocaleString()}원/y</span>
               </div>
               <div style="display:flex; align-items:center; gap:6px; margin-bottom:4px;">
@@ -3236,7 +3258,8 @@ async function confirmSaleEdit() {
       unitPrice: priceRaw, supplyAmount, taxAmount, saleAmount, paidAmount: 0, taxIncluded,
       discount, discountReason: discount > 0 ? discountReason : '',
       extraAmount, extraReason: extraAmount > 0 ? extraReason : '',
-      note: '수동 추가', invDeductedAmount: inv.ok ? yardsRaw : 0, deductBreakdown: inv.breakdown || null
+      note: '수동 추가', invDeductedAmount: inv.ok ? yardsRaw : 0, deductBreakdown: inv.breakdown || null,
+      rateSnapshot: { rate: settings.rate, yard: settings.yard, ship: settings.ship }
     });
     await rememberPrice(customer, item, color, priceRaw);
     await persistShipmentLog();
@@ -4094,18 +4117,20 @@ function renderItemMonthlyStatsView() {
   }
 }
 
-function getCostPerYard(item, color) {
+function getCostPerYard(item, color, rateOverride) {
   const costMatch = findCostFor(item);
   if (!costMatch) return null;
   const colorFee = findColorFeeFor(item, color);
   // 이 컬러만 중국단가가 다르게 등록돼있으면, 그 단가로 다시 계산(환율은 여전히 자동 적용됨)
   const effectiveCostMatch = (colorFee && colorFee.price != null) ? { ...costMatch, price: colorFee.price } : costMatch;
-  let cost = finalCost(effectiveCostMatch, color, colorFee && colorFee.ignoreKeywordFees);
+  let cost = finalCost(effectiveCostMatch, color, colorFee && colorFee.ignoreKeywordFees, rateOverride);
   if (colorFee && colorFee.fee) cost += colorFee.fee;
   return cost;
 }
 function getCostPerYardForEntry(e) {
   // 우선순위: 1) 이 출고건에 직접 입력한 원가  2) 실제 나간 탕들에 등록된 원가(야드 가중평균, 없으면 원가표 기본값으로 채움)  3) 원가표 기본값
+  // 원가표 기본값을 쓸 때는, 지금 환율이 아니라 이 매출이 찍혔을 때의 환율(rateSnapshot)을 그대로 씀 - 나중에 환율 바뀌어도 과거 기록이 안 흔들리게
+  const rateOverride = e.rateSnapshot || null;
   if (e.manualCostPerY != null) return e.manualCostPerY;
   if (e.deductBreakdown && e.deductBreakdown.length > 0) {
     let totalCost = 0, totalQty = 0, anySpecific = false;
@@ -4116,12 +4141,12 @@ function getCostPerYardForEntry(e) {
         if (roll && roll.costPerY != null) { costPerY = roll.costPerY; anySpecific = true; }
       }
       if (b.manualCostPerY != null) { costPerY = b.manualCostPerY; anySpecific = true; } // 새 탕에 직접 입력한 원가
-      if (costPerY == null) costPerY = getCostPerYard(e.item, e.color);
+      if (costPerY == null) costPerY = getCostPerYard(e.item, e.color, rateOverride);
       if (costPerY != null) { totalCost += costPerY * b.qty; totalQty += b.qty; }
     }
     if (anySpecific && totalQty > 0) return Math.round((totalCost / totalQty) * 100) / 100;
   }
-  return getCostPerYard(e.item, e.color);
+  return getCostPerYard(e.item, e.color, rateOverride);
 }
 
 function showPaymentLedger() {
@@ -6676,7 +6701,8 @@ async function confirmOrderReceiveInner(o) {
     customer: o.customer, factory: o.factory, item: o.item, color: resolvedColorForLog,
     amount: raw, unit: o.unit || 'y', yardsShipped, remainAfter: remain, isFullCompletion: remain <= 0,
     unitPrice, supplyAmount, taxAmount, saleAmount, paidAmount: 0, yardsEstimated, taxIncluded: !!(supplyAmount && taxIncluded), isFlatTotal: priceMode === 'total',
-    note: shipNote, invDeductedAmount: inv.deducted, deductBreakdown: inv.breakdown || null, isSample: isSampleMode || undefined
+    note: shipNote, invDeductedAmount: inv.deducted, deductBreakdown: inv.breakdown || null, isSample: isSampleMode || undefined,
+    rateSnapshot: { rate: settings.rate, yard: settings.yard, ship: settings.ship } // 나중에 환율 바뀌어도 이 매출의 원가는 이때 환율 그대로 고정되게
   };
   shipmentLog.push(newEntry);
   await persistShipmentLog();
@@ -7238,7 +7264,8 @@ async function markOrderDone(id) {
     amount: remain > 0 ? remain : 0, unit: o.unit || 'y', yardsShipped, remainAfter: 0,
     isFullCompletion: true, manualClose: remain <= 0, yardsEstimated: isJeol && remain > 0, taxIncluded,
     unitPrice, supplyAmount, taxAmount, saleAmount, paidAmount: 0,
-    note: remain <= 0 ? '' : '', invDeductedAmount: invDeductedAmountFlag, deductBreakdown: invBreakdownFlag
+    note: remain <= 0 ? '' : '', invDeductedAmount: invDeductedAmountFlag, deductBreakdown: invBreakdownFlag,
+    rateSnapshot: { rate: settings.rate, yard: settings.yard, ship: settings.ship }
   });
   await persistShipmentLog();
 
