@@ -25,6 +25,15 @@
 <style>
   @keyframes savingPulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.25; } }
   #savingBadgeDot { animation: savingPulse 1s infinite; }
+  /* 숫자 입력칸의 위아래 화살표(스피너) 없앰 - 스크롤하다 실수로 값 바뀌는 게 더 불편해서 */
+  input[type=number]::-webkit-inner-spin-button,
+  input[type=number]::-webkit-outer-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+  input[type=number] {
+    -moz-appearance: textfield;
+  }
   :root {
     --primary: #2c5f7c; --primary-dark: #1e4258; --accent: #d98e4a;
     --bg: #f5f3ef; --card: #ffffff; --danger: #c0392b; --danger-bg: #fdecea;
@@ -779,7 +788,7 @@ const PASSWORD = "3059";
 const ADMIN_PASSWORD = "9503"; // 매출/미수금 탭 전용 - 필요하면 이 값만 바꿔서 변경 가능
 const LOW_STOCK_THRESHOLD = 100;
 const DATA_VERSION = "2026-08-03-v4"; // 재고/이월장부 씨앗 데이터를 바꿀 때마다 이 값을 새로 바꿔주세요
-const APP_CODE_VERSION = "2026-08-24-d"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
+const APP_CODE_VERSION = "2026-08-24-g"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
 const SCHEMA_STAMP = 2; // 서버 저장규칙이 확인하는 "최신 앱 도장" - 절대 자주 바꾸지 않음(이 값을 아는 코드만 저장 가능하게 서버에서 막을 때 씀)
 
 const firebaseConfig = {
@@ -1170,6 +1179,12 @@ function endWrite() {
     if (badge) badge.style.display = 'none';
   }
 }
+// 숫자 입력칸에 포커스된 상태로 마우스 휠(스크롤)을 돌리면 값이 실수로 바뀌는 걸 막음
+document.addEventListener('wheel', (e) => {
+  if (document.activeElement && document.activeElement.tagName === 'INPUT' && document.activeElement.type === 'number') {
+    document.activeElement.blur();
+  }
+}, { passive: true });
 window.addEventListener('beforeunload', (e) => {
   if (pendingWriteCount > 0) {
     e.preventDefault();
@@ -6435,11 +6450,17 @@ function renderJeolYardInputs() {
   listEl.innerHTML = '';
   for (let i = 1; i <= count; i++) {
     const row = document.createElement('div');
-    row.style.cssText = 'display:flex; align-items:center; justify-content:space-between; gap:8px; padding:6px 0; border-bottom:1px dashed var(--border);';
+    row.className = 'or-jeol-yard-row';
+    row.style.cssText = 'padding:6px 0; border-bottom:1px dashed var(--border);';
     row.innerHTML = `
-      <div style="font-size:13px;">${i}번째 절 야드</div>
-      <input type="number" step="0.1" min="0" class="or-jeol-yard-input" placeholder="예: 58"
-        oninput="updateJeolTotal()" style="width:90px; padding:6px; border:1px solid var(--border); border-radius:6px; font-size:13px;">
+      <div style="display:flex; align-items:center; justify-content:space-between; gap:8px;">
+        <div style="font-size:13px;">${i}번째 절 야드</div>
+        <input type="number" step="0.1" min="0" class="or-jeol-yard-input" placeholder="예: 58"
+          oninput="updateJeolTotal()" style="width:90px; padding:6px; border:1px solid var(--border); border-radius:6px; font-size:13px;">
+      </div>
+      <label style="display:flex; align-items:center; gap:6px; font-size:12px; color:#a15c1e; margin-top:4px;">
+        <input type="checkbox" class="or-jeol-carryover" style="width:auto;"> 이월
+      </label>
     `;
     listEl.appendChild(row);
   }
@@ -6676,14 +6697,18 @@ async function confirmOrderReceiveInner(o) {
       const deductedFromStock = Math.round(allocations.reduce((s, a) => s + a.amt, 0) * 100) / 100;
       inv = { ok: true, deducted: deductedFromStock, shortBy: 0, breakdown: [...jeolBreakdown, ...newTangEntries] };
     } else {
-      const inputs = document.querySelectorAll('.or-jeol-yard-input');
+      const yardRows = document.querySelectorAll('.or-jeol-yard-row');
       const yards = [];
-      inputs.forEach(inp => {
-        const v = parseFloat(inp.value) || 0;
-        if (v > 0) yards.push(v);
+      let carryoverCount = 0;
+      yardRows.forEach(rowEl => {
+        const v = parseFloat(rowEl.querySelector('.or-jeol-yard-input').value) || 0;
+        if (v > 0) {
+          yards.push(v);
+          if (rowEl.querySelector('.or-jeol-carryover').checked) carryoverCount++;
+        }
       });
       if (yards.length === 0) { showToast('각 절의 실제 야드를 입력해주세요'); return; }
-      raw = yards.length; // 절 개수 = 실제로 입력한 칸 수
+      raw = yards.length - carryoverCount; // 이월 체크한 절만큼은 "완료된 절"로 안 세서, 이월장부에 그만큼 그대로 남게 함
       yardsShipped = Math.round(yards.reduce((s, v) => s + v, 0) * 100) / 100;
       inv = deductFromInventory(o.item, o.color, yardsShipped, null);
       if (inv.ok) await persistRolls();
