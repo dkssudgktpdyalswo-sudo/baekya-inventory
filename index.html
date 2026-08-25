@@ -700,6 +700,8 @@
     </div>
     <label>판매단가(원/y)</label>
     <input id="sale-edit-price" type="number" step="1">
+    <label>비고 (선택)</label>
+    <input id="sale-edit-note" placeholder="예: 급송비 포함">
     <label style="display:flex;align-items:center;gap:6px;font-size:14px;color:var(--text);margin-top:8px;"><input type="checkbox" id="sale-edit-tax" style="width:auto;"> 부가세 10% 포함</label>
 
     <label>공제액(원) — 깎아줄 금액 (선택사항)</label>
@@ -788,7 +790,7 @@ const PASSWORD = "3059";
 const ADMIN_PASSWORD = "9503"; // 매출/미수금 탭 전용 - 필요하면 이 값만 바꿔서 변경 가능
 const LOW_STOCK_THRESHOLD = 100;
 const DATA_VERSION = "2026-08-03-v4"; // 재고/이월장부 씨앗 데이터를 바꿀 때마다 이 값을 새로 바꿔주세요
-const APP_CODE_VERSION = "2026-08-24-g"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
+const APP_CODE_VERSION = "2026-08-24-k"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
 const SCHEMA_STAMP = 2; // 서버 저장규칙이 확인하는 "최신 앱 도장" - 절대 자주 바꾸지 않음(이 값을 아는 코드만 저장 가능하게 서버에서 막을 때 씀)
 
 const firebaseConfig = {
@@ -2091,21 +2093,8 @@ async function saveAdd() {
     // 이 컬러에 남아있던 0y짜리 자리표시용 롤은 정리 (실재고가 새로 들어오니까)
     rolls = rolls.filter(r => !(String(r.item).trim() === item && String(r.color).trim() === color && r.qty === 0 && !r.defective));
     for (const en of entries) {
-      if (en.defective) {
-        rolls.push({ id: nextId++, cat, item, color, tang: en.tang, qty: en.qty, defective: true, defectReason: en.reason, inDate, costPerY: en.costPerY });
-        continue;
-      }
-      const conflict = rolls.find(r => String(r.item).trim() === item && String(r.color).trim() === color && r.tang === en.tang && !r.defective && r.qty > 0);
-      if (conflict) {
-        if (confirm(`탕${en.tang}에 이미 재고 ${conflict.qty}y가 있어요.\n이번에 입고한 ${en.qty}y를 여기에 합칠까요?\n("취소"를 누르면 다른 탕 번호로 새로 등록해주세요 - 이번 탕은 건너뛸게요)`)) {
-          conflict.qty = Math.round((conflict.qty + en.qty) * 100) / 100;
-          if (en.costPerY != null) conflict.costPerY = en.costPerY;
-        } else {
-          showToast(`탕${en.tang}은(는) 건너뛰었어요 - 다른 탕 번호로 다시 등록해주세요`);
-        }
-        continue;
-      }
-      rolls.push({ id: nextId++, cat, item, color, tang: en.tang, qty: en.qty, defective: false, defectReason: '', inDate, costPerY: en.costPerY });
+      // 같은 탕 번호로 여러 번 입고돼도 합치지 않고 각각 개별 항목으로 둠 (이미 재단되어 오는 원단이라 실제로는 서로 다른 물건이라서)
+      rolls.push({ id: nextId++, cat, item, color, tang: en.tang, qty: en.qty, defective: en.defective, defectReason: en.defective ? en.reason : '', inDate, costPerY: en.costPerY });
     }
     totalEntries += entries.length;
     totalColors++;
@@ -2195,12 +2184,6 @@ async function openRollEditModal(id) {
   const newQty = parseFloat(raw);
   if (isNaN(newQty) || newQty < 0) { showToast('숫자를 확인해주세요'); return; }
   r.qty = Math.round(newQty * 100) / 100;
-
-  const costRaw = prompt(`이 탕만의 원가(원/y)를 등록/수정하시겠어요? (컷팅 원단처럼 이 탕만 원가가 다를 때)\n비워두면 원가표 기본값을 그대로 써요.`, r.costPerY != null ? String(r.costPerY) : '');
-  if (costRaw !== null) {
-    const costNum = parseFloat(costRaw);
-    r.costPerY = (costRaw.trim() !== '' && !isNaN(costNum) && costNum > 0) ? costNum : null;
-  }
 
   if (r.qty === 0) {
     cleanupDepletedRolls(r.item, r.color, [r.id]);
@@ -3276,6 +3259,7 @@ function openSaleEditModal(logId) {
   document.getElementById('sale-edit-yards').value = entry.yardsShipped + (entry.defectYards || 0);
   populateSaleEditBreakdown(entry);
   document.getElementById('sale-edit-price').value = entry.unitPrice || '';
+  document.getElementById('sale-edit-note').value = entry.note || '';
   document.getElementById('sale-edit-tax').checked = !!entry.taxIncluded;
   document.getElementById('sale-edit-discount').value = entry.discount || '';
   document.getElementById('sale-edit-discount-reason').value = entry.discountReason || '';
@@ -3299,6 +3283,7 @@ function openSaleAddModal(customer) {
   document.getElementById('sale-edit-breakdown-list').innerHTML = '';
   document.getElementById('sale-edit-new-tang-list').innerHTML = '';
   document.getElementById('sale-edit-price').value = '';
+  document.getElementById('sale-edit-note').value = '';
   document.getElementById('sale-edit-tax').checked = false;
   document.getElementById('sale-edit-discount').value = '';
   document.getElementById('sale-edit-discount-reason').value = '';
@@ -3324,6 +3309,7 @@ async function confirmSaleEdit() {
   const color = document.getElementById('sale-edit-color').value.trim();
   const yardsRaw = parseFloat(document.getElementById('sale-edit-yards').value);
   const priceRaw = parseFloat(document.getElementById('sale-edit-price').value);
+  const noteVal = document.getElementById('sale-edit-note').value.trim();
   const taxIncluded = document.getElementById('sale-edit-tax').checked;
   const discountRaw = parseFloat(document.getElementById('sale-edit-discount').value);
   const discountReason = document.getElementById('sale-edit-discount-reason').value.trim();
@@ -3351,7 +3337,7 @@ async function confirmSaleEdit() {
       unitPrice: priceRaw, supplyAmount, taxAmount, saleAmount, paidAmount: 0, taxIncluded,
       discount, discountReason: discount > 0 ? discountReason : '',
       extraAmount, extraReason: extraAmount > 0 ? extraReason : '',
-      note: '수동 추가', invDeductedAmount: inv.ok ? yardsRaw : 0, deductBreakdown: inv.breakdown || null,
+      note: noteVal || '수동 추가', invDeductedAmount: inv.ok ? yardsRaw : 0, deductBreakdown: inv.breakdown || null,
       rateSnapshot: { rate: settings.rate, yard: settings.yard, ship: settings.ship }
     });
     await rememberPrice(customer, item, color, priceRaw);
@@ -3365,6 +3351,7 @@ async function confirmSaleEdit() {
   entry.customer = customer;
   entry.item = item;
   entry.color = color;
+  entry.note = noteVal;
   entry.yardsShipped = yardsRaw;
   entry.defectYards = 0; // 수량을 직접 다시 정했으니 이전 불량 차감은 초기화(필요하면 불량 처리 다시 눌러주세요)
   entry.defectNote = '';
@@ -7294,21 +7281,11 @@ async function confirmReturn() {
       if (hasKnownItem(item)) {
         const resolvedColor = resolveInventoryColor(item, color);
         const existingCat = (rolls.find(r => String(r.item).trim() === String(item).trim()) || {}).cat || '';
-        const targetRoll = rolls.find(r => String(r.item).trim() === String(item).trim() && String(r.color).trim() === String(resolvedColor).trim() && r.tang === chosenTang && !r.defective && r.qty > 0);
-        if (targetRoll) {
-          if (!confirm(`탕${chosenTang}에 이미 재고 ${targetRoll.qty}y가 있어요.\n반품 ${yardsAmount}y를 여기에 합칠까요?\n("취소"를 누르면 이 건 반품은 재고에 반영 안 되고 등록만 돼요 - 나중에 직접 재고를 맞춰주세요)`)) {
-            anyMissingInventory = true;
-          } else {
-            restoreToInventory(item, resolvedColor, existingCat, chosenTang, yardsAmount);
-            returnRollId = targetRoll.id;
-            returnAddedToInventory = true;
-          }
-        } else {
-          restoreToInventory(item, resolvedColor, existingCat, chosenTang, yardsAmount);
-          const afterRoll = rolls.find(r => String(r.item).trim() === String(item).trim() && String(r.color).trim() === String(resolvedColor).trim() && r.tang === chosenTang && !r.defective);
-          returnRollId = afterRoll ? afterRoll.id : null;
-          returnAddedToInventory = true;
-        }
+        // 반품은 기존 재고에 합치지 않고, 항상 새 개별 항목으로 넣음 (같은 탕 번호여도 따로 구분되게)
+        const newRoll = { id: nextId++, cat: existingCat, item, color: resolvedColor, tang: chosenTang, qty: yardsAmount };
+        rolls.push(newRoll);
+        returnRollId = newRoll.id;
+        returnAddedToInventory = true;
       } else {
         anyMissingInventory = true;
       }
