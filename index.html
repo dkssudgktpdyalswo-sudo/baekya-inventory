@@ -790,7 +790,7 @@ const PASSWORD = "3059";
 const ADMIN_PASSWORD = "9503"; // 매출/미수금 탭 전용 - 필요하면 이 값만 바꿔서 변경 가능
 const LOW_STOCK_THRESHOLD = 100;
 const DATA_VERSION = "2026-08-03-v4"; // 재고/이월장부 씨앗 데이터를 바꿀 때마다 이 값을 새로 바꿔주세요
-const APP_CODE_VERSION = "2026-08-24-k"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
+const APP_CODE_VERSION = "2026-08-24-o"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
 const SCHEMA_STAMP = 2; // 서버 저장규칙이 확인하는 "최신 앱 도장" - 절대 자주 바꾸지 않음(이 값을 아는 코드만 저장 가능하게 서버에서 막을 때 씀)
 
 const firebaseConfig = {
@@ -3021,10 +3021,11 @@ async function confirmLogEdit() {
     e.amount = newCountOrQty;
     e.yardsShipped = newTotal; // 야드는 항상 탕별 합계 (절이든 y든)
     if (e.unitPrice) e.saleAmount = Math.round(e.unitPrice * newTotal);
+    const overpaidLogEdit1 = await creditOverpaymentIfAny(e);
     await persistShipmentLog();
     closeLogEditModal();
     render();
-    showToast('수정되었습니다 (재고·이월장부도 같이 반영됐어요)');
+    showToast(`수정되었습니다 (재고·이월장부도 같이 반영됐어요)${overpaidLogEdit1 > 0 ? ` · 이미 받은 돈 중 ${overpaidLogEdit1.toLocaleString()}원은 선수금으로 기록했어요` : ''}`);
     return;
   }
 
@@ -3071,11 +3072,12 @@ async function confirmLogEdit() {
   e.amount = newQty;
   e.yardsShipped = newYards;
   if (e.unitPrice) e.saleAmount = Math.round(e.unitPrice * newYards);
+  const overpaidLogEdit2 = await creditOverpaymentIfAny(e);
 
   await persistShipmentLog();
   closeLogEditModal();
   render();
-  showToast('수정되었습니다 (재고·이월장부도 같이 반영됐어요)');
+  showToast(`수정되었습니다 (재고·이월장부도 같이 반영됐어요)${overpaidLogEdit2 > 0 ? ` · 이미 받은 돈 중 ${overpaidLogEdit2.toLocaleString()}원은 선수금으로 기록했어요` : ''}`);
 }
 
 function restoreToInventory(item, color, cat, tang, qty, rollId) {
@@ -3110,6 +3112,9 @@ async function cancelShipmentLogEntry(logId) {
     ? `${entry.item} ${entry.color || ''} 수동 완료 처리`
     : `${entry.item} ${entry.color || ''} ${entry.amount}${entry.unit} 출고`;
   if (!confirm(`이 기록(${desc})을 취소할까요?\n이월장부와 재고가 이 처리 이전 상태로 되돌아가요.`)) return;
+
+  const alreadyPaidOnCancel = getPaidAmount(entry);
+  const custForCredit = entry.customer;
 
   // 확인 즉시(그 사이 await 하나도 없이) 목록에서 빼서, 연타나 겹친 클릭으로 같은 취소가 두 번 처리되는 걸 막음
   shipmentLog = shipmentLog.filter(e => e.id !== logId);
@@ -3148,9 +3153,12 @@ async function cancelShipmentLogEntry(logId) {
     await persistRolls();
   }
 
+  if (alreadyPaidOnCancel > 0 && custForCredit) {
+    await memoAppendDepositCredit(custForCredit, alreadyPaidOnCancel, todayStr());
+  }
   await persistShipmentLog();
   render();
-  showToast('출고 기록을 취소하고 되돌렸습니다');
+  showToast(`출고 기록을 취소하고 되돌렸습니다${alreadyPaidOnCancel > 0 ? ` · 이미 받은 돈 ${alreadyPaidOnCancel.toLocaleString()}원은 선수금으로 기록했어요` : ''}`);
 }
 
 function getPaidAmount(e) {
@@ -3400,10 +3408,11 @@ async function confirmSaleEdit() {
   }
 
   await rememberPrice(entry.customer, entry.item, entry.color, priceRaw);
+  const overpaidSaleEdit = await creditOverpaymentIfAny(entry);
   await persistShipmentLog();
   closeSaleEditModal();
   render();
-  showToast('매출 내역을 수정했습니다');
+  showToast(`매출 내역을 수정했습니다${overpaidSaleEdit > 0 ? ` · 이미 받은 돈 중 ${overpaidSaleEdit.toLocaleString()}원은 선수금으로 기록했어요` : ''}`);
 }
 
 function openDefectModal(logId) {
@@ -3449,20 +3458,11 @@ async function confirmDefect() {
   entry.saleAmount = Math.round(entry.saleAmount - defectAmount);
   entry.defectNote = entry.defectNote ? `${entry.defectNote} / ${note}` : note;
 
-  const paidSoFar = getPaidAmount(entry);
-  const discount = entry.discount || 0;
-  if (paidSoFar + discount > entry.saleAmount) {
-    if (discount >= entry.saleAmount) {
-      entry.discount = entry.saleAmount;
-      entry.paidAmount = 0;
-    } else {
-      entry.paidAmount = entry.saleAmount - discount;
-    }
-  }
+  const overpaidByDefect = await creditOverpaymentIfAny(entry);
   await persistShipmentLog();
   closeDefectModal();
   render();
-  showToast(`불량 처리됨 (${defectYards}y / ${defectAmount.toLocaleString()}원 차감)`);
+  showToast(`불량 처리됨 (${defectYards}y / ${defectAmount.toLocaleString()}원 차감)${overpaidByDefect > 0 ? ` · 이미 받은 돈 중 ${overpaidByDefect.toLocaleString()}원은 선수금으로 기록했어요` : ''}`);
 }
 
 let pendingPaymentEntryIds = [];
@@ -3500,6 +3500,10 @@ async function markSampleAndClose() {
   if (entries.length === 0) return;
   if (!confirm(`선택한 ${entries.length}건을 샘플 제공으로 처리할까요?\n매출·미수금에서 빠지고, 재고는 그대로 유지돼요.`)) return;
   for (const entry of entries) {
+    const alreadyPaid = getPaidAmount(entry);
+    if (alreadyPaid > 0 && entry.customer) {
+      await memoAppendDepositCredit(entry.customer, alreadyPaid, todayStr());
+    }
     entry.isSample = true;
     entry.saleAmount = 0;
     entry.supplyAmount = 0;
@@ -3595,9 +3599,35 @@ async function confirmPaymentModal() {
     delete e.paidAmount; delete e.paid;
     amt = Math.round((amt - take) * 100) / 100;
   }
+  let extraMsg2 = '';
+  if (amt > 0) {
+    // 선택한 건들을 다 채우고도 남으면, 단일 건 입금이랑 똑같이 같은 거래처의 다른 미수금부터 채우고, 그래도 남으면 선수금으로 기록
+    const custName = sorted[0] ? sorted[0].customer : null;
+    if (custName) {
+      const selectedIds = new Set(sorted.map(e => e.id));
+      const others = shipmentLog
+        .filter(e => !selectedIds.has(e.id) && e.customer && String(e.customer).trim() === String(custName).trim() && e.saleAmount != null && getRemaining(e) > 0)
+        .sort((a, b) => String(a.date).localeCompare(String(b.date)));
+      for (const e of others) {
+        if (amt <= 0) break;
+        const remain2 = getRemaining(e);
+        const take = Math.min(remain2, amt);
+        addPaymentEvent(e, take, method, payDate);
+        delete e.paidAmount; delete e.paid;
+        amt = Math.round((amt - take) * 100) / 100;
+      }
+      if (amt > 0) {
+        await memoAppendDepositCredit(custName, amt, payDate);
+        extraMsg2 = `, 초과분 ${amt.toLocaleString()}원은 선수금으로 기록했어요`;
+        amt = 0;
+      } else {
+        extraMsg2 = `, 초과분은 같은 거래처의 다른 미수금에 자동으로 채워졌어요`;
+      }
+    }
+  }
   await persistShipmentLog();
   closePaymentModal(); render();
-  let msg = discountApplied > 0 ? `입금 처리했습니다 (차액 ${discountApplied.toLocaleString()}원 공제 처리하고 전부 완불 마감)` : (amt > 0 ? `입금 처리했습니다 (${amt.toLocaleString()}원은 입력 금액이 남아 반영 안 됐어요)` : '입금 처리했습니다');
+  let msg = discountApplied > 0 ? `입금 처리했습니다 (차액 ${discountApplied.toLocaleString()}원 공제 처리하고 전부 완불 마감)` : `입금 처리했습니다${extraMsg2}`;
   showToast(msg);
 }
 
@@ -5353,6 +5383,18 @@ async function toggleEntryTax(ids, checked) {
   render();
   showToast((checked ? '부가세 포함 금액으로 바뀌었어요' : '부가세 미포함(공급가액만) 금액으로 바뀌었어요') + (skipped > 0 ? ` (이미 입금된 ${skipped}건은 그대로 뒀어요)` : ''));
 }
+async function creditOverpaymentIfAny(entry) {
+  // 매출액이나 공제액이 줄어들면서 이미 받은 돈이 그보다 많아지는 경우, 그 초과분을 선수금으로 기록해서 안 사라지게 함
+  if (!entry.customer) return 0;
+  const paidSoFar = getPaidAmount(entry);
+  const discount = entry.discount || 0;
+  const overpaid = Math.round((paidSoFar + discount - entry.saleAmount) * 100) / 100;
+  if (overpaid > 0) {
+    await memoAppendDepositCredit(entry.customer, overpaid, todayStr());
+    return overpaid;
+  }
+  return 0;
+}
 async function memoAppendDepositCredit(customer, amount, date) {
   depositMemos.push({ id: nextMemoId++, customer, date: date || todayStr(), text: `선수금 ${Math.round(amount).toLocaleString()}원 (입금 초과분 자동기록)` });
   await persistDepositMemos();
@@ -5392,19 +5434,25 @@ async function editCarryoverBalance(customer, entryId) {
 
   if (amount === 0) {
     if (current) {
+      const alreadyPaid = getPaidAmount(current);
+      if (alreadyPaid > 0) {
+        await memoAppendDepositCredit(customer, alreadyPaid, todayStr());
+      }
       shipmentLog = shipmentLog.filter(e => e.id !== current.id);
       await persistShipmentLog();
       render();
       if (salesSpecialView === 'unpaidSummary') renderUnpaidSummaryList();
-      showToast('이월 미수금을 삭제했습니다');
+      showToast(`이월 미수금을 삭제했습니다${alreadyPaid > 0 ? ` · 이미 받은 돈 ${alreadyPaid.toLocaleString()}원은 선수금으로 기록했어요` : ''}`);
     }
     return;
   }
 
+  let overpaidCarryover = 0;
   if (current) {
     current.unitPrice = amount;
     current.supplyAmount = amount;
     current.saleAmount = amount;
+    overpaidCarryover = await creditOverpaymentIfAny(current);
   } else {
     shipmentLog.push({
       id: nextLogId++, date: todayStr(), orderId: null,
@@ -5417,7 +5465,7 @@ async function editCarryoverBalance(customer, entryId) {
   await persistShipmentLog();
   render();
   if (salesSpecialView === 'unpaidSummary') renderUnpaidSummaryList();
-  showToast(`이월 미수금을 ${amount.toLocaleString()}원으로 수정했습니다`);
+  showToast(`이월 미수금을 ${amount.toLocaleString()}원으로 수정했습니다${overpaidCarryover > 0 ? ` · 이미 받은 돈 중 ${overpaidCarryover.toLocaleString()}원은 선수금으로 기록했어요` : ''}`);
 }
 async function renameFactoryForOrders(oldFactory, orderIds) {
   const raw = prompt(`"${oldFactory}"로 되어있는 발주 ${orderIds.length}건의 공장/연락처를 뭐로 바꿀까요?`, oldFactory === '(연락처 미입력)' ? '' : oldFactory);
@@ -6822,11 +6870,13 @@ async function confirmOrderReceiveInner(o) {
 
   // 이 발주(같은 그룹)에 보류해둔 추가금이 있으면, 첫 출고 시점에 같이 매출로 반영
   let feeMsg = '';
-  const releasedFee = releasePendingFeeForOrder(o);
-  if (releasedFee) {
+  const releaseResult = releasePendingFeeForOrder(o);
+  if (releaseResult.fee) {
     await persistShipmentLog();
     await persistOrders();
-    feeMsg = ` · 보류돼있던 추가금 ${releasedFee.amount.toLocaleString()}원도 같이 매출로 잡혔어요`;
+    feeMsg = ` · 보류돼있던 추가금 ${releaseResult.fee.amount.toLocaleString()}원도 같이 매출로 잡혔어요`;
+  } else if (releaseResult.cleared) {
+    await persistOrders();
   }
 
   closeOrderReceiveModal(); render();
@@ -6968,22 +7018,27 @@ function openDefectReturnForCustomer(customer) {
 function releasePendingFeeForOrder(o) {
   // 체크(있는지 확인)와 지우기를 그 사이에 await 하나도 없이 바로 붙여서 처리함
   // (연타나 겹친 클릭으로 같은 보류 추가금이 두 번 매출로 잡히는 걸 막기 위함)
-  if (!o.pendingFee) return null;
+  if (!o.pendingFee) return { fee: null, cleared: false };
   const fee = o.pendingFee;
   if (o.linkGroupId) {
     for (const other of orders) { if (other.linkGroupId === o.linkGroupId) delete other.pendingFee; }
   } else {
     delete o.pendingFee;
   }
+  // 그룹 정리가 어떤 이유로든 다 안 됐을 경우를 대비해서, 매출장부 자체에 이 추가금(feeRegId)이 이미 반영된 기록이 있는지 한 번 더 직접 확인함
+  // (있으면 중복 생성 절대 안 하고, 이 발주의 보류 표시만 지우고 조용히 끝냄 - 이 "지운 것"도 아래에서 cleared:true로 알려줘서 서버 저장까지 확실히 되게 함)
+  if (fee.feeRegId && shipmentLog.some(e => e.feeRegId === fee.feeRegId)) {
+    return { fee: null, cleared: true };
+  }
   const taxAmt = fee.taxIncluded ? Math.round(fee.amount * 0.1) : 0;
   shipmentLog.push({
     id: nextLogId++, date: todayStr(), orderId: null,
-    customer: o.customer, factory: fee.factory || o.factory, item: '추가금', color: '', isFee: true, linkGroupId: o.linkGroupId,
+    customer: o.customer, factory: fee.factory || o.factory, item: '추가금', color: '', isFee: true, linkGroupId: o.linkGroupId, feeRegId: fee.feeRegId || null,
     amount: 1, unit: 'y', yardsShipped: 1, remainAfter: 0, isFullCompletion: true,
     unitPrice: fee.amount, supplyAmount: fee.amount, taxAmount: taxAmt, saleAmount: fee.amount + taxAmt, paidAmount: 0, taxIncluded: !!fee.taxIncluded,
     note: fee.note || ''
   });
-  return fee;
+  return { fee, cleared: true };
 }
 async function editPendingFee(orderId) {
   const o = orders.find(x => x.id === orderId);
@@ -7196,6 +7251,7 @@ async function confirmReturn() {
     const taxIncluded = document.getElementById('ret-extra-tax').checked;
     if (!customer) { showToast('거래처를 확인해주세요'); return; }
     if (!amount || amount <= 0) { showToast('금액을 확인해주세요'); return; }
+    const feeRegId = 'feereg-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8); // 이 추가금 등록 자체를 가리키는 고유값 - 나중에 매출로 반영될 때 "이미 반영됐는지"를 여기로 정확히 확인함
 
     // 거래처 카드에서 연 경우, 어느 발주 것인지 정확히 골라서 그 발주(들)에만 보류
     if (pendingExtraOrderCandidates.length > 0) {
@@ -7204,7 +7260,7 @@ async function confirmReturn() {
       const linkGroupId = targetOrders.find(o => o.linkGroupId)?.linkGroupId || ('link-' + Date.now());
       for (const o of targetOrders) {
         o.linkGroupId = linkGroupId;
-        o.pendingFee = { amount, note, factory: extraFactory, taxIncluded };
+        o.pendingFee = { amount, note, factory: extraFactory, taxIncluded, feeRegId };
       }
       await persistOrders();
       closeReturnModal();
@@ -7219,7 +7275,7 @@ async function confirmReturn() {
       const linkedOrders = orders.filter(o => o.linkGroupId === pendingReturnLinkGroupId);
       if (linkedOrders.length > 0) {
         for (const o of linkedOrders) {
-          o.pendingFee = { amount, note, factory: extraFactory, taxIncluded };
+          o.pendingFee = { amount, note, factory: extraFactory, taxIncluded, feeRegId };
         }
         await persistOrders();
         closeReturnModal();
@@ -7377,11 +7433,13 @@ async function markOrderDone(id) {
   await persistShipmentLog();
 
   let feeMsg = '';
-  const releasedFee2 = releasePendingFeeForOrder(o);
-  if (releasedFee2) {
+  const releaseResult2 = releasePendingFeeForOrder(o);
+  if (releaseResult2.fee) {
     await persistShipmentLog();
     await persistOrders();
-    feeMsg = ` · 보류돼있던 추가금 ${releasedFee2.amount.toLocaleString()}원도 같이 매출로 잡혔어요`;
+    feeMsg = ` · 보류돼있던 추가금 ${releaseResult2.fee.amount.toLocaleString()}원도 같이 매출로 잡혔어요`;
+  } else if (releaseResult2.cleared) {
+    await persistOrders();
   }
 
   render();
@@ -7414,7 +7472,7 @@ async function deleteOrder(id) {
   if (keepPendingFeeAsStandalone && target.pendingFee) {
     shipmentLog.push({
       id: nextLogId++, date: todayStr(), orderId: null,
-      customer: target.customer, factory: target.pendingFee.factory || target.factory, item: '추가금', color: '', isFee: true,
+      customer: target.customer, factory: target.pendingFee.factory || target.factory, item: '추가금', color: '', isFee: true, feeRegId: target.pendingFee.feeRegId || null,
       amount: 1, unit: 'y', yardsShipped: 1, remainAfter: 0, isFullCompletion: true,
       unitPrice: target.pendingFee.amount, supplyAmount: target.pendingFee.amount, taxAmount: 0, saleAmount: target.pendingFee.amount, paidAmount: 0,
       note: target.pendingFee.note || ''
@@ -7423,6 +7481,10 @@ async function deleteOrder(id) {
   }
   orders = orders.filter(x => x.id !== id);
   if (deleteLinkedFee && linkedFeeEntry) {
+    const alreadyPaidFee = getPaidAmount(linkedFeeEntry);
+    if (alreadyPaidFee > 0 && linkedFeeEntry.customer) {
+      await memoAppendDepositCredit(linkedFeeEntry.customer, alreadyPaidFee, todayStr());
+    }
     shipmentLog = shipmentLog.filter(e => e.id !== linkedFeeEntry.id);
     await persistShipmentLog();
   }
