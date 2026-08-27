@@ -790,7 +790,7 @@ const PASSWORD = "3059";
 const ADMIN_PASSWORD = "9503"; // 매출/미수금 탭 전용 - 필요하면 이 값만 바꿔서 변경 가능
 const LOW_STOCK_THRESHOLD = 100;
 const DATA_VERSION = "2026-08-03-v4"; // 재고/이월장부 씨앗 데이터를 바꿀 때마다 이 값을 새로 바꿔주세요
-const APP_CODE_VERSION = "2026-08-24-p"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
+const APP_CODE_VERSION = "2026-08-27-a"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
 const SCHEMA_STAMP = 2; // 서버 저장규칙이 확인하는 "최신 앱 도장" - 절대 자주 바꾸지 않음(이 값을 아는 코드만 저장 가능하게 서버에서 막을 때 씀)
 
 const firebaseConfig = {
@@ -1206,7 +1206,7 @@ async function persistGuarded(docId, key, dataArray) {
   // 조용히 덮어쓰지 않고 막아서 물어봄 (전체 내용을 통째로 저장하는 방식이라 이 안전장치가 꼭 필요함)
   if (!useFirebase) {
     await safeStorage.set(docId, JSON.stringify(dataArray), true);
-    return;
+    return true;
   }
   const newJSON = JSON.stringify(dataArray);
   const ref = db.collection('inventory').doc(docId);
@@ -1224,21 +1224,23 @@ async function persistGuarded(docId, key, dataArray) {
       tx.set(ref, { data: newJSON, rev: currentRev + 1, stamp: SCHEMA_STAMP });
     });
     lastSnapshotJSON[key] = newJSON;
+    return true;
   } catch (e) {
     if (e && e.message === 'STALE_WRITE') {
       alert('⚠️ 다른 사람이 방금 같은 자료를 먼저 저장했어요.\n지금 하신 작업은 저장되지 않았어요 - 화면을 새로고침한 뒤 다시 시도해주세요.');
       location.reload();
     } else {
-      showToast('저장 오류');
+      alert('⚠️ 저장에 실패했어요.\n방금 하신 작업이 서버에 저장되지 않았을 수 있어요.\n인터넷 연결을 확인한 뒤, 화면을 새로고침하고 다시 시도해주세요.');
     }
+    return false;
   } finally {
     endWrite();
   }
 }
-async function persistRolls() { await persistGuarded('rolls', 'rolls', rolls); }
-async function persistCosts() { await persistGuarded('costs', 'costs', costs); }
+async function persistRolls() { return await persistGuarded('rolls', 'rolls', rolls); }
+async function persistCosts() { return await persistGuarded('costs', 'costs', costs); }
 async function persistSettings() {
-  if (!useFirebase) { await safeStorage.set('settings', JSON.stringify(settings), true); return; }
+  if (!useFirebase) { await safeStorage.set('settings', JSON.stringify(settings), true); return true; }
   const newJSON = JSON.stringify(settings);
   const ref = db.collection('inventory').doc('settings');
   beginWrite();
@@ -1255,24 +1257,26 @@ async function persistSettings() {
       tx.set(ref, { data: newJSON, rev: currentRev + 1, stamp: SCHEMA_STAMP });
     });
     lastSnapshotJSON.settings = newJSON;
+    return true;
   } catch (e) {
     if (e && e.message === 'STALE_WRITE') {
       alert('⚠️ 다른 사람이 방금 같은 설정을 먼저 저장했어요.\n지금 하신 작업은 저장되지 않았어요 - 화면을 새로고침한 뒤 다시 시도해주세요.');
       location.reload();
     } else {
-      showToast('저장 오류');
+      alert('⚠️ 저장에 실패했어요.\n방금 하신 작업이 서버에 저장되지 않았을 수 있어요.\n인터넷 연결을 확인한 뒤, 화면을 새로고침하고 다시 시도해주세요.');
     }
+    return false;
   } finally {
     endWrite();
   }
 }
-async function persistOrders() { await persistGuarded('orders', 'orders', orders); }
-async function persistSwatchInfo() { await persistGuarded('swatchInfo', 'swatchInfo', swatchInfo); }
-async function persistShipmentLog() { await persistGuarded('shipmentLog', 'shipmentLog', shipmentLog); }
-async function persistPriceBook() { await persistGuarded('priceBook', 'priceBook', priceBook); }
-async function persistDepositMemos() { await persistGuarded('depositMemos', 'depositMemos', depositMemos); }
-async function persistCustomerList() { await persistGuarded('customerList', 'customerList', customerList); }
-async function persistExpenses() { await persistGuarded('expenses', 'expenses', expenses); }
+async function persistOrders() { return await persistGuarded('orders', 'orders', orders); }
+async function persistSwatchInfo() { return await persistGuarded('swatchInfo', 'swatchInfo', swatchInfo); }
+async function persistShipmentLog() { return await persistGuarded('shipmentLog', 'shipmentLog', shipmentLog); }
+async function persistPriceBook() { return await persistGuarded('priceBook', 'priceBook', priceBook); }
+async function persistDepositMemos() { return await persistGuarded('depositMemos', 'depositMemos', depositMemos); }
+async function persistCustomerList() { return await persistGuarded('customerList', 'customerList', customerList); }
+async function persistExpenses() { return await persistGuarded('expenses', 'expenses', expenses); }
 
 // ---------- 원가 계산 ----------
 function finalCost(c, color, skipKeywordFee, rateOverride) {
@@ -2322,12 +2326,12 @@ function renderCost() {
       colorWrap.style.cssText = 'background:#faf8f4; border-radius:10px; padding:10px 12px; margin:-6px 0 10px;';
       colorWrap.innerHTML = `
         <div style="font-size:12px; color:var(--muted); margin-bottom:6px;">기본은 위 원가(${won.toLocaleString()}원/y, 환율 바뀌면 자동으로 같이 바뀌어요)가 그대로 적용돼요. 이 컬러만 다르면 아래에 적으세요 - 입력하고 다른 곳 누르면 자동으로 저장돼요.</div>
-        ${colorsForItem.map(color => {
+        ${colorsForItem.map((color, colorIdx) => {
           const override = overridesForItem.find(x => String(x.color).trim() === color);
-          const priceInputId = `cost-color-price-${c.id}-${escAttr(color).replace(/[^a-zA-Z0-9]/g, '_')}`;
-          const feeInputId = `cost-color-fee-${c.id}-${escAttr(color).replace(/[^a-zA-Z0-9]/g, '_')}`;
-          const ignoreInputId = `cost-color-ignore-${c.id}-${escAttr(color).replace(/[^a-zA-Z0-9]/g, '_')}`;
-          const wonDisplayId = `cost-color-won-${c.id}-${escAttr(color).replace(/[^a-zA-Z0-9]/g, '_')}`;
+          const priceInputId = `cost-color-price-${c.id}-${colorIdx}`;
+          const feeInputId = `cost-color-fee-${c.id}-${colorIdx}`;
+          const ignoreInputId = `cost-color-ignore-${c.id}-${colorIdx}`;
+          const wonDisplayId = `cost-color-won-${c.id}-${colorIdx}`;
           const colorWon = Math.round(getCostPerYard(c.item, color));
           const isDifferent = colorWon !== won;
           const keywordFee = getProcessingFeeForColor(color);
@@ -2373,12 +2377,25 @@ async function autoSaveCostColorOverride(item, color, priceInputId, feeInputId, 
   const fee = feeRaw.trim() === '' ? 0 : parseFloat(feeRaw);
   if ((priceRaw.trim() !== '' && (isNaN(price) || price <= 0)) || isNaN(fee) || fee < 0) return; // 잘못된 값이면 조용히 무시 (포커스 벗어날 때마다 매번 물어보면 번거로우니까)
 
+  let ok;
   if (price == null && fee === 0 && !ignoreKeywordFees) {
-    if (existing) { costs = costs.filter(x => x.id !== existing.id); await persistCosts(); }
+    if (existing) { costs = costs.filter(x => x.id !== existing.id); ok = await persistCosts(); } else { ok = true; }
   } else if (existing) {
-    existing.price = price; existing.fee = fee; existing.ignoreKeywordFees = ignoreKeywordFees; await persistCosts();
+    const prevPrice = existing.price, prevFee = existing.fee, prevIgnore = existing.ignoreKeywordFees;
+    existing.price = price; existing.fee = fee; existing.ignoreKeywordFees = ignoreKeywordFees;
+    ok = await persistCosts();
+    if (!ok) { existing.price = prevPrice; existing.fee = prevFee; existing.ignoreKeywordFees = prevIgnore; } // 저장 실패하면 로컬 값도 원래대로 되돌림 - 화면과 서버 상태가 다르게 보이는 걸 방지
   } else {
-    costs.push({ id: nextCostId++, item, color, isColorFee: true, price, fee, ignoreKeywordFees }); await persistCosts();
+    const newEntry = { id: nextCostId++, item, color, isColorFee: true, price, fee, ignoreKeywordFees };
+    costs.push(newEntry);
+    ok = await persistCosts();
+    if (!ok) { costs = costs.filter(c => c.id !== newEntry.id); }
+  }
+
+  if (!ok) {
+    alert(`저장에 실패했어요. 인터넷 연결을 확인하고 다시 입력해주세요.\n(방금 입력하신 "${color}" 원가는 저장 안 됐어요)`);
+    render(); // 실패했으니 실제 저장된 값으로 다시 정확히 그림
+    return;
   }
 
   // 화면 전체를 다시 그리면 입력 중이던 포커스가 끊기니까, 이 컬러의 미리보기 금액만 딱 바로 갱신
