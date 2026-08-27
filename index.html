@@ -226,6 +226,7 @@
   </div>
   <div id="sales-dd-reports" class="hidden" style="display:flex; gap:6px; margin-top:6px; flex-wrap:wrap; align-items:center; padding:8px; background:#faf6ff; border-radius:10px;">
     <button onclick="addCustomerName()" style="border:none;background:#eaf3ec;color:#2f6b46;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">+ 거래처 추가</button>
+    <button onclick="openSaleAddModal('')" style="border:none;background:#fff3d6;color:#a15c1e;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">+ 새 매출 등록</button>
     <button onclick="showCustomerLedger()" style="border:none;background:#e8edf5;color:#3d4f6b;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">📒 거래처원장</button>
     <button onclick="showPaymentLedger()" style="border:none;background:#e6f0fa;color:#1a56db;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">💰 입금장부</button>
     <button onclick="showCustomerRanking()" style="border:none;background:#f0e6fa;color:#6b3fa0;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">📊 거래처 순위</button>
@@ -682,12 +683,17 @@
     <p id="sale-edit-desc" style="font-size:13px;color:var(--muted);margin-top:-6px;"></p>
     <label>거래처</label>
     <input id="sale-edit-customer" placeholder="예: 맥가이버2" autocomplete="off" oninput="showCustomerSuggestions(this)" onfocus="showCustomerSuggestions(this)" onblur="hideItemSuggestionsDelayed()">
+    <label>날짜</label>
+    <input id="sale-edit-date" type="date">
     <div class="row2">
       <div><label>품목</label><input id="sale-edit-item" placeholder="예: 버블" autocomplete="off" oninput="showItemSuggestions(this)" onfocus="showItemSuggestions(this)" onblur="hideItemSuggestionsDelayed()"></div>
       <div><label>칼라</label><input id="sale-edit-color" placeholder="예: 2번진청" autocomplete="off" oninput="showColorSuggestions(this,'sale-edit-item')" onfocus="showColorSuggestions(this,'sale-edit-item')" onblur="hideItemSuggestionsDelayed()"></div>
     </div>
     <label>출고 수량(y)</label>
     <input id="sale-edit-yards" type="number" step="0.1">
+    <label id="sale-edit-skipinv-wrap" style="display:flex;align-items:center;gap:6px;font-size:13px;color:#a15c1e;margin-top:4px;">
+      <input type="checkbox" id="sale-edit-skip-inventory" style="width:auto;"> 이미 지난 매출이에요 (재고는 이미 빠졌거나 상관없음 - 이번엔 재고 건드리지 않기)
+    </label>
     <div id="sale-edit-breakdown-wrap" class="hidden">
       <label id="sale-edit-breakdown-wrap-label">롤별로 나눠서 수정 (자동 채우기로 조정 가능)</label>
       <div id="sale-edit-breakdown-list"></div>
@@ -790,7 +796,7 @@ const PASSWORD = "3059";
 const ADMIN_PASSWORD = "9503"; // 매출/미수금 탭 전용 - 필요하면 이 값만 바꿔서 변경 가능
 const LOW_STOCK_THRESHOLD = 100;
 const DATA_VERSION = "2026-08-03-v4"; // 재고/이월장부 씨앗 데이터를 바꿀 때마다 이 값을 새로 바꿔주세요
-const APP_CODE_VERSION = "2026-08-27-a"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
+const APP_CODE_VERSION = "2026-08-27-d"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
 const SCHEMA_STAMP = 2; // 서버 저장규칙이 확인하는 "최신 앱 도장" - 절대 자주 바꾸지 않음(이 값을 아는 코드만 저장 가능하게 서버에서 막을 때 씀)
 
 const firebaseConfig = {
@@ -3286,9 +3292,11 @@ function openSaleEditModal(logId) {
   document.getElementById('sale-edit-delete-btn').classList.remove('hidden');
   document.getElementById('sale-edit-desc').textContent = `${entry.customer || ''} (${entry.date})`;
   document.getElementById('sale-edit-customer').value = entry.customer || '';
+  document.getElementById('sale-edit-date').value = toDateInputValue(entry.date) || toDateInputValue(todayStr());
   document.getElementById('sale-edit-item').value = entry.item || '';
   document.getElementById('sale-edit-color').value = entry.color || '';
   document.getElementById('sale-edit-yards').value = entry.yardsShipped + (entry.defectYards || 0);
+  document.getElementById('sale-edit-skipinv-wrap').classList.add('hidden');
   populateSaleEditBreakdown(entry);
   document.getElementById('sale-edit-price').value = entry.unitPrice || '';
   document.getElementById('sale-edit-note').value = entry.note || '';
@@ -3304,13 +3312,16 @@ function openSaleEditModal(logId) {
 function openSaleAddModal(customer) {
   pendingSaleEditId = null;
   pendingSaleAddCustomer = customer;
-  document.getElementById('sale-edit-title').textContent = '품목 추가';
+  document.getElementById('sale-edit-title').textContent = customer ? '품목 추가' : '새 매출 등록';
   document.getElementById('sale-edit-delete-btn').classList.add('hidden');
-  document.getElementById('sale-edit-desc').textContent = `${customer} (${todayStr()}) · 이 거래처 매출에 새 품목을 추가해요`;
+  document.getElementById('sale-edit-desc').textContent = customer ? `${customer} · 이 거래처 매출에 새 품목을 추가해요` : '거래처 이름을 입력하고 매출을 등록하세요 (처음 거래하는 곳도 괜찮아요)';
   document.getElementById('sale-edit-customer').value = customer;
+  document.getElementById('sale-edit-date').value = toDateInputValue(todayStr());
   document.getElementById('sale-edit-item').value = '';
   document.getElementById('sale-edit-color').value = '';
   document.getElementById('sale-edit-yards').value = '';
+  document.getElementById('sale-edit-skip-inventory').checked = false;
+  document.getElementById('sale-edit-skipinv-wrap').classList.remove('hidden');
   document.getElementById('sale-edit-breakdown-wrap').classList.add('hidden');
   document.getElementById('sale-edit-breakdown-list').innerHTML = '';
   document.getElementById('sale-edit-new-tang-list').innerHTML = '';
@@ -3337,6 +3348,7 @@ async function confirmSaleEdit() {
   const entry = isNew ? null : shipmentLog.find(e => e.id === pendingSaleEditId);
   if (!isNew && !entry) return;
   const customer = document.getElementById('sale-edit-customer').value.trim();
+  const dateVal = fromDateInputValue(document.getElementById('sale-edit-date').value) || todayStr();
   const item = document.getElementById('sale-edit-item').value.trim();
   const color = document.getElementById('sale-edit-color').value.trim();
   const yardsRaw = parseFloat(document.getElementById('sale-edit-yards').value);
@@ -3359,11 +3371,12 @@ async function confirmSaleEdit() {
   const saleAmount = supplyAmount + taxAmount + extraAmount;
 
   if (isNew) {
+    const skipInventory = document.getElementById('sale-edit-skip-inventory').checked;
     const resolvedColor = resolveInventoryColor(item, color);
-    const inv = deductFromInventory(item, color, yardsRaw, null);
+    const inv = skipInventory ? { ok: false, deducted: 0, breakdown: null } : deductFromInventory(item, color, yardsRaw, null);
     if (inv.ok) await persistRolls();
     shipmentLog.push({
-      id: nextLogId++, date: todayStr(), orderId: null,
+      id: nextLogId++, date: dateVal, orderId: null,
       customer, factory: '', item, color: resolvedColor,
       amount: yardsRaw, unit: 'y', yardsShipped: yardsRaw, remainAfter: 0, isFullCompletion: true,
       unitPrice: priceRaw, supplyAmount, taxAmount, saleAmount, paidAmount: 0, taxIncluded,
@@ -3373,14 +3386,19 @@ async function confirmSaleEdit() {
       rateSnapshot: { rate: settings.rate, yard: settings.yard, ship: settings.ship }
     });
     await rememberPrice(customer, item, color, priceRaw);
+    if (!customerList.some(c => String(c).trim() === customer)) {
+      customerList.push(customer);
+      await persistCustomerList();
+    }
     await persistShipmentLog();
     closeSaleEditModal();
     render();
-    showToast(inv.ok ? '품목을 추가하고 재고도 같이 차감했습니다' : '품목을 추가했습니다 (재고에서 못 찾아서 재고는 그대로예요, 직접 확인해주세요)');
+    showToast(skipInventory ? '품목을 추가했습니다 (재고는 건드리지 않았어요)' : (inv.ok ? '품목을 추가하고 재고도 같이 차감했습니다' : '품목을 추가했습니다 (재고에서 못 찾아서 재고는 그대로예요, 직접 확인해주세요)'));
     return;
   }
 
   entry.customer = customer;
+  entry.date = dateVal;
   entry.item = item;
   entry.color = color;
   entry.note = noteVal;
