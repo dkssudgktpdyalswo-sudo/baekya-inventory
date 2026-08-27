@@ -796,7 +796,7 @@ const PASSWORD = "3059";
 const ADMIN_PASSWORD = "9503"; // 매출/미수금 탭 전용 - 필요하면 이 값만 바꿔서 변경 가능
 const LOW_STOCK_THRESHOLD = 100;
 const DATA_VERSION = "2026-08-03-v4"; // 재고/이월장부 씨앗 데이터를 바꿀 때마다 이 값을 새로 바꿔주세요
-const APP_CODE_VERSION = "2026-08-27-d"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
+const APP_CODE_VERSION = "2026-08-27-g"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
 const SCHEMA_STAMP = 2; // 서버 저장규칙이 확인하는 "최신 앱 도장" - 절대 자주 바꾸지 않음(이 값을 아는 코드만 저장 가능하게 서버에서 막을 때 씀)
 
 const firebaseConfig = {
@@ -2726,6 +2726,7 @@ function printOrderLedger() {
             customer: esc(cust), factory: esc(o.factory || '-'),
             item: esc(o.item), color: esc(o.color || ''),
             qty: `${remain > 0 ? remain : o.orderQty}${o.unit || 'y'}`,
+            orderDate: esc(o.date || ''),
             note: esc(o.note || '')
           });
         }
@@ -2751,6 +2752,7 @@ function printOrderLedger() {
             customer: esc(o.customer || ''), factory: esc(o.factory || '-'),
             item: esc(grp.item), color: esc(grp.color || ''),
             qty: `${remain > 0 ? remain : o.orderQty}${o.unit || 'y'}`,
+            orderDate: esc(o.date || ''),
             note: esc(o.note || '')
           });
         }
@@ -2774,6 +2776,7 @@ function printOrderLedger() {
       const groupBorder = isNewGroup ? 'border-top:2.5px solid #333;' : '';
       rowsHtml += `
         <tr style="height:24px;">
+          <td style="white-space:nowrap; text-align:center; ${groupBorder}">${r.orderDate}</td>
           <td style="${groupBorder}">${custCell}</td>
           <td style="white-space:nowrap;${groupBorder}">${factoryCell}</td>
           <td style="${groupBorder}">${itemCell}</td>
@@ -2783,7 +2786,7 @@ function printOrderLedger() {
         </tr>`;
     }
 
-    const headerRow = `<tr><th style="width:16%;">거래처</th><th style="width:17%;">공장/연락처</th><th style="width:16%;">품목</th><th style="width:15%;">컬러</th><th style="width:10%;">수량</th><th style="width:26%;">비고</th></tr>`;
+    const headerRow = `<tr><th style="width:11%;">발주일</th><th style="width:14%;">거래처</th><th style="width:15%;">공장/연락처</th><th style="width:14%;">품목</th><th style="width:13%;">컬러</th><th style="width:9%;">수량</th><th style="width:24%;">비고</th></tr>`;
 
     sections.push(`
       <div style="margin-top:14px;">
@@ -2810,7 +2813,7 @@ function printOrderLedger() {
   const html = `
     <div class="ledger-print" style="padding:14mm 12mm; font-family:-apple-system,'Malgun Gothic',sans-serif;">
       <h2 style="margin:0 0 4px;">이월장부 (진행중 발주 목록)</h2>
-      <div style="color:#555; font-size:12px; margin-bottom:6px;">발행일: ${todayStr()} · 총 ${list2.length}건</div>
+      <div style="color:#555; font-size:12px; margin-bottom:6px;">발행일: ${tomorrowStr()} · 총 ${list2.length}건</div>
       ${memoSection}
       ${sections.join('')}
     </div>
@@ -4037,12 +4040,17 @@ function buildStatementHTML(customerName, startDate, endDate, entryIdFilter, inc
       </tr>`;
   }).join('');
 
-  // "미수금액"은 이 명세서에 적힌 것들만이 아니라, 이 거래처가 지금 전체적으로 갖고 있는 미수금 총액이어야 함 (미수금표랑 같은 방식으로 계산)
+  // "미수금액"은 이 명세서 기준일(endDate) 시점까지의 미수금이어야 함 (그 이후에 생긴 매출/입금은 반영하면 안 됨 - 안 그러면 예전 명세서를 나중에 다시 뽑을 때 최신 미수금이 찍혀서 뒤죽박죽이 됨)
   let customerTotalUnpaid = 0;
   for (const e of shipmentLog) {
     if (String(e.customer || '').trim() !== t_c) continue;
-    if (e.saleAmount != null) customerTotalUnpaid += getRemaining(e);
-    else if ((e.isReturn || e.isDefect) && e.deductAmount != null) customerTotalUnpaid -= e.deductAmount;
+    if (String(e.date) > String(endDate)) continue; // 이 명세서 기준일보다 나중에 생긴 건 그 시점 미수금 계산에서 제외
+    if (e.saleAmount != null) {
+      const paidAsOfEnd = (e.payments || []).filter(p => String(p.date) <= String(endDate)).reduce((s, p) => s + p.amount, 0);
+      customerTotalUnpaid += Math.max(0, e.saleAmount - (e.discount || 0) - paidAsOfEnd);
+    } else if ((e.isReturn || e.isDefect) && e.deductAmount != null) {
+      customerTotalUnpaid -= e.deductAmount;
+    }
   }
   const balance = Math.max(0, customerTotalUnpaid + extraTotal + taxOverrideExtra);
   // "미수금"(이전) = 기존에 갖고 있던 미수금 중, 이 명세서에 실제로 적힌 항목들 말고 나머지 (새로 추가하는 선수금 항목은 안 섞음 - 그건 표에 이미 따로 나옴)
@@ -6937,6 +6945,14 @@ async function confirmOrderReceiveInner(o) {
 }
 function todayStr() {
   const d = new Date();
+  const yy = String(d.getFullYear()).slice(2);
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${yy}.${mm}.${dd}`;
+}
+function tomorrowStr() {
+  const d = new Date();
+  d.setDate(d.getDate() + 1);
   const yy = String(d.getFullYear()).slice(2);
   const mm = String(d.getMonth() + 1).padStart(2, '0');
   const dd = String(d.getDate()).padStart(2, '0');
