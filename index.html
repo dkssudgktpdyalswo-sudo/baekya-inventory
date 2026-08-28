@@ -826,7 +826,7 @@ const PASSWORD = "3059";
 const ADMIN_PASSWORD = "9503"; // 매출/미수금 탭 전용 - 필요하면 이 값만 바꿔서 변경 가능
 const LOW_STOCK_THRESHOLD = 100;
 const DATA_VERSION = "2026-08-03-v4"; // 재고/이월장부 씨앗 데이터를 바꿀 때마다 이 값을 새로 바꿔주세요
-const APP_CODE_VERSION = "2026-08-28-g"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
+const APP_CODE_VERSION = "2026-08-28-i"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
 const SCHEMA_STAMP = 2; // 서버 저장규칙이 확인하는 "최신 앱 도장" - 절대 자주 바꾸지 않음(이 값을 아는 코드만 저장 가능하게 서버에서 막을 때 씀)
 
 const firebaseConfig = {
@@ -1504,6 +1504,7 @@ function openCustomerPicker(targetInputId) {
 function closeCustomerPicker() { document.getElementById('customerPickerModal').classList.remove('open'); _customerPickerTargetId = null; }
 function renderCustomerPickerList() {
   const q = document.getElementById('customer-picker-search').value.trim().toLowerCase();
+  const registered = new Set(customerList.map(c => String(c).trim()));
   const names = Array.from(new Set([
     ...orders.map(o => String(o.customer).trim()),
     ...shipmentLog.map(e => String(e.customer || '').trim()),
@@ -1513,8 +1514,18 @@ function renderCustomerPickerList() {
   const listEl = document.getElementById('customer-picker-list');
   if (matches.length === 0) { listEl.innerHTML = '<div class="empty">일치하는 거래처가 없어요</div>'; return; }
   listEl.innerHTML = matches.map(n => `
-    <div onclick="selectCustomerFromPicker('${escAttr(n)}')" style="padding:13px 12px; font-size:15px; border-bottom:1px solid var(--border); cursor:pointer;">${esc(n)}</div>
+    <div style="display:flex; align-items:center; justify-content:space-between; padding:10px 12px; border-bottom:1px solid var(--border);">
+      <span onclick="selectCustomerFromPicker('${escAttr(n)}')" style="flex:1; font-size:15px; cursor:pointer;">${esc(n)}</span>
+      ${registered.has(n) ? `<button onclick="event.stopPropagation(); deleteRegisteredCustomer('${escAttr(n)}')" style="border:none;background:#fdecea;color:var(--danger);border-radius:6px;padding:5px 9px;font-size:11px;flex:none;">삭제</button>` : ''}
+    </div>
   `).join('');
+}
+async function deleteRegisteredCustomer(name) {
+  if (!confirm(`"${name}"을(를) 등록된 거래처 목록에서 삭제할까요?\n(이미 있는 발주/매출 기록은 그대로 남고, 목록에서만 빠져요)`)) return;
+  customerList = customerList.filter(c => String(c).trim() !== name);
+  await persistCustomerList();
+  renderCustomerPickerList();
+  showToast(`"${name}" 삭제했어요`);
 }
 function selectCustomerFromPicker(name) {
   if (_customerPickerTargetId) {
@@ -3416,7 +3427,8 @@ async function confirmSaleEdit(keepOpen) {
   const isNew = pendingSaleEditId === null;
   const entry = isNew ? null : shipmentLog.find(e => e.id === pendingSaleEditId);
   if (!isNew && !entry) return;
-  const customer = document.getElementById('sale-edit-customer').value.trim();
+  let customer = document.getElementById('sale-edit-customer').value.trim();
+  customer = confirmCustomerNameOrPick(customer);
   const dateVal = fromDateInputValue(document.getElementById('sale-edit-date').value) || todayStr();
   const item = document.getElementById('sale-edit-item').value.trim();
   const color = document.getElementById('sale-edit-color').value.trim();
@@ -4031,7 +4043,7 @@ function buildStatementHTML(customerName, startDate, endDate, entryIdFilter, inc
       const q = Math.abs(e.amount);
       const label = e.isDefect ? '불량' : '반품';
       const amt = e.deductAmount != null ? -e.deductAmount : null;
-      if (amt != null) totalReturnDefect += Math.abs(amt);
+      if (amt != null) { totalReturnDefect += Math.abs(amt); listedUnpaid += amt; } // 이 명세서에 찍힌 반품/불량 차감도 "이 명세서 항목들의 미수금"에 정확히 반영
       if (e.unit === 'y' || !e.unit) totalQty -= Math.abs(e.yardsShipped || q);
       saleRows.push({ date: e.date, desc: `${label} - ${e.item} ${e.color || ''}`, note: e.note || '', qty: `-${q}${e.unit}`, unitPrice: e.unitPrice ? e.unitPrice.toLocaleString() : '', supply: amt, tax: 0, amount: amt, color: 'red' });
       continue;
@@ -5677,6 +5689,37 @@ async function renameCustomer(oldName) {
   render();
   showToast(`"${oldName}" → "${newName}"(으)로 이름을 바꿨습니다`);
 }
+function getAllKnownCustomerNames() {
+  return Array.from(new Set([
+    ...orders.map(o => String(o.customer).trim()),
+    ...shipmentLog.map(e => String(e.customer || '').trim()),
+    ...customerList.map(c => String(c).trim())
+  ].filter(Boolean)));
+}
+function confirmCustomerNameOrPick(typed) {
+  // 발주/매출 등록할 때, 이미 있는 거래처랑 이름이 비슷하면(대소문자만 다르거나, 한쪽이 다른쪽을 포함) 확인해서
+  // "호박C"/"호박c", "비비"/"비비텍" 처럼 실수로 다른 거래처가 되는 걸 막음
+  const t = String(typed).trim();
+  if (!t) return t;
+  const allNames = getAllKnownCustomerNames().filter(n => n !== t);
+  const exactCi = allNames.find(n => n.toLowerCase() === t.toLowerCase());
+  if (exactCi) {
+    if (confirm(`이미 등록된 "${exactCi}"와 같은 거래처 같아요 (대소문자만 달라요).\n"${exactCi}"로 사용할까요?\n("취소"를 누르면 입력하신 "${t}" 그대로 새 거래처로 등록돼요)`)) {
+      return exactCi;
+    }
+    return t;
+  }
+  const partial = allNames.filter(n => n.toLowerCase().includes(t.toLowerCase()) || t.toLowerCase().includes(n.toLowerCase()));
+  if (partial.length > 0) {
+    const msg = `"${t}"랑 비슷한 이름의 거래처가 이미 있어요:\n${partial.map((n, i) => `${i + 1}. ${n}`).join('\n')}\n\n이 중 하나가 맞으면 그 번호를 입력해주세요.\n정말 새 거래처("${t}")면 0을 입력해주세요.`;
+    const raw = prompt(msg, '0');
+    if (raw === null) return t;
+    const idx = parseInt(raw);
+    if (idx >= 1 && idx <= partial.length) return partial[idx - 1];
+    return t;
+  }
+  return t;
+}
 async function addCustomerName() {
   const raw = prompt('새 거래처 이름을 입력해주세요', '');
   if (raw === null || !raw.trim()) return;
@@ -6360,8 +6403,9 @@ function openOrderEditModal(id) {
 function closeOrderAddModal() { document.getElementById('orderAddModal').classList.remove('open'); editingOrderId = null; }
 async function saveOrderAdd() {
   const date = fromDateInputValue(document.getElementById('o-date').value) || todayStr();
-  const customer = document.getElementById('o-customer').value.trim();
+  let customer = document.getElementById('o-customer').value.trim();
   if (!customer) { showToast('거래처를 확인해주세요'); return; }
+  customer = confirmCustomerNameOrPick(customer);
 
   if (editingOrderId === null) {
     const factoryGroups = document.querySelectorAll('.o-factory-group');
@@ -7400,7 +7444,8 @@ async function confirmReturn() {
   const type = document.querySelector('input[name="ret-type"]:checked').value;
 
   if (type === 'extra') {
-    const customer = document.getElementById('ret-customer').value.trim();
+    let customer = document.getElementById('ret-customer').value.trim();
+    customer = confirmCustomerNameOrPick(customer);
     const amount = parseFloat(document.getElementById('ret-extra-amount').value);
     const note = document.getElementById('ret-note').value.trim();
     const extraFactory = document.getElementById('ret-extra-factory').value.trim();
@@ -7457,7 +7502,8 @@ async function confirmReturn() {
   }
 
   const isDefectType = type === 'defect';
-  const customer = document.getElementById('ret-customer').value.trim();
+  let customer = document.getElementById('ret-customer').value.trim();
+  if (customer) customer = confirmCustomerNameOrPick(customer);
   const rowEls = document.querySelectorAll('.ret-row');
   const o0 = pendingReturnOrderId != null ? orders.find(x => x.id === pendingReturnOrderId) : null;
   if (!customer) { showToast('거래처를 확인해주세요'); return; }
