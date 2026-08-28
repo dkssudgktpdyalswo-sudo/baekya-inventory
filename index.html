@@ -826,7 +826,7 @@ const PASSWORD = "3059";
 const ADMIN_PASSWORD = "9503"; // 매출/미수금 탭 전용 - 필요하면 이 값만 바꿔서 변경 가능
 const LOW_STOCK_THRESHOLD = 100;
 const DATA_VERSION = "2026-08-03-v4"; // 재고/이월장부 씨앗 데이터를 바꿀 때마다 이 값을 새로 바꿔주세요
-const APP_CODE_VERSION = "2026-08-28-d"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
+const APP_CODE_VERSION = "2026-08-28-e"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
 const SCHEMA_STAMP = 2; // 서버 저장규칙이 확인하는 "최신 앱 도장" - 절대 자주 바꾸지 않음(이 값을 아는 코드만 저장 가능하게 서버에서 막을 때 씀)
 
 const firebaseConfig = {
@@ -5232,7 +5232,7 @@ function buildMonthlyReportHTML(monthKey, prevMonthKey, year, monthNum) {
   for (const e of shipmentLog) {
     if (e.item === '이월 미수금') continue;
     if (e.saleAmount != null && inMonth(e.date)) {
-      totalSale += (e.saleAmount - (e.discount || 0));
+      totalSale += ((e.supplyAmount != null ? e.supplyAmount : e.saleAmount) - (e.discount || 0));
       if (e._profit != null) totalProfit += e._profit;
       if (!e.isFee && e.yardsShipped) itemQty.set(e.item, (itemQty.get(e.item) || 0) + e.yardsShipped);
     }
@@ -5273,7 +5273,7 @@ function buildMonthlyReportHTML(monthKey, prevMonthKey, year, monthNum) {
     if (e.item === '이월 미수금' || String(e.date).slice(0, 5) !== prevMonthKey) continue;
     if (e.isReturn || e.isDefect) { if (e.deductAmount != null) { prevSale -= e.deductAmount; prevProfit -= e.deductAmount; } continue; }
     if (e.saleAmount == null) continue;
-    prevSale += (e.saleAmount - (e.discount || 0));
+    prevSale += ((e.supplyAmount != null ? e.supplyAmount : e.saleAmount) - (e.discount || 0));
     const effectiveRevenue = (e.supplyAmount != null ? e.supplyAmount : e.saleAmount) - (e.discount || 0) + (e.extraAmount || 0);
     const costPerY = getCostPerYardForEntry(e);
     if (costPerY != null && effectiveRevenue > 0) prevProfit += effectiveRevenue - Math.round(costPerY * e.yardsShipped);
@@ -5301,7 +5301,7 @@ function buildMonthlyReportHTML(monthKey, prevMonthKey, year, monthNum) {
     <div class="group" style="padding:16px;">
       <div style="font-weight:700; font-size:16px; margin-bottom:12px;">📅 ${year}년 ${monthNum}월 요약</div>
       <table style="width:100%; font-size:14px; border-collapse:collapse;">
-        <tr><td style="padding:6px 0;">총매출</td><td style="text-align:right; font-weight:700;">${Math.round(totalSale).toLocaleString()}원${fmtPct(salePct)}</td></tr>
+        <tr><td style="padding:6px 0;">총매출 <span style="font-size:10px; color:var(--muted); font-weight:400;">(세금 별도)</span></td><td style="text-align:right; font-weight:700;">${Math.round(totalSale).toLocaleString()}원${fmtPct(salePct)}</td></tr>
         <tr><td style="padding:6px 0;">총순이익</td><td style="text-align:right; font-weight:700; color:#1a7a4a;">${Math.round(netProfit).toLocaleString()}원${fmtPct(profitPct)}</td></tr>
         <tr><td style="padding:6px 0;">지출</td><td style="text-align:right; color:var(--danger);">-${totalExpense.toLocaleString()}원</td></tr>
         <tr><td style="padding:6px 0;">입금(지출내역 쪽)</td><td style="text-align:right; color:#2f6b46;">+${totalIncome.toLocaleString()}원</td></tr>
@@ -5769,30 +5769,10 @@ function renderSales() {
     }
   }
 
-  const grossSales = sales.reduce((s, e) => s + (e.item !== '이월 미수금' ? (e.saleAmount || 0) : 0), 0);
+  const grossSales = sales.reduce((s, e) => s + (e.item !== '이월 미수금' ? ((e.supplyAmount != null ? e.supplyAmount : e.saleAmount) || 0) : 0), 0);
   const totalReturnDefect = sales.reduce((s, e) => s + ((e.isReturn || e.isDefect) ? (e.deductAmount || 0) : 0), 0);
   const totalSales = grossSales - totalReturnDefect;
-  const totalProfit = sales.reduce((s, e) => {
-    if (e.isDefect) return s - (e.deductAmount || 0);
-    if (e.isReturn) return s; // 반품은 재고로 되돌아가므로 순이익에 영향 없음
-    return s + (e._profit != null ? e._profit : 0);
-  }, 0);
-  const unpaid = Math.max(0, sales.reduce((s, e) => s + (e.saleAmount != null ? getRemaining(e) : 0), 0) - totalReturnDefect);
-
-  // 지금 보고 있는 기간(날짜 필터)에 맞춰 지출/입금도 같이 집계해서 순이익에 반영
-  let relevantExpenses = expenses;
-  if (salesDayFilter) {
-    if (salesDayFilterEnd) {
-      relevantExpenses = expenses.filter(e => e.date >= salesDayFilter && e.date <= salesDayFilterEnd);
-    } else {
-      relevantExpenses = expenses.filter(e => e.date === salesDayFilter);
-    }
-  }
-  const totalExpense = relevantExpenses.filter(e => e.type !== 'income').reduce((s, e) => s + e.amount, 0);
-  const totalIncome = relevantExpenses.filter(e => e.type === 'income').reduce((s, e) => s + e.amount, 0);
-  const netProfit = totalProfit - totalExpense + totalIncome;
-  const expenseNote = (totalExpense > 0 || totalIncome > 0) ? ` (지출 -${totalExpense.toLocaleString()}원, 입금 +${totalIncome.toLocaleString()}원 반영)` : '';
-  document.getElementById('stats').innerHTML = `<span>매출 ${totalSales.toLocaleString()}원</span><span>총순이익 ${netProfit.toLocaleString()}원${expenseNote}</span><span>미수금 ${unpaid.toLocaleString()}원</span>`;
+  document.getElementById('stats').innerHTML = `<span>매출 ${totalSales.toLocaleString()}원 (세금 별도)</span>`;
 
   const list = document.getElementById('list');
   list.innerHTML = '';
