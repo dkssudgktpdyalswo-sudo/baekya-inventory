@@ -796,7 +796,7 @@ const PASSWORD = "3059";
 const ADMIN_PASSWORD = "9503"; // 매출/미수금 탭 전용 - 필요하면 이 값만 바꿔서 변경 가능
 const LOW_STOCK_THRESHOLD = 100;
 const DATA_VERSION = "2026-08-03-v4"; // 재고/이월장부 씨앗 데이터를 바꿀 때마다 이 값을 새로 바꿔주세요
-const APP_CODE_VERSION = "2026-08-27-g"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
+const APP_CODE_VERSION = "2026-08-27-j"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
 const SCHEMA_STAMP = 2; // 서버 저장규칙이 확인하는 "최신 앱 도장" - 절대 자주 바꾸지 않음(이 값을 아는 코드만 저장 가능하게 서버에서 막을 때 씀)
 
 const firebaseConfig = {
@@ -4630,43 +4630,46 @@ function printLedgerPeriod() {
   if (!customer) { showToast('거래처를 입력해주세요'); return; }
   const t_c = customer.trim();
 
-  const events = [];
-  for (const e of shipmentLog) {
-    if (String(e.customer || '').trim() !== t_c) continue;
-    if (e.isReturn || e.isDefect) {
-      if (e.deductAmount != null) {
-        events.push({ date: e.date, type: e.isDefect ? '불량' : '반품', desc: `${e.item} ${e.color || ''}`, detail: `${Math.abs(e.amount)}${e.unit || 'y'}${e.unitPrice ? ` × ${e.unitPrice.toLocaleString()}원/y` : ''}`, amount: -e.deductAmount });
-      }
-      continue;
-    }
-    if (e.saleAmount != null) {
-      const net = Math.round((e.saleAmount - (e.discount || 0)) * 100) / 100;
-      const isCarry = e.item === '이월 미수금';
-      const detail = (isCarry || e.isFee) ? '' : `${e.yardsShipped || e.amount}${e.unit || 'y'}${e.unitPrice ? ` × ${e.unitPrice.toLocaleString()}원/y` : ' (단가 미입력)'}`;
-      events.push({ date: e.date, type: '매출', desc: isCarry ? '이월 미수금' : (e.isFee ? `추가금${e.note ? ` - ${e.note}` : ''}` : `${e.item} ${e.color || ''}`), detail, amount: net });
-    }
-    (e.payments || []).forEach(p => {
-      events.push({ date: p.date, type: '입금', desc: (p.method || 'cash') === 'cash' ? '입금(현금)' : '입금(온라인)', detail: '', amount: -p.amount });
-    });
-  }
-  events.sort((a, b) => String(a.date).localeCompare(String(b.date)));
+  const events = buildCustomerLedgerEvents(t_c);
   if (events.length === 0) { showToast('인쇄할 내역이 없습니다'); return; }
+
+  // 화면 표에서 체크 해제된(선택 안 된) 항목은 인쇄에서 뺌
+  const checkedEntryIds = new Set();
+  const checkedRefsKeys = new Set();
+  document.querySelectorAll('.ledger-print-check:checked').forEach(cb => {
+    if (cb.dataset.entryId) checkedEntryIds.add(cb.dataset.entryId);
+    else if (cb.dataset.refs) checkedRefsKeys.add(cb.dataset.refs);
+  });
+  const hasAnyCheckbox = document.querySelectorAll('.ledger-print-check').length > 0;
+  const isSelected = (ev) => {
+    if (!hasAnyCheckbox) return true; // 표가 아직 안 열려있었으면(체크박스 자체가 없으면) 그냥 다 포함
+    if (ev.id != null) return checkedEntryIds.has(String(ev.id));
+    if (ev.refs) return checkedRefsKeys.has(JSON.stringify(ev.refs));
+    return true;
+  };
 
   let openingBalance = 0;
   const rowsInRange = [];
   for (const ev of events) {
-    if (startDate && ev.date < startDate) { openingBalance += ev.amount; continue; }
+    if (startDate && ev.date < startDate) { if (isSelected(ev)) openingBalance += ev.amount; continue; }
     if (endDate && ev.date > endDate) continue;
+    if (!isSelected(ev)) continue; // 체크 해제된 건 인쇄 자체에서 빠짐 (이월 계산에도 안 들어감)
     rowsInRange.push(ev);
   }
+  if (rowsInRange.length === 0) { showToast('선택된 항목이 없어요 - 표에서 인쇄할 항목을 체크해주세요'); return; }
 
   let running = openingBalance;
+  let lastDate = null;
   const rowsHtml = rowsInRange.map(ev => {
     running = Math.round((running + ev.amount) * 100) / 100;
-    return `<tr>
+    const dateHeader = (ev.date !== lastDate) ? `<tr style="background:#f3f1ea;"><td colspan="6" style="padding:4px 6px; font-weight:700; font-size:12px;">${esc(ev.date)}</td></tr>` : '';
+    lastDate = ev.date;
+    const color = ev.type === '입금' ? 'color:#1a56db;' : (ev.type === '불량' || ev.type === '반품') ? 'color:#c0392b;' : '';
+    return `${dateHeader}<tr style="${color}">
       <td>${esc(ev.date)}</td>
       <td>${esc(ev.type)}</td>
       <td>${esc(ev.desc)}${ev.detail ? ` (${esc(ev.detail)})` : ''}</td>
+      <td style="font-size:0.85em; color:#666;">${esc(ev.note || '')}</td>
       <td style="text-align:right;">${ev.amount < 0 ? '-' : ''}${Math.abs(ev.amount).toLocaleString()}</td>
       <td style="text-align:right;">${running.toLocaleString()}</td>
     </tr>`;
@@ -4678,10 +4681,10 @@ function printLedgerPeriod() {
       <div style="color:#555; margin-bottom:10px; font-size:13px;">기간: ${esc(startDate || '')} ~ ${esc(endDate || '')} · 발행일: ${todayStr()}</div>
       <table style="width:100%; border-collapse:collapse;">
         <thead>
-          <tr><th>날짜</th><th>구분</th><th>내용</th><th>금액</th><th>잔액</th></tr>
+          <tr><th>날짜</th><th>구분</th><th>내용</th><th>비고</th><th>금액</th><th>잔액</th></tr>
         </thead>
         <tbody>
-          <tr><td colspan="4"><b>[이월]</b></td><td style="text-align:right;"><b>${openingBalance.toLocaleString()}</b></td></tr>
+          <tr><td colspan="5"><b>[이월]</b></td><td style="text-align:right;"><b>${openingBalance.toLocaleString()}</b></td></tr>
           ${rowsHtml}
         </tbody>
       </table>
@@ -4689,6 +4692,46 @@ function printLedgerPeriod() {
   `;
   document.getElementById('printArea').innerHTML = html;
   setTimeout(() => window.print(), 100);
+}
+function buildCustomerLedgerEvents(t_c) {
+  // 이 거래처의 모든 사건(매출/반품·불량/입금)을 날짜순으로 하나의 흐름으로 만듦 (화면표시/인쇄 둘 다 이 함수 하나만 씀)
+  const events = [];
+  for (const e of shipmentLog) {
+    if (String(e.customer || '').trim() !== t_c) continue;
+    if (e.isReturn || e.isDefect) {
+      if (e.deductAmount != null) {
+        events.push({ id: e.id, date: e.date, type: e.isDefect ? '불량' : '반품', desc: `${e.item} ${e.color || ''}`, detail: `${Math.abs(e.amount)}${e.unit || 'y'}${e.unitPrice ? ` × ${e.unitPrice.toLocaleString()}원/y` : ''}`, amount: -e.deductAmount, note: e.note || e.defectNote || '' });
+      }
+      continue;
+    }
+    if (e.saleAmount != null) {
+      const net = Math.round((e.saleAmount - (e.discount || 0)) * 100) / 100;
+      const isCarry = e.item === '이월 미수금';
+      const breakdownText = (e.deductBreakdown && e.deductBreakdown.length > 1) ? ` (${e.deductBreakdown.map(b => `${b.tang}:${b.qty}y`).join(', ')})` : '';
+      const detail = (isCarry || e.isFee) ? '' : `${e.yardsShipped || e.amount}${e.unit || 'y'}${breakdownText}${e.unitPrice ? ` × ${e.unitPrice.toLocaleString()}원/y` : ' (단가 미입력)'}`;
+      events.push({ id: e.id, date: e.date, type: '매출', desc: isCarry ? '이월 미수금' : (e.isFee ? `추가금${e.note ? ` - ${e.note}` : ''}` : `${e.item} ${e.color || ''}`), detail, amount: net, isCarry, note: isCarry || e.isFee ? '' : (e.note || '') });
+    }
+    (e.payments || []).forEach((p, idx) => {
+      events.push({ id: null, entryId: e.id, paymentIdx: idx, date: p.date, type: '입금', desc: (p.method || 'cash') === 'cash' ? '입금(현금)' : '입금(온라인)', detail: '', amount: -p.amount, method: p.method || 'cash' });
+    });
+  }
+  // 같은 날짜에 같은 방법(현금/온라인)으로 여러 건에 나눠 들어간 입금은 하나로 합쳐서 보여줌
+  const mergedPaymentEvents = new Map(); // "date:method" -> event
+  const otherEvents = [];
+  for (const ev of events) {
+    if (ev.type !== '입금') { otherEvents.push(ev); continue; }
+    const k = `${ev.date}:${ev.method}`;
+    if (!mergedPaymentEvents.has(k)) {
+      mergedPaymentEvents.set(k, { id: null, date: ev.date, type: '입금', desc: ev.desc, detail: '', amount: 0, note: '', refs: [] });
+    }
+    const m = mergedPaymentEvents.get(k);
+    m.amount += ev.amount;
+    m.refs.push({ entryId: ev.entryId, paymentIdx: ev.paymentIdx });
+    if (m.refs.length > 1) m.desc = m.desc.replace(/\(\d+건\)$/, '') + ` (${m.refs.length}건)`;
+  }
+  const merged = [...otherEvents, ...mergedPaymentEvents.values()];
+  merged.sort((a, b) => String(a.date).localeCompare(String(b.date)));
+  return merged;
 }
 function renderCustomerLedgerTable() {
   const customer = (ledgerCustomer || document.getElementById('ledger-customer').value).trim();
@@ -4717,44 +4760,7 @@ function renderCustomerLedgerTable() {
     `;
   }
 
-  // 이 거래처의 모든 사건(매출/반품·불량/입금)을 날짜순으로 하나의 흐름으로 만듦
-  const events = [];
-  for (const e of shipmentLog) {
-    if (String(e.customer || '').trim() !== t_c) continue;
-    if (e.isReturn || e.isDefect) {
-      if (e.deductAmount != null) {
-        events.push({ id: e.id, date: e.date, type: e.isDefect ? '불량' : '반품', desc: `${e.item} ${e.color || ''}`, detail: `${Math.abs(e.amount)}${e.unit || 'y'}${e.unitPrice ? ` × ${e.unitPrice.toLocaleString()}원/y` : ''}`, amount: -e.deductAmount });
-      }
-      continue;
-    }
-    if (e.saleAmount != null) {
-      const net = Math.round((e.saleAmount - (e.discount || 0)) * 100) / 100;
-      const isCarry = e.item === '이월 미수금';
-      const detail = (isCarry || e.isFee) ? '' : `${e.yardsShipped || e.amount}${e.unit || 'y'}${e.unitPrice ? ` × ${e.unitPrice.toLocaleString()}원/y` : ' (단가 미입력)'}`;
-      events.push({ id: e.id, date: e.date, type: '매출', desc: isCarry ? '이월 미수금' : (e.isFee ? `추가금${e.note ? ` - ${e.note}` : ''}` : `${e.item} ${e.color || ''}`), detail, amount: net, isCarry });
-    }
-    (e.payments || []).forEach((p, idx) => {
-      events.push({ id: null, entryId: e.id, paymentIdx: idx, date: p.date, type: '입금', desc: (p.method || 'cash') === 'cash' ? '입금(현금)' : '입금(온라인)', detail: '', amount: -p.amount, method: p.method || 'cash' });
-    });
-  }
-  // 같은 날짜에 같은 방법(현금/온라인)으로 여러 건에 나눠 들어간 입금은 하나로 합쳐서 보여줌
-  const mergedPaymentEvents = new Map(); // "date:method" -> event
-  const otherEvents = [];
-  for (const ev of events) {
-    if (ev.type !== '입금') { otherEvents.push(ev); continue; }
-    const k = `${ev.date}:${ev.method}`;
-    if (!mergedPaymentEvents.has(k)) {
-      mergedPaymentEvents.set(k, { id: null, date: ev.date, type: '입금', desc: ev.desc, detail: '', amount: 0, refs: [] });
-    }
-    const m = mergedPaymentEvents.get(k);
-    m.amount += ev.amount;
-    m.refs.push({ entryId: ev.entryId, paymentIdx: ev.paymentIdx });
-    if (m.refs.length > 1) m.desc = m.desc.replace(/\(\d+건\)$/, '') + ` (${m.refs.length}건)`;
-  }
-  const events2 = [...otherEvents, ...mergedPaymentEvents.values()];
-  events.length = 0;
-  events.push(...events2);
-  events.sort((a, b) => String(a.date).localeCompare(String(b.date)));
+  const events = buildCustomerLedgerEvents(t_c);
 
   if (events.length === 0) { wrap.innerHTML = '<div class="empty">거래 내역이 없습니다</div>'; return; }
 
