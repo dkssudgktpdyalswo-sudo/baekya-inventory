@@ -129,7 +129,7 @@
   .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.4); display: none; align-items: flex-end; justify-content: center; z-index: 30; }
   .modal-overlay.open { display: flex; }
   #orderReceiveModal.open { z-index: 40; }
-  .modal { background: white; width: 100%; max-width: 420px; border-radius: 16px 16px 0 0; padding: 20px; max-height: 85vh; overflow-y: auto; }
+  .modal { background: white; width: 100%; max-width: 420px; border-radius: 16px 16px 0 0; padding: 20px; max-height: 85vh; overflow-y: auto; min-height: 0; }
   .modal h3 { margin: 0 0 14px; font-size: 16px; }
   .modal label { font-size: 12px; color: var(--muted); display: block; margin: 10px 0 4px; }
   .modal input, .modal select { width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 8px; font-size: 15px; }
@@ -348,7 +348,10 @@
     <label>발주날짜</label>
     <input id="o-date" type="date">
     <label>거래처</label>
-    <input id="o-customer" placeholder="예: 클래식" autocomplete="off" oninput="showCustomerSuggestions(this)" onfocus="showCustomerSuggestions(this)" onblur="hideItemSuggestionsDelayed()">
+    <div style="display:flex; gap:6px; align-items:center;">
+      <input id="o-customer" placeholder="예: 클래식" autocomplete="off" oninput="showCustomerSuggestions(this)" onfocus="showCustomerSuggestions(this)" onblur="hideItemSuggestionsDelayed()" style="flex:1;">
+      <button type="button" onclick="openCustomerPicker('o-customer')" style="border:none;background:#e8edf5;color:#3d4f6b;border-radius:8px;padding:0 10px;height:38px;font-size:12px;flex:none;">📋 목록</button>
+    </div>
 
     <div id="o-multi-wrap">
       <div id="o-multi-list"></div>
@@ -495,7 +498,10 @@
     </div>
     <label id="ret-type-extra-label" style="display:flex;align-items:center;gap:6px;font-size:14px;color:var(--text);margin-top:6px;"><input type="radio" name="ret-type" value="extra" style="width:auto;" onchange="onReturnTypeChange()"> 추가금 (운임비 등, 매출에 그대로 더해짐)</label>
     <label>거래처</label>
-    <input id="ret-customer" placeholder="예: 메이원" autocomplete="off" oninput="showCustomerSuggestions(this)" onfocus="showCustomerSuggestions(this)" onblur="hideItemSuggestionsDelayed()">
+    <div style="display:flex; gap:6px; align-items:center;">
+      <input id="ret-customer" placeholder="예: 메이원" autocomplete="off" oninput="showCustomerSuggestions(this)" onfocus="showCustomerSuggestions(this)" onblur="hideItemSuggestionsDelayed()" style="flex:1;">
+      <button type="button" onclick="openCustomerPicker('ret-customer')" style="border:none;background:#e8edf5;color:#3d4f6b;border-radius:8px;padding:0 10px;height:38px;font-size:12px;flex:none;">📋 목록</button>
+    </div>
 
     <div id="ret-multi-wrap">
       <div id="ret-multi-rows"></div>
@@ -568,6 +574,18 @@
 
 <!-- 지출/입금 내역 -->
 <!-- 고정비 관리 (사장님 전용) -->
+<!-- 거래처 목록에서 고르기 -->
+<div class="modal-overlay" id="customerPickerModal">
+  <div class="modal" style="max-width:420px; max-height:80vh; display:flex; flex-direction:column;">
+    <h3>거래처 선택</h3>
+    <input id="customer-picker-search" placeholder="검색..." autocomplete="off" oninput="renderCustomerPickerList()" style="margin-bottom:8px;">
+    <div id="customer-picker-list" style="flex:1; overflow-y:auto; min-height:200px;"></div>
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="closeCustomerPicker()">닫기</button>
+    </div>
+  </div>
+</div>
+
 <!-- 가공 종류 관리 -->
 <div class="modal-overlay" id="processingTypeModal">
   <div class="modal" style="max-width:420px;">
@@ -638,7 +656,10 @@
   <div class="modal">
     <h3>기간별 내역서</h3>
     <label>거래처 (비워두면 그 기간 거래한 모든 거래처를 한 번에 각 1장씩 인쇄)</label>
-    <input id="stmt-customer" placeholder="비워두면 전체 거래처" autocomplete="off" oninput="showCustomerSuggestions(this)" onfocus="showCustomerSuggestions(this)" onblur="hideItemSuggestionsDelayed()">
+    <div style="display:flex; gap:6px; align-items:center;">
+      <input id="stmt-customer" placeholder="비워두면 전체 거래처" autocomplete="off" oninput="showCustomerSuggestions(this)" onfocus="showCustomerSuggestions(this)" onblur="hideItemSuggestionsDelayed()" style="flex:1;">
+      <button type="button" onclick="openCustomerPicker('stmt-customer')" style="border:none;background:#e8edf5;color:#3d4f6b;border-radius:8px;padding:0 10px;height:38px;font-size:12px;flex:none;">📋 목록</button>
+    </div>
     <div class="row2">
       <div><label>시작일</label><input id="stmt-start" type="date"></div>
       <div><label>종료일</label><input id="stmt-end" type="date"></div>
@@ -687,7 +708,10 @@
     <h3 id="sale-edit-title">매출 수정</h3>
     <p id="sale-edit-desc" style="font-size:13px;color:var(--muted);margin-top:-6px;"></p>
     <label>거래처</label>
-    <input id="sale-edit-customer" placeholder="예: 맥가이버2" autocomplete="off" oninput="showCustomerSuggestions(this)" onfocus="showCustomerSuggestions(this)" onblur="hideItemSuggestionsDelayed()">
+    <div style="display:flex; gap:6px; align-items:center;">
+      <input id="sale-edit-customer" placeholder="예: 맥가이버2" autocomplete="off" oninput="showCustomerSuggestions(this)" onfocus="showCustomerSuggestions(this)" onblur="hideItemSuggestionsDelayed()" style="flex:1;">
+      <button type="button" onclick="openCustomerPicker('sale-edit-customer')" style="border:none;background:#e8edf5;color:#3d4f6b;border-radius:8px;padding:0 10px;height:38px;font-size:12px;flex:none;">📋 목록</button>
+    </div>
     <label>날짜</label>
     <input id="sale-edit-date" type="date">
     <div class="row2">
@@ -802,7 +826,7 @@ const PASSWORD = "3059";
 const ADMIN_PASSWORD = "9503"; // 매출/미수금 탭 전용 - 필요하면 이 값만 바꿔서 변경 가능
 const LOW_STOCK_THRESHOLD = 100;
 const DATA_VERSION = "2026-08-03-v4"; // 재고/이월장부 씨앗 데이터를 바꿀 때마다 이 값을 새로 바꿔주세요
-const APP_CODE_VERSION = "2026-08-28-a"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
+const APP_CODE_VERSION = "2026-08-28-d"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
 const SCHEMA_STAMP = 2; // 서버 저장규칙이 확인하는 "최신 앱 도장" - 절대 자주 바꾸지 않음(이 값을 아는 코드만 저장 가능하게 서버에서 막을 때 씀)
 
 const firebaseConfig = {
@@ -1467,6 +1491,40 @@ function showColorSuggestions(colorInputEl, itemInputIdOrEl) {
     if (sw) labelMap[c] = sw.order;
   }
   showSuggestionsGeneric(colorInputEl, colors, labelMap);
+}
+let _customerPickerTargetId = null;
+function openCustomerPicker(targetInputId) {
+  _customerPickerTargetId = targetInputId;
+  document.getElementById('customer-picker-search').value = '';
+  document.getElementById('itemSuggestBox').classList.add('hidden'); // 혹시 떠있던 자동완성 드롭다운은 닫아줌
+  renderCustomerPickerList();
+  document.getElementById('customerPickerModal').classList.add('open');
+  setTimeout(() => document.getElementById('customer-picker-search').focus(), 50);
+}
+function closeCustomerPicker() { document.getElementById('customerPickerModal').classList.remove('open'); _customerPickerTargetId = null; }
+function renderCustomerPickerList() {
+  const q = document.getElementById('customer-picker-search').value.trim().toLowerCase();
+  const names = Array.from(new Set([
+    ...orders.map(o => String(o.customer).trim()),
+    ...shipmentLog.map(e => String(e.customer || '').trim()),
+    ...customerList.map(c => String(c).trim())
+  ].filter(Boolean))).sort((a, b) => a.localeCompare(b, 'ko'));
+  const matches = q ? names.filter(n => n.toLowerCase().includes(q) || getChosung(n).includes(q)) : names;
+  const listEl = document.getElementById('customer-picker-list');
+  if (matches.length === 0) { listEl.innerHTML = '<div class="empty">일치하는 거래처가 없어요</div>'; return; }
+  listEl.innerHTML = matches.map(n => `
+    <div onclick="selectCustomerFromPicker('${escAttr(n)}')" style="padding:13px 12px; font-size:15px; border-bottom:1px solid var(--border); cursor:pointer;">${esc(n)}</div>
+  `).join('');
+}
+function selectCustomerFromPicker(name) {
+  if (_customerPickerTargetId) {
+    const el = document.getElementById(_customerPickerTargetId);
+    if (el) {
+      el.value = name;
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+  }
+  closeCustomerPicker();
 }
 function showCustomerSuggestions(inputEl) {
   const names = Array.from(new Set([
@@ -4134,6 +4192,7 @@ function buildStatementHTML(customerName, startDate, endDate, entryIdFilter, inc
           const items = [];
           items.push({ label: '공급가액 합계', value: `${totalSupply.toLocaleString()}원`, color: '#1a5f8a' });
           if (totalTax > 0) items.push({ label: '세액 합계', value: `${totalTax.toLocaleString()}원`, color: '#1a5f8a' });
+          items.push({ label: '합계금액', value: `${(totalSupply + totalTax).toLocaleString()}원`, color: '#1a5f8a' });
           if (totalReturnDefect > 0) items.push({ label: '반품/불량 차감', value: `-${totalReturnDefect.toLocaleString()}원`, color: '#c0392b' });
           if (totalDiscount > 0) items.push({ label: '공제액', value: `${totalDiscount.toLocaleString()}원`, color: '#1a5f8a' });
           if (totalPaid > 0) items.push({ label: '입금 합계', value: `${totalPaid.toLocaleString()}원`, color: '#1a56db' });
@@ -4483,7 +4542,10 @@ function renderCustomerLedgerView() {
   controls.innerHTML = `
     <div style="flex:1; min-width:180px;">
       <label>거래처</label>
-      <input id="ledger-customer" placeholder="예: 클래식" autocomplete="off" value="${escAttr(ledgerCustomer || '')}" oninput="showCustomerSuggestions(this)" onfocus="showCustomerSuggestions(this)" onblur="hideItemSuggestionsDelayed()">
+      <div style="display:flex; gap:6px; align-items:center;">
+        <input id="ledger-customer" placeholder="예: 클래식" autocomplete="off" value="${escAttr(ledgerCustomer || '')}" oninput="showCustomerSuggestions(this)" onfocus="showCustomerSuggestions(this)" onblur="hideItemSuggestionsDelayed()" style="flex:1;">
+        <button type="button" onclick="openCustomerPicker('ledger-customer')" style="border:none;background:#e8edf5;color:#3d4f6b;border-radius:8px;padding:0 10px;height:38px;font-size:12px;flex:none;">📋 목록</button>
+      </div>
     </div>
     <div>
       <label>시작일</label>
