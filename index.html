@@ -366,19 +366,27 @@
         <div><label>품목</label><input id="o-item" placeholder="예: 피넛" autocomplete="off" oninput="showItemSuggestions(this)" onfocus="showItemSuggestions(this)" onblur="hideItemSuggestionsDelayed()"></div>
         <div><label>칼라</label><input id="o-color" placeholder="예: 1번연베지" autocomplete="off" oninput="showColorSuggestions(this,'o-item')" onfocus="showColorSuggestions(this,'o-item')" onblur="hideItemSuggestionsDelayed()"></div>
       </div>
-      <label>발주수량</label>
-      <div class="row2">
-        <div><input id="o-qty" type="number" step="0.1" placeholder="예: 30"></div>
-        <div>
-          <select id="o-unit">
-            <option value="y">y (야드)</option>
-            <option value="절">절 (1절 ≈ 50~60y)</option>
-          </select>
+      <div id="o-qty-wrap">
+        <label>발주 수량</label>
+        <div class="row2">
+          <div><input id="o-qty" type="number" step="0.1" placeholder="예: 30" oninput="updateOrderEditRemainHint()"></div>
+          <div>
+            <select id="o-unit" onchange="updateOrderEditRemainHint()">
+              <option value="y">y (야드)</option>
+              <option value="절">절 (1절 ≈ 50~60y)</option>
+            </select>
+          </div>
         </div>
       </div>
+      <div id="o-edit-remain-wrap" class="hidden">
+        <label>이월 남은 양 — 실제로 중요한 건 이 숫자예요, 이걸 직접 고치세요</label>
+        <input id="o-remain" type="number" step="0.1" placeholder="예: 40" oninput="updateOrderEditRemainHint('remain')">
+      </div>
       <div id="o-received-wrap" class="hidden">
-        <label>처리(출고)된 마수(y) — 숫자가 잘못됐으면 여기서 바로 고치세요</label>
-        <input id="o-received" type="number" step="0.1" placeholder="예: 20">
+        <label>이미 처리(출고)된 양 — 이게 잘못됐으면 여기서 고치세요</label>
+        <input id="o-received" type="number" step="0.1" placeholder="예: 20" oninput="updateOrderEditRemainHint('received')">
+        <p id="o-remain-hint" style="font-size:12px; color:var(--muted); margin-top:4px;"></p>
+      </div>
       </div>
       <button onclick="openReturnFromOrderForm()" style="border:none;background:#fce8d6;color:#a15c1e;border-radius:8px;padding:9px 12px;font-size:13px;font-weight:600;margin-top:10px;width:100%;">추가금 등록</button>
       <label>비고</label>
@@ -826,7 +834,7 @@ const PASSWORD = "3059";
 const ADMIN_PASSWORD = "9503"; // 매출/미수금 탭 전용 - 필요하면 이 값만 바꿔서 변경 가능
 const LOW_STOCK_THRESHOLD = 100;
 const DATA_VERSION = "2026-08-03-v4"; // 재고/이월장부 씨앗 데이터를 바꿀 때마다 이 값을 새로 바꿔주세요
-const APP_CODE_VERSION = "2026-08-28-i"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
+const APP_CODE_VERSION = "2026-08-28-o"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
 const SCHEMA_STAMP = 2; // 서버 저장규칙이 확인하는 "최신 앱 도장" - 절대 자주 바꾸지 않음(이 값을 아는 코드만 저장 가능하게 서버에서 막을 때 씀)
 
 const firebaseConfig = {
@@ -6188,11 +6196,15 @@ function renderCustomerBuckets(list2) {
     const items = sortOrdersForDisplay(groups.get(cust));
     const pendingCount = items.filter(o => !o.done).length;
     const qtyByUnit = {};
+    const remainByUnit = {};
     for (const o of items) {
       const u = o.unit || 'y';
       qtyByUnit[u] = Math.round(((qtyByUnit[u] || 0) + (o.orderQty || 0)) * 100) / 100;
+      const r = (o.orderQty && o.orderQty > o.received) ? (o.orderQty - o.received) : 0;
+      if (r > 0) remainByUnit[u] = Math.round(((remainByUnit[u] || 0) + r) * 100) / 100;
     }
     const qtyLabel = Object.entries(qtyByUnit).map(([u, v]) => `${v}${u}`).join(' + ');
+    const remainLabel = Object.entries(remainByUnit).map(([u, v]) => `${v}${u}`).join(' + ');
     const k = 'cust:' + cust;
     const isOpen = openGroups.has(k);
 
@@ -6202,7 +6214,7 @@ function renderCustomerBuckets(list2) {
       <div class="group-head" onclick="toggleGroup('${escAttr(k)}')">
         <div class="info">
           <div class="name">${esc(cust)} <button onclick="event.stopPropagation();printPreShipmentSelected('${escAttr(cust)}')" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:6px;padding:3px 9px;font-size:11px;font-weight:600;margin-left:6px;">🖨 선수금용 명세서(체크한 것만)</button> ${pendingCount > 0 ? `<button onclick="event.stopPropagation();openCustomerShipList('${escAttr(cust)}')" style="border:none;background:#eaf3ec;color:#2f6b46;border-radius:6px;padding:3px 9px;font-size:11px;font-weight:600;margin-left:6px;">📦 출고 처리</button>` : ''}</div>
-          <div class="sub">전체 ${items.length}건 · 진행중 ${pendingCount}건 · ${qtyLabel}</div>
+          <div class="sub">전체 ${items.length}건 · 진행중 ${pendingCount}건${remainLabel ? ` · ${remainLabel} 남음` : ` · ${qtyLabel}`}</div>
         </div>
         <div class="total"><div class="cnt">${isOpen ? '접기 ▲' : '펼치기 ▼'}</div></div>
       </div>
@@ -6381,6 +6393,7 @@ function addColorRow(colorListEl) {
   `;
   colorListEl.appendChild(row);
 }
+let _editOrderOriginalQty = null; // 수정모달 열때의 원래 발주 총수량 - "이미 처리된 양"만 고칠 때, 총량은 그대로 두고 이월량만 다시 계산하기 위해 기억해둠
 function openOrderEditModal(id) {
   const o = orders.find(x => x.id === id);
   if (!o) return;
@@ -6396,9 +6409,44 @@ function openOrderEditModal(id) {
   document.getElementById('o-qty').value = o.orderQty || '';
   document.getElementById('o-unit').value = o.unit || 'y';
   document.getElementById('o-note').value = o.note || '';
+  document.getElementById('o-qty-wrap').classList.add('hidden'); // 발주 총수량은 안 보여주고, 이월 남은 양을 직접 고치는 방식으로
+  document.getElementById('o-edit-remain-wrap').classList.remove('hidden');
+  _editOrderOriginalQty = o.orderQty || 0;
+  const remainNow = Math.max(0, (o.orderQty || 0) - (o.received || 0));
+  document.getElementById('o-remain').value = remainNow;
+  document.getElementById('o-qty').value = o.orderQty || '';
+  document.getElementById('o-unit').value = o.unit || 'y';
+  document.getElementById('o-note').value = o.note || '';
   document.getElementById('o-received').value = o.received || 0;
   document.getElementById('o-received-wrap').classList.remove('hidden');
+  updateOrderEditRemainHint();
   document.getElementById('orderAddModal').classList.add('open');
+}
+function updateOrderEditRemainHint(changedField) {
+  const hintEl = document.getElementById('o-remain-hint');
+  const isEditMode = !document.getElementById('o-edit-remain-wrap').classList.contains('hidden');
+  const unit = document.getElementById('o-unit').value || 'y';
+  if (isEditMode) {
+    const received = parseFloat(document.getElementById('o-received').value) || 0;
+    if (changedField === 'received') {
+      // "이미 처리된 양"을 고친 경우 - 원래 총량(모달 열 때 값)은 그대로 두고, 이월 남은 양만 다시 계산해줌
+      const remain = Math.max(0, Math.round((_editOrderOriginalQty - received) * 100) / 100);
+      document.getElementById('o-remain').value = remain;
+      document.getElementById('o-qty').value = _editOrderOriginalQty;
+      hintEl.textContent = `→ 발주 총량 ${_editOrderOriginalQty}${unit} 기준으로, 이월이 ${remain}${unit}로 다시 계산됐어요`;
+    } else {
+      // "이월 남은 양"을 직접 고친 경우 - 그 의도를 그대로 반영해서 총량을 새로 계산함
+      const remain = parseFloat(document.getElementById('o-remain').value) || 0;
+      const total = Math.round((received + remain) * 100) / 100;
+      document.getElementById('o-qty').value = total;
+      hintEl.textContent = `→ 발주 총량 ${total}${unit}로 계산돼요 (이미 처리 ${received}${unit} + 이월 ${remain}${unit})`;
+    }
+  } else {
+    const qty = parseFloat(document.getElementById('o-qty').value) || 0;
+    const received = parseFloat(document.getElementById('o-received').value) || 0;
+    const remain = Math.round(Math.max(0, qty - received) * 100) / 100;
+    hintEl.textContent = remain > 0 ? `→ 이월로 남는 양: ${remain}${unit}` : `→ 남는 양 없음 (전량 처리완료로 처리돼요)`;
+  }
 }
 function closeOrderAddModal() { document.getElementById('orderAddModal').classList.remove('open'); editingOrderId = null; }
 async function saveOrderAdd() {
