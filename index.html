@@ -610,6 +610,10 @@
       <div><label style="display:flex;align-items:center;gap:6px;font-size:14px;color:var(--text);"><input type="radio" name="exp-type" value="income" style="width:auto;"> 입금 (+)</label></div>
     </div>
     <div class="row2">
+      <div><label style="display:flex;align-items:center;gap:6px;font-size:14px;color:var(--text);"><input type="radio" name="exp-method" value="cash" checked style="width:auto;"> 현금</label></div>
+      <div><label style="display:flex;align-items:center;gap:6px;font-size:14px;color:var(--text);"><input type="radio" name="exp-method" value="online" style="width:auto;"> 온라인</label></div>
+    </div>
+    <div class="row2">
       <div><label>날짜</label><input id="exp-date" type="date"></div>
       <div><label>금액(원)</label><input id="exp-amount" type="number" step="1" placeholder="예: 8000"></div>
     </div>
@@ -618,7 +622,8 @@
     <label>비고(선택)</label>
     <input id="exp-note" placeholder="예: 점심 - 김밥천국">
     <button onclick="addExpense()" style="border:none;background:#eaf3ec;color:#2f6b46;border-radius:8px;padding:9px 14px;font-size:13px;font-weight:600;margin-top:8px;width:100%;">+ 추가</button>
-    <div id="expense-list" style="margin-top:12px; max-height:340px; overflow-y:auto;"></div>
+    <div id="expense-filter-row" style="display:flex; gap:6px; margin-top:12px;"></div>
+    <div id="expense-list" style="margin-top:8px; max-height:340px; overflow-y:auto;"></div>
     <div class="modal-actions">
       <button class="btn-cancel" onclick="closeExpenseModal()">닫기</button>
     </div>
@@ -728,7 +733,8 @@
     <div class="modal-actions">
       <button class="btn-cancel" onclick="closeSaleEditModal()">취소</button>
       <button id="sale-edit-delete-btn" class="btn-cancel hidden" style="background:#fdecea;color:var(--danger);" onclick="deleteSaleEntry()">삭제</button>
-      <button class="btn-save" onclick="confirmSaleEdit()">저장</button>
+      <button id="sale-edit-addmore-btn" class="hidden" style="border:none;background:#eaf3ec;color:#2f6b46;border-radius:8px;padding:9px 14px;font-size:14px;font-weight:600;" onclick="confirmSaleEdit(true)">저장하고 다음 품목 추가</button>
+      <button class="btn-save" onclick="confirmSaleEdit(false)">저장</button>
     </div>
   </div>
 </div>
@@ -796,7 +802,7 @@ const PASSWORD = "3059";
 const ADMIN_PASSWORD = "9503"; // 매출/미수금 탭 전용 - 필요하면 이 값만 바꿔서 변경 가능
 const LOW_STOCK_THRESHOLD = 100;
 const DATA_VERSION = "2026-08-03-v4"; // 재고/이월장부 씨앗 데이터를 바꿀 때마다 이 값을 새로 바꿔주세요
-const APP_CODE_VERSION = "2026-08-27-j"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
+const APP_CODE_VERSION = "2026-08-27-k"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
 const SCHEMA_STAMP = 2; // 서버 저장규칙이 확인하는 "최신 앱 도장" - 절대 자주 바꾸지 않음(이 값을 아는 코드만 저장 가능하게 서버에서 막을 때 씀)
 
 const firebaseConfig = {
@@ -3292,6 +3298,7 @@ function openSaleEditModal(logId) {
   pendingSaleEditId = logId;
   pendingSaleAddCustomer = null;
   document.getElementById('sale-edit-title').textContent = '매출 수정';
+  document.getElementById('sale-edit-addmore-btn').classList.add('hidden');
   document.getElementById('sale-edit-delete-btn').classList.remove('hidden');
   document.getElementById('sale-edit-desc').textContent = `${entry.customer || ''} (${entry.date})`;
   document.getElementById('sale-edit-customer').value = entry.customer || '';
@@ -3316,6 +3323,7 @@ function openSaleAddModal(customer) {
   pendingSaleEditId = null;
   pendingSaleAddCustomer = customer;
   document.getElementById('sale-edit-title').textContent = customer ? '품목 추가' : '새 매출 등록';
+  document.getElementById('sale-edit-addmore-btn').classList.remove('hidden');
   document.getElementById('sale-edit-delete-btn').classList.add('hidden');
   document.getElementById('sale-edit-desc').textContent = customer ? `${customer} · 이 거래처 매출에 새 품목을 추가해요` : '거래처 이름을 입력하고 매출을 등록하세요 (처음 거래하는 곳도 괜찮아요)';
   document.getElementById('sale-edit-customer').value = customer;
@@ -3346,7 +3354,7 @@ async function deleteSaleEntry() {
   closeSaleEditModal();
   await cancelShipmentLogEntry(id);
 }
-async function confirmSaleEdit() {
+async function confirmSaleEdit(keepOpen) {
   const isNew = pendingSaleEditId === null;
   const entry = isNew ? null : shipmentLog.find(e => e.id === pendingSaleEditId);
   if (!isNew && !entry) return;
@@ -3394,6 +3402,27 @@ async function confirmSaleEdit() {
       await persistCustomerList();
     }
     await persistShipmentLog();
+    if (keepOpen) {
+      // 계속 이어서 다음 품목 등록 - 거래처/날짜는 그대로 두고 품목 관련 칸만 비움
+      document.getElementById('sale-edit-item').value = '';
+      document.getElementById('sale-edit-color').value = '';
+      document.getElementById('sale-edit-yards').value = '';
+      document.getElementById('sale-edit-skip-inventory').checked = false;
+      document.getElementById('sale-edit-breakdown-wrap').classList.add('hidden');
+      document.getElementById('sale-edit-breakdown-list').innerHTML = '';
+      document.getElementById('sale-edit-new-tang-list').innerHTML = '';
+      document.getElementById('sale-edit-price').value = '';
+      document.getElementById('sale-edit-note').value = '';
+      document.getElementById('sale-edit-tax').checked = false;
+      document.getElementById('sale-edit-discount').value = '';
+      document.getElementById('sale-edit-discount-reason-wrap').classList.add('hidden');
+      document.getElementById('sale-edit-extra').value = '';
+      document.getElementById('sale-edit-extra-reason-wrap').classList.add('hidden');
+      render();
+      showToast(`추가됐어요 (${customer}) · 계속해서 다음 품목을 입력하세요`);
+      document.getElementById('sale-edit-item').focus();
+      return;
+    }
     closeSaleEditModal();
     render();
     showToast(skipInventory ? '품목을 추가했습니다 (재고는 건드리지 않았어요)' : (inv.ok ? '품목을 추가하고 재고도 같이 차감했습니다' : '품목을 추가했습니다 (재고에서 못 찾아서 재고는 그대로예요, 직접 확인해주세요)'));
@@ -4952,6 +4981,8 @@ function openExpenseModal() {
   document.getElementById('exp-title').value = '';
   document.getElementById('exp-note').value = '';
   document.querySelector('input[name="exp-type"][value="expense"]').checked = true;
+  document.querySelector('input[name="exp-method"][value="cash"]').checked = true;
+  expenseFilterMethod = 'all';
   renderExpenseList();
   document.getElementById('expenseModal').classList.add('open');
 }
@@ -4962,9 +4993,10 @@ async function addExpense() {
   const title = document.getElementById('exp-title').value.trim();
   const note = document.getElementById('exp-note').value.trim();
   const type = document.querySelector('input[name="exp-type"]:checked').value; // 'expense' | 'income'
+  const method = document.querySelector('input[name="exp-method"]:checked').value; // 'cash' | 'online'
   if (!title) { showToast('항목을 적어주세요'); return; }
   if (!amount || amount <= 0) { showToast('금액을 확인해주세요'); return; }
-  expenses.push({ id: nextExpenseId++, date, title, amount, note, type });
+  expenses.push({ id: nextExpenseId++, date, title, amount, note, type, method });
   await persistExpenses();
   document.getElementById('exp-amount').value = '';
   document.getElementById('exp-title').value = '';
@@ -4978,9 +5010,18 @@ async function deleteExpense(id) {
   await persistExpenses();
   renderExpenseList();
 }
+let expenseFilterMethod = 'all';
+function setExpenseFilterMethod(m) { expenseFilterMethod = m; renderExpenseList(); }
 function renderExpenseList() {
+  const filterEl = document.getElementById('expense-filter-row');
+  const methodLabel = { all: '전체', cash: '현금', online: '온라인', sample: '샘플' };
+  filterEl.innerHTML = ['all', 'cash', 'online', 'sample'].map(m => `
+    <button onclick="setExpenseFilterMethod('${m}')" style="border:none;border-radius:8px;padding:6px 12px;font-size:12px;font-weight:600;background:${expenseFilterMethod === m ? '#2c5f7c' : '#eee'};color:${expenseFilterMethod === m ? '#fff' : '#555'};">${methodLabel[m]}</button>
+  `).join('');
+
   const listEl = document.getElementById('expense-list');
-  const sorted = expenses.slice().sort((a, b) => b.date.localeCompare(a.date) || b.id - a.id);
+  const filtered = expenseFilterMethod === 'all' ? expenses.slice() : expenses.filter(e => (e.method || 'cash') === expenseFilterMethod);
+  const sorted = filtered.sort((a, b) => b.date.localeCompare(a.date) || b.id - a.id);
   if (sorted.length === 0) { listEl.innerHTML = '<div class="empty">기록이 없습니다</div>'; return; }
 
   const byDate = new Map();
@@ -4990,14 +5031,15 @@ function renderExpenseList() {
   }
   const totalExpense = sorted.filter(e => e.type !== 'income').reduce((s, e) => s + e.amount, 0);
   const totalIncome = sorted.filter(e => e.type === 'income').reduce((s, e) => s + e.amount, 0);
-  let html = `<div style="padding:6px 4px; font-weight:700; font-size:13px; border-bottom:1px solid var(--border); margin-bottom:6px;">전체 지출 -${totalExpense.toLocaleString()}원 · 입금 +${totalIncome.toLocaleString()}원 · 순액 ${(totalIncome - totalExpense).toLocaleString()}원</div>`;
+  const methodTag = { cash: '💵 현금', online: '💳 온라인', sample: '🎁 샘플' };
+  let html = `<div style="padding:6px 4px; font-weight:700; font-size:13px; border-bottom:1px solid var(--border); margin-bottom:6px;">${methodLabel[expenseFilterMethod]} · 지출 -${totalExpense.toLocaleString()}원 · 입금 +${totalIncome.toLocaleString()}원 · 순액 ${(totalIncome - totalExpense).toLocaleString()}원</div>`;
   for (const [date, list] of byDate) {
     const dayExpense = list.filter(e => e.type !== 'income').reduce((s, e) => s + e.amount, 0);
     const dayIncome = list.filter(e => e.type === 'income').reduce((s, e) => s + e.amount, 0);
     html += `<div style="font-size:12px; color:var(--muted); font-weight:600; margin-top:8px;">${esc(date)} · 지출 -${dayExpense.toLocaleString()}원 · 입금 +${dayIncome.toLocaleString()}원</div>`;
     html += list.map(e => `
       <div style="display:flex; justify-content:space-between; align-items:center; padding:6px 4px; border-bottom:1px dashed var(--border);">
-        <div style="font-size:13px;">${esc(e.title)}${e.note ? ` <span style="color:var(--muted); font-size:11px;">(${esc(e.note)})</span>` : ''}</div>
+        <div style="font-size:13px;">${expenseFilterMethod === 'all' ? `<span style="font-size:10px; color:var(--muted); margin-right:4px;">${methodTag[e.method || 'cash']}</span>` : ''}${esc(e.title)}${e.note ? ` <span style="color:var(--muted); font-size:11px;">(${esc(e.note)})</span>` : ''}</div>
         <div style="display:flex; align-items:center; gap:8px;">
           <span style="font-weight:600; color:${e.type === 'income' ? '#2f6b46' : 'var(--danger)'};">${e.type === 'income' ? '+' : '-'}${e.amount.toLocaleString()}원</span>
           <button onclick="deleteExpense(${e.id})" style="border:none;background:none;color:var(--muted);font-size:11px;">삭제</button>
@@ -6915,7 +6957,7 @@ async function confirmOrderReceiveInner(o) {
     if (costPerY != null && yardsShipped > 0) {
       const sampleCost = Math.round(costPerY * yardsShipped);
       if (sampleCost > 0) {
-        expenses.push({ id: nextExpenseId++, date: todayStr(), title: `샘플 제공 - ${o.item} ${resolvedColorForLog}`, amount: sampleCost, note: `${yardsShipped}y · ${o.customer}`, type: 'expense' });
+        expenses.push({ id: nextExpenseId++, date: todayStr(), title: `샘플 제공 - ${o.item} ${resolvedColorForLog}`, amount: sampleCost, note: `${yardsShipped}y · ${o.customer}`, type: 'expense', method: 'sample' });
         await persistExpenses();
         sampleCostMsg = ` · 원가 ${sampleCost.toLocaleString()}원이 지출로 자동 기록됐어요`;
       }
