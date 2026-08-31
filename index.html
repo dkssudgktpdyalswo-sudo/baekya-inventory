@@ -787,7 +787,8 @@
     <div class="modal-actions">
       <button class="btn-cancel" onclick="closePaymentModal()">취소</button>
       <button onclick="markSampleAndClose()" style="border:none;background:#fce8d6;color:#a15c1e;border-radius:8px;padding:10px 14px;font-weight:600;">샘플 제공</button>
-      <button class="btn-save" onclick="confirmPaymentModal()">저장</button>
+      <button onclick="confirmPaymentModal('partial')" style="border:none;background:#fff3d6;color:#a15c1e;border-radius:8px;padding:10px 14px;font-weight:700;">이 금액만(미수 남음)</button>
+      <button class="btn-save" onclick="confirmPaymentModal('full')">완불로 처리</button>
     </div>
   </div>
 </div>
@@ -834,7 +835,7 @@ const PASSWORD = "3059";
 const ADMIN_PASSWORD = "9503"; // 매출/미수금 탭 전용 - 필요하면 이 값만 바꿔서 변경 가능
 const LOW_STOCK_THRESHOLD = 100;
 const DATA_VERSION = "2026-08-03-v4"; // 재고/이월장부 씨앗 데이터를 바꿀 때마다 이 값을 새로 바꿔주세요
-const APP_CODE_VERSION = "2026-08-28-o"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
+const APP_CODE_VERSION = "2026-08-28-q"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
 const SCHEMA_STAMP = 2; // 서버 저장규칙이 확인하는 "최신 앱 도장" - 절대 자주 바꾸지 않음(이 값을 아는 코드만 저장 가능하게 서버에서 막을 때 씀)
 
 const firebaseConfig = {
@@ -3431,7 +3432,11 @@ async function deleteSaleEntry() {
   closeSaleEditModal();
   await cancelShipmentLogEntry(id);
 }
+let _saveSaleInProgress = false;
 async function confirmSaleEdit(keepOpen) {
+  if (_saveSaleInProgress) { showToast('처리 중이에요, 잠시만 기다려주세요'); return; }
+  _saveSaleInProgress = true;
+  setTimeout(() => { _saveSaleInProgress = false; }, 3000); // 확인창 뜨는 사이 등에 연타해도 중복 등록 안 되게, 혹시 몰라 3초 뒤엔 자동으로 다시 풀어둠
   const isNew = pendingSaleEditId === null;
   const entry = isNew ? null : shipmentLog.find(e => e.id === pendingSaleEditId);
   if (!isNew && !entry) return;
@@ -3670,12 +3675,16 @@ async function markSampleAndClose() {
   showToast('샘플 제공으로 처리했습니다');
 }
 
-async function confirmPaymentModal() {
+async function confirmPaymentModal(mode) {
   const entryIds = pendingPaymentEntryIds;
   const entries = entryIds.map(id => shipmentLog.find(e => e.id === id)).filter(Boolean);
   if (entries.length === 0) return;
   const method = document.querySelector('input[name="payment-method"]:checked').value;
   const payDate = fromDateInputValue(document.getElementById('payment-date').value) || todayStr();
+  if (mode === 'full') {
+    const totalRemainingNow = entries.reduce((s, e) => s + getRemaining(e), 0);
+    document.getElementById('payment-amount').value = totalRemainingNow;
+  }
   let amt = parseFloat(document.getElementById('payment-amount').value);
   if (!amt || amt <= 0 || isNaN(amt)) { showToast('금액을 확인해주세요'); return; }
 
@@ -3684,7 +3693,7 @@ async function confirmPaymentModal() {
     const remaining = getRemaining(entry);
     let shortfall = Math.round((remaining - amt) * 100) / 100;
     let discountApplied = 0;
-    if (shortfall > 0) {
+    if (shortfall > 0 && mode !== 'partial') {
       if (confirm(`입력하신 금액이 ${shortfall.toLocaleString()}원 부족해요.\n이 차액을 공제(불량/네고 등)로 처리하고 완불로 마감할까요?\n("취소"를 누르면 부족한 만큼 미수금으로 남아요)`)) {
         entry.discount = Math.round(((entry.discount || 0) + shortfall) * 100) / 100;
         discountApplied = shortfall;
@@ -3730,10 +3739,10 @@ async function confirmPaymentModal() {
   }
 
   const sorted = entries.slice().sort((a, b) => String(a.date).localeCompare(String(b.date)));
-  const totalRemainingNow = entries.reduce((s, e) => s + getRemaining(e), 0);
-  let shortfall = Math.round((totalRemainingNow - amt) * 100) / 100;
+  const totalRemainingNow2 = entries.reduce((s, e) => s + getRemaining(e), 0);
+  let shortfall = Math.round((totalRemainingNow2 - amt) * 100) / 100;
   let discountApplied = 0;
-  if (shortfall > 0) {
+  if (shortfall > 0 && mode !== 'partial') {
     if (confirm(`입력하신 금액이 ${shortfall.toLocaleString()}원 부족해요.\n이 차액을 공제(불량/네고 등)로 처리하고 전부 완불로 마감할까요?\n("취소"를 누르면 부족한 만큼 미수금으로 남아요, 오래된 것부터 채워져요)`)) {
       // 가장 최근 건에 부족분을 몰아서 공제 처리 (전체가 완불로 마감되게)
       const mostRecent = sorted[sorted.length - 1];
@@ -4630,6 +4639,14 @@ async function editMergedPaymentGroup(refsJson) {
   const newAmount = parseFloat(raw);
   if (isNaN(newAmount) || newAmount < 0) { showToast('금액을 확인해주세요'); return; }
 
+  if (newAmount > 0) {
+    const methodLabel = method === 'cash' ? '현금' : '온라인';
+    const otherLabel = method === 'cash' ? '온라인' : '현금';
+    if (confirm(`지금 "${methodLabel}"으로 되어있어요. "${otherLabel}"으로 바꿀까요?\n("취소"를 누르면 "${methodLabel}" 그대로 유지돼요)`)) {
+      method = method === 'cash' ? 'online' : 'cash';
+    }
+  }
+
   // 기존 나뉘어 들어가있던 것들 제거 (한 건에 인덱스가 여러 개면 큰 것부터 지워야 안전)
   for (const [entry, idxs] of byEntry) {
     idxs.slice().sort((a, b) => b - a).forEach(idx => entry.payments.splice(idx, 1));
@@ -4665,6 +4682,11 @@ async function quickEditPayment(entryId, idx) {
     e.payments.splice(idx, 1);
   } else {
     p.amount = amt;
+    const methodLabel = (p.method || 'cash') === 'cash' ? '현금' : '온라인';
+    const otherLabel = (p.method || 'cash') === 'cash' ? '온라인' : '현금';
+    if (confirm(`지금 "${methodLabel}"으로 되어있어요. "${otherLabel}"으로 바꿀까요?\n("취소"를 누르면 "${methodLabel}" 그대로 유지돼요)`)) {
+      p.method = (p.method || 'cash') === 'cash' ? 'online' : 'cash';
+    }
   }
   delete e.paidAmount; delete e.paid;
   await persistShipmentLog();
@@ -6449,7 +6471,11 @@ function updateOrderEditRemainHint(changedField) {
   }
 }
 function closeOrderAddModal() { document.getElementById('orderAddModal').classList.remove('open'); editingOrderId = null; }
+let _saveOrderInProgress = false;
 async function saveOrderAdd() {
+  if (_saveOrderInProgress) { showToast('처리 중이에요, 잠시만 기다려주세요'); return; }
+  _saveOrderInProgress = true;
+  setTimeout(() => { _saveOrderInProgress = false; }, 3000); // 확인창 뜨는 사이 등에 연타해도 중복 등록 안 되게, 혹시 몰라 3초 뒤엔 자동으로 다시 풀어둠
   const date = fromDateInputValue(document.getElementById('o-date').value) || todayStr();
   let customer = document.getElementById('o-customer').value.trim();
   if (!customer) { showToast('거래처를 확인해주세요'); return; }
@@ -7488,7 +7514,11 @@ function onReturnTypeChange() {
   }
 }
 
+let _saveReturnInProgress = false;
 async function confirmReturn() {
+  if (_saveReturnInProgress) { showToast('처리 중이에요, 잠시만 기다려주세요'); return; }
+  _saveReturnInProgress = true;
+  setTimeout(() => { _saveReturnInProgress = false; }, 3000); // 확인창 뜨는 사이 등에 연타해도 중복 등록 안 되게, 혹시 몰라 3초 뒤엔 자동으로 다시 풀어둠
   const type = document.querySelector('input[name="ret-type"]:checked').value;
 
   if (type === 'extra') {
