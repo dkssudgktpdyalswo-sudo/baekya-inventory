@@ -793,6 +793,45 @@
   </div>
 </div>
 
+<!-- 입금 내역 수정 -->
+<div class="modal-overlay" id="paymentEditModal">
+  <div class="modal">
+    <h3>입금 내역 수정</h3>
+    <p id="payment-edit-desc" style="font-size:13px;color:var(--muted);margin-top:-6px;"></p>
+    <label>입금액(원)</label>
+    <input id="payment-edit-amount" type="number" step="1">
+    <label>결제 방법</label>
+    <div class="row2">
+      <div><label style="display:flex;align-items:center;gap:6px;font-size:14px;color:var(--text);"><input type="radio" name="payment-edit-method" value="cash" style="width:auto;"> 현금</label></div>
+      <div><label style="display:flex;align-items:center;gap:6px;font-size:14px;color:var(--text);"><input type="radio" name="payment-edit-method" value="online" style="width:auto;"> 온라인</label></div>
+    </div>
+    <p style="font-size:12px;color:var(--muted);">금액을 0으로 저장하면 이 입금 기록이 삭제돼요.</p>
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="closePaymentEditModal()">취소</button>
+      <button class="btn-save" onclick="savePaymentEdit()">저장</button>
+    </div>
+  </div>
+</div>
+
+<!-- 재고 롤 수정 -->
+<div class="modal-overlay" id="rollEditModal">
+  <div class="modal">
+    <h3>재고 수정</h3>
+    <p id="roll-edit-desc" style="font-size:13px;color:var(--muted);margin-top:-6px;"></p>
+    <label>탕 번호</label>
+    <input id="roll-edit-tang" type="number" min="1" step="1">
+    <label>마수(y)</label>
+    <input id="roll-edit-qty" type="number" step="0.1">
+    <p style="font-size:12px;color:var(--muted);margin-top:-6px;">0으로 저장하면 "재고 없음"으로 처리돼요.</p>
+    <label>이 탕만의 원가(원/y, 선택 - 컷팅 원단처럼 이 탕만 다를 때)</label>
+    <input id="roll-edit-cost" type="number" step="1" placeholder="비워두면 원가표 기본값 사용">
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="closeRollEditModal()">취소</button>
+      <button class="btn-save" onclick="saveRollEdit()">저장</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-overlay" id="logEditModal">
   <div class="modal">
     <h3>출고 내역 수정</h3>
@@ -835,7 +874,7 @@ const PASSWORD = "3059";
 const ADMIN_PASSWORD = "9503"; // 매출/미수금 탭 전용 - 필요하면 이 값만 바꿔서 변경 가능
 const LOW_STOCK_THRESHOLD = 100;
 const DATA_VERSION = "2026-08-03-v4"; // 재고/이월장부 씨앗 데이터를 바꿀 때마다 이 값을 새로 바꿔주세요
-const APP_CODE_VERSION = "2026-08-28-q"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
+const APP_CODE_VERSION = "2026-08-28-s"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
 const SCHEMA_STAMP = 2; // 서버 저장규칙이 확인하는 "최신 앱 도장" - 절대 자주 바꾸지 않음(이 값을 아는 코드만 저장 가능하게 서버에서 막을 때 씀)
 
 const firebaseConfig = {
@@ -2253,24 +2292,40 @@ async function confirmOut() {
   else { r.qty = Math.round((r.qty - amt) * 100) / 100; showToast(`${amt}y 출고, 남은 마수 ${r.qty}y`); }
   await persistRolls(); closeOutModal(); render();
 }
-async function openRollEditModal(id) {
+let _rollEditId = null;
+function openRollEditModal(id) {
   const r = rolls.find(x => x.id === id);
   if (!r) return;
+  _rollEditId = id;
+  document.getElementById('roll-edit-desc').textContent = `${r.item} · ${r.color}`;
+  document.getElementById('roll-edit-tang').value = r.tang;
+  document.getElementById('roll-edit-qty').value = r.qty;
+  document.getElementById('roll-edit-cost').value = r.costPerY != null ? r.costPerY : '';
+  document.getElementById('rollEditModal').classList.add('open');
+}
+function closeRollEditModal() { document.getElementById('rollEditModal').classList.remove('open'); _rollEditId = null; }
+async function saveRollEdit() {
+  const r = rolls.find(x => x.id === _rollEditId);
+  if (!r) { closeRollEditModal(); return; }
 
-  const tangRaw = prompt(`${r.item} · ${r.color} · 지금 탕${r.tang}\n탕 번호를 잘못 입력하셨으면 여기서 고치세요 (안 바꾸시려면 그대로 확인만 눌러주세요)`, String(r.tang));
-  if (tangRaw === null) return;
-  const newTang = parseInt(tangRaw);
+  const newTang = parseInt(document.getElementById('roll-edit-tang').value);
+  const newQty = parseFloat(document.getElementById('roll-edit-qty').value);
+  const costRaw = document.getElementById('roll-edit-cost').value;
   if (isNaN(newTang) || newTang < 1) { showToast('탕 번호를 확인해주세요'); return; }
+  if (isNaN(newQty) || newQty < 0) { showToast('마수를 확인해주세요'); return; }
+
   if (newTang !== r.tang) {
     const conflict = rolls.find(x => x.id !== r.id && String(x.item).trim() === String(r.item).trim() && String(x.color).trim() === String(r.color).trim() && x.tang === newTang && !x.defective);
     if (conflict) {
-      if (!confirm(`탕${newTang}에 이미 다른 재고(${conflict.qty}y)가 있어요.\n합칠까요? ("취소"를 누르면 탕 번호는 안 바뀌고 그대로 진행돼요)`)) {
-        // 합치기 취소 - 탕 번호는 그대로 두고 마수 수정으로만 진행
+      if (!confirm(`탕${newTang}에 이미 다른 재고(${conflict.qty}y)가 있어요.\n합칠까요? ("취소"를 누르면 탕 번호는 안 바뀌고 마수/원가만 저장돼요)`)) {
+        // 합치기 취소 - 탕 번호는 그대로 두고 마수/원가만 반영
       } else {
-        conflict.qty = Math.round((conflict.qty + r.qty) * 100) / 100;
-        if (r.costPerY != null && conflict.costPerY == null) conflict.costPerY = r.costPerY;
+        conflict.qty = Math.round((conflict.qty + newQty) * 100) / 100;
+        const newCostForConflict = costRaw.trim() !== '' ? parseFloat(costRaw) : null;
+        if (newCostForConflict != null && conflict.costPerY == null) conflict.costPerY = newCostForConflict;
         rolls = rolls.filter(x => x.id !== r.id);
         await persistRolls();
+        closeRollEditModal();
         render();
         showToast(`탕${newTang}으로 합쳤습니다`);
         return;
@@ -2280,16 +2335,14 @@ async function openRollEditModal(id) {
     }
   }
 
-  const raw = prompt(`${r.item} · ${r.color} · 탕${r.tang}\n새 마수(y)를 입력하세요 (0을 입력하면 "재고 없음"으로 처리돼요)`, String(r.qty));
-  if (raw === null) return;
-  const newQty = parseFloat(raw);
-  if (isNaN(newQty) || newQty < 0) { showToast('숫자를 확인해주세요'); return; }
   r.qty = Math.round(newQty * 100) / 100;
+  r.costPerY = (costRaw.trim() !== '' && !isNaN(parseFloat(costRaw)) && parseFloat(costRaw) > 0) ? parseFloat(costRaw) : null;
 
   if (r.qty === 0) {
     cleanupDepletedRolls(r.item, r.color, [r.id]);
   }
   await persistRolls();
+  closeRollEditModal();
   render();
   showToast(r.qty === 0 ? '재고 없음으로 처리했습니다' : `마수를 ${r.qty}y로 수정했습니다`);
 }
@@ -4615,6 +4668,7 @@ function renderCustomerLedgerView() {
 
   if (ledgerCustomer) renderCustomerLedgerTable();
 }
+let _paymentEditRefs = null; // 단일이면 {entryId, paymentIdx} 하나, 여러건 합쳐진거면 배열
 async function editMergedPaymentGroup(refsJson) {
   let refs;
   try { refs = JSON.parse(refsJson); } catch (e) { return; }
@@ -4634,65 +4688,71 @@ async function editMergedPaymentGroup(refsJson) {
   }
   if (byEntry.size === 0) return;
 
-  const raw = prompt(`이 입금(${refs.length}건에 나눠 들어가 있어요)을 얼마로 고칠까요? (0을 입력하면 전부 삭제돼요)`, String(Math.round(totalAmount)));
-  if (raw === null) return;
-  const newAmount = parseFloat(raw);
+  _paymentEditRefs = { type: 'merged', refs, date };
+  document.getElementById('payment-edit-desc').textContent = `${refs.length}건에 나눠 들어가 있던 입금이에요 (날짜: ${date})`;
+  document.getElementById('payment-edit-amount').value = Math.round(totalAmount);
+  document.querySelector(`input[name="payment-edit-method"][value="${method}"]`).checked = true;
+  document.getElementById('paymentEditModal').classList.add('open');
+}
+function closePaymentEditModal() { document.getElementById('paymentEditModal').classList.remove('open'); _paymentEditRefs = null; }
+async function savePaymentEdit() {
+  if (!_paymentEditRefs) return;
+  const newAmount = parseFloat(document.getElementById('payment-edit-amount').value);
   if (isNaN(newAmount) || newAmount < 0) { showToast('금액을 확인해주세요'); return; }
+  const method = document.querySelector('input[name="payment-edit-method"]:checked').value;
 
-  if (newAmount > 0) {
-    const methodLabel = method === 'cash' ? '현금' : '온라인';
-    const otherLabel = method === 'cash' ? '온라인' : '현금';
-    if (confirm(`지금 "${methodLabel}"으로 되어있어요. "${otherLabel}"으로 바꿀까요?\n("취소"를 누르면 "${methodLabel}" 그대로 유지돼요)`)) {
-      method = method === 'cash' ? 'online' : 'cash';
+  if (_paymentEditRefs.type === 'single') {
+    const { entryId, paymentIdx } = _paymentEditRefs;
+    const e = shipmentLog.find(x => x.id === entryId);
+    if (!e || !e.payments || !e.payments[paymentIdx]) { closePaymentEditModal(); return; }
+    if (newAmount === 0) {
+      e.payments.splice(paymentIdx, 1);
+    } else {
+      e.payments[paymentIdx].amount = newAmount;
+      e.payments[paymentIdx].method = method;
     }
-  }
-
-  // 기존 나뉘어 들어가있던 것들 제거 (한 건에 인덱스가 여러 개면 큰 것부터 지워야 안전)
-  for (const [entry, idxs] of byEntry) {
-    idxs.slice().sort((a, b) => b - a).forEach(idx => entry.payments.splice(idx, 1));
-    delete entry.paidAmount; delete entry.paid;
-  }
-
-  if (newAmount > 0) {
-    // 관련된 매출 건들에 오래된 것부터 다시 채워넣음 (원래 있던 날짜/방법 그대로)
-    const targetEntries = [...byEntry.keys()].sort((a, b) => String(a.date).localeCompare(String(b.date)));
-    let amt = newAmount;
-    for (const e of targetEntries) {
-      if (amt <= 0) break;
-      const remain = getRemaining(e);
-      if (remain <= 0) continue;
-      const take = Math.min(remain, amt);
-      addPaymentEvent(e, take, method, date);
-      amt = Math.round((amt - take) * 100) / 100;
+    delete e.paidAmount; delete e.paid;
+  } else {
+    // 여러 건에 나뉘어 들어가있던 것 - 기존 것 다 지우고, 새 금액/방법으로 오래된 매출건부터 다시 채워넣음
+    const { refs, date } = _paymentEditRefs;
+    const byEntry = new Map();
+    for (const r of refs) {
+      const e = shipmentLog.find(x => x.id === r.entryId);
+      if (!e || !e.payments || !e.payments[r.paymentIdx]) continue;
+      if (!byEntry.has(e)) byEntry.set(e, []);
+      byEntry.get(e).push(r.paymentIdx);
+    }
+    for (const [entry, idxs] of byEntry) {
+      idxs.slice().sort((a, b) => b - a).forEach(idx => entry.payments.splice(idx, 1));
+      delete entry.paidAmount; delete entry.paid;
+    }
+    if (newAmount > 0) {
+      const targetEntries = [...byEntry.keys()].sort((a, b) => String(a.date).localeCompare(String(b.date)));
+      let amt = newAmount;
+      for (const e of targetEntries) {
+        if (amt <= 0) break;
+        const remain = getRemaining(e);
+        if (remain <= 0) continue;
+        const take = Math.min(remain, amt);
+        addPaymentEvent(e, take, method, date);
+        amt = Math.round((amt - take) * 100) / 100;
+      }
     }
   }
   await persistShipmentLog();
+  closePaymentEditModal();
   render();
   showToast('입금 내역을 수정했어요');
 }
-async function quickEditPayment(entryId, idx) {
+function quickEditPayment(entryId, idx) {
   const e = shipmentLog.find(x => x.id === entryId);
   if (!e || !e.payments || !e.payments[idx]) return;
   const p = e.payments[idx];
-  const raw = prompt(`입금액을 수정합니다 (0을 입력하면 이 입금 기록이 삭제돼요)`, String(p.amount));
-  if (raw === null) return;
-  const amt = parseFloat(raw);
-  if (isNaN(amt) || amt < 0) { showToast('금액을 확인해주세요'); return; }
-  if (amt === 0) {
-    e.payments.splice(idx, 1);
-  } else {
-    p.amount = amt;
-    const methodLabel = (p.method || 'cash') === 'cash' ? '현금' : '온라인';
-    const otherLabel = (p.method || 'cash') === 'cash' ? '온라인' : '현금';
-    if (confirm(`지금 "${methodLabel}"으로 되어있어요. "${otherLabel}"으로 바꿀까요?\n("취소"를 누르면 "${methodLabel}" 그대로 유지돼요)`)) {
-      p.method = (p.method || 'cash') === 'cash' ? 'online' : 'cash';
-    }
-  }
-  delete e.paidAmount; delete e.paid;
-  await persistShipmentLog();
-  render();
-  if (salesSpecialView === 'customerLedger') renderCustomerLedgerTable();
-  showToast('입금 내역을 수정했습니다');
+  _paymentEditRefs = { type: 'single', entryId, paymentIdx: idx };
+  document.getElementById('payment-edit-desc').textContent = `${e.customer || ''} · ${e.item} ${e.color || ''} (날짜: ${p.date})`;
+  document.getElementById('payment-edit-amount').value = p.amount;
+  document.querySelector(`input[name="payment-edit-method"][value="${p.method || 'cash'}"]`).checked = true;
+  document.getElementById('paymentEditModal').classList.add('open');
 }
 async function deleteReturnDefectEntry(id) {
   const e = shipmentLog.find(x => x.id === id);
