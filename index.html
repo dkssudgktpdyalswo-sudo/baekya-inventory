@@ -874,7 +874,7 @@ const PASSWORD = "3059";
 const ADMIN_PASSWORD = "9503"; // 매출/미수금 탭 전용 - 필요하면 이 값만 바꿔서 변경 가능
 const LOW_STOCK_THRESHOLD = 100;
 const DATA_VERSION = "2026-08-03-v4"; // 재고/이월장부 씨앗 데이터를 바꿀 때마다 이 값을 새로 바꿔주세요
-const APP_CODE_VERSION = "2026-08-28-s"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
+const APP_CODE_VERSION = "2026-08-31-c"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
 const SCHEMA_STAMP = 2; // 서버 저장규칙이 확인하는 "최신 앱 도장" - 절대 자주 바꾸지 않음(이 값을 아는 코드만 저장 가능하게 서버에서 막을 때 씀)
 
 const firebaseConfig = {
@@ -1966,11 +1966,13 @@ function renderInv() {
 
 function showStockCheck() {
   inventorySpecialView = 'stockCheck';
+  openGroups = new Set(); // 다른 화면으로 넘어갈 때 열려있던 카드들 접힌 상태로 초기화
   stockCheckDate = null;
   render();
 }
 function exitStockCheck() {
   inventorySpecialView = null;
+  openGroups = new Set(); // 다른 화면으로 넘어갈 때 열려있던 카드들 접힌 상태로 초기화
   render();
 }
 function shiftStockCheckDate(delta) {
@@ -2314,26 +2316,8 @@ async function saveRollEdit() {
   if (isNaN(newTang) || newTang < 1) { showToast('탕 번호를 확인해주세요'); return; }
   if (isNaN(newQty) || newQty < 0) { showToast('마수를 확인해주세요'); return; }
 
-  if (newTang !== r.tang) {
-    const conflict = rolls.find(x => x.id !== r.id && String(x.item).trim() === String(r.item).trim() && String(x.color).trim() === String(r.color).trim() && x.tang === newTang && !x.defective);
-    if (conflict) {
-      if (!confirm(`탕${newTang}에 이미 다른 재고(${conflict.qty}y)가 있어요.\n합칠까요? ("취소"를 누르면 탕 번호는 안 바뀌고 마수/원가만 저장돼요)`)) {
-        // 합치기 취소 - 탕 번호는 그대로 두고 마수/원가만 반영
-      } else {
-        conflict.qty = Math.round((conflict.qty + newQty) * 100) / 100;
-        const newCostForConflict = costRaw.trim() !== '' ? parseFloat(costRaw) : null;
-        if (newCostForConflict != null && conflict.costPerY == null) conflict.costPerY = newCostForConflict;
-        rolls = rolls.filter(x => x.id !== r.id);
-        await persistRolls();
-        closeRollEditModal();
-        render();
-        showToast(`탕${newTang}으로 합쳤습니다`);
-        return;
-      }
-    } else {
-      r.tang = newTang;
-    }
-  }
+  // 탕 번호가 겹쳐도 합치지 않음 (입고/반품이랑 똑같은 원칙 - 같은 탕 번호여도 물리적으로 다른 조각이니 개별로 유지)
+  r.tang = newTang;
 
   r.qty = Math.round(newQty * 100) / 100;
   r.costPerY = (costRaw.trim() !== '' && !isNaN(parseFloat(costRaw)) && parseFloat(costRaw) > 0) ? parseFloat(costRaw) : null;
@@ -2961,6 +2945,7 @@ function printOrderLedger() {
 
 function toggleOrderGroupMode() {
   orderGroupMode = orderGroupMode === 'customer' ? 'item' : 'customer';
+  openGroups = new Set(); // 보기 방식 바뀔 때 열려있던 카드들 접힌 상태로 초기화
   render();
 }
 
@@ -3261,18 +3246,13 @@ function restoreToInventory(item, color, cat, tang, qty, rollId) {
       return;
     }
   }
-  // 2순위: 롤이 이미 없어졌으면(삭제됨) 지금 그 탕번호에 있는 롤에 합치거나 새로 만듦 (탕번호가 밀렸을 수 있어 완전히 정확하진 않을 수 있음)
-  const existing = rolls.find(r => String(r.item).trim() === t_item && String(r.color).trim() === t_color && r.tang === tang && !r.defective && r.qty > 0);
-  if (existing) {
-    existing.qty = Math.round((existing.qty + qty) * 100) / 100;
+  // 2순위: 롤이 이미 없어졌으면(삭제됨) 그 탕번호에 새 개별 항목으로 복원함 (기존 재고에 합치지 않음 - 입고/반품이랑 같은 원칙)
+  // 단, 0y로 비어있는 자리표시 롤이 있으면 그건 재고가 아니라 그냥 빈 자리라서 재활용해도 안전함
+  const placeholder = rolls.find(r => String(r.item).trim() === t_item && String(r.color).trim() === t_color && r.tang === tang && !r.defective && r.qty === 0);
+  if (placeholder) {
+    placeholder.qty = qty;
   } else {
-    // qty=0짜리 자리표시 롤이 있으면 그걸 재활용
-    const placeholder = rolls.find(r => String(r.item).trim() === t_item && String(r.color).trim() === t_color && r.tang === tang && !r.defective && r.qty === 0);
-    if (placeholder) {
-      placeholder.qty = qty;
-    } else {
-      rolls.push({ id: nextId++, cat, item, color, tang, qty });
-    }
+    rolls.push({ id: nextId++, cat, item, color, tang, qty });
   }
 }
 async function cancelShipmentLogEntry(logId) {
@@ -4366,10 +4346,12 @@ function printCustomerStatement(customerName, entryIds, period) {
 
 function showItemMonthlyStats() {
   salesSpecialView = 'itemMonthly';
+  openGroups = new Set(); // 다른 화면으로 넘어갈 때 열려있던 카드들 접힌 상태로 초기화
   render();
 }
 function exitItemMonthlyStats() {
   salesSpecialView = null;
+  openGroups = new Set(); // 다른 화면으로 넘어갈 때 열려있던 카드들 접힌 상태로 초기화
   render();
 }
 function renderItemMonthlyStatsView() {
@@ -4481,19 +4463,23 @@ function getCostPerYardForEntry(e) {
 
 function showPaymentLedger() {
   salesSpecialView = 'paymentLedger';
+  openGroups = new Set(); // 다른 화면으로 넘어갈 때 열려있던 카드들 접힌 상태로 초기화
   render();
 }
 function exitPaymentLedger() {
   salesSpecialView = null;
+  openGroups = new Set(); // 다른 화면으로 넘어갈 때 열려있던 카드들 접힌 상태로 초기화
   render();
 }
 function showCustomerLedger(customer) {
   salesSpecialView = 'customerLedger';
+  openGroups = new Set(); // 다른 화면으로 넘어갈 때 열려있던 카드들 접힌 상태로 초기화
   ledgerCustomer = customer || ledgerCustomer || '';
   render();
 }
 function exitCustomerLedger() {
   salesSpecialView = null;
+  openGroups = new Set(); // 다른 화면으로 넘어갈 때 열려있던 카드들 접힌 상태로 초기화
   ledgerCustomer = null;
   ledgerStartDate = null;
   ledgerEndDate = null;
@@ -4652,8 +4638,9 @@ function renderCustomerLedgerView() {
     const now = new Date();
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
     const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0);
-    ledgerStartDate = monthStart.toISOString().slice(0, 10);
-    ledgerEndDate = monthEnd.toISOString().slice(0, 10);
+    // toISOString()은 UTC로 변환해서 문자열을 만들어서, 한국 시간 새벽 시간대엔 하루가 밀려 나오는 문제가 있었음 - 로컬 날짜 그대로 직접 조립함
+    ledgerStartDate = `${monthStart.getFullYear()}-${String(monthStart.getMonth() + 1).padStart(2, '0')}-${String(monthStart.getDate()).padStart(2, '0')}`;
+    ledgerEndDate = `${monthEnd.getFullYear()}-${String(monthEnd.getMonth() + 1).padStart(2, '0')}-${String(monthEnd.getDate()).padStart(2, '0')}`;
   }
   document.getElementById('ledger-start').value = ledgerStartDate;
   document.getElementById('ledger-end').value = ledgerEndDate;
@@ -5022,10 +5009,12 @@ function renderCustomerLedgerTable() {
 async function showAvailableBackups() {
   if (!useFirebase) { showToast('이 화면에서는 백업 기능을 쓸 수 없어요'); return; }
   salesSpecialView = 'backupManager';
+  openGroups = new Set(); // 다른 화면으로 넘어갈 때 열려있던 카드들 접힌 상태로 초기화
   render();
 }
 function exitBackupManager() {
   salesSpecialView = null;
+  openGroups = new Set(); // 다른 화면으로 넘어갈 때 열려있던 카드들 접힌 상태로 초기화
   render();
 }
 async function renderBackupManagerList() {
@@ -5094,7 +5083,7 @@ async function renderBackupManagerList() {
     card.innerHTML = `
       <div style="padding:10px 12px;">
         <div style="font-weight:700; font-size:13px; margin-bottom:2px;">${esc(label)}</div>
-        <div style="font-size:11px; color:var(--muted); margin-bottom:6px;">저장시각: ${esc(info.savedAt || '-')}</div>
+        <div style="font-size:11px; color:var(--muted); margin-bottom:6px;">저장시각: ${esc(formatSavedAtLocal(info.savedAt))}</div>
         <div style="margin-bottom:8px;">${itemsHtml}</div>
         <div style="display:flex; gap:8px;">
           <button onclick="restoreBackupMoment('${escAttr(label)}', '${docIdsJson}')" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:6px;padding:6px 10px;font-size:12px;font-weight:600;">이 시점으로 통째로 복구하기</button>
@@ -5227,10 +5216,12 @@ const FIXED_COST_PASSWORD = '7080';
 function showMonthlyReport() {
   monthlyReportOffset = 0;
   salesSpecialView = 'monthlyReport';
+  openGroups = new Set(); // 다른 화면으로 넘어갈 때 열려있던 카드들 접힌 상태로 초기화
   render();
 }
 function exitMonthlyReport() {
   salesSpecialView = null;
+  openGroups = new Set(); // 다른 화면으로 넘어갈 때 열려있던 카드들 접힌 상태로 초기화
   render();
 }
 function shiftMonthlyReport(delta) {
@@ -5450,10 +5441,12 @@ function printMonthlyReport() {
 }
 function showCustomerRanking() {
   salesSpecialView = 'customerRanking';
+  openGroups = new Set(); // 다른 화면으로 넘어갈 때 열려있던 카드들 접힌 상태로 초기화
   render();
 }
 function exitCustomerRanking() {
   salesSpecialView = null;
+  openGroups = new Set(); // 다른 화면으로 넘어갈 때 열려있던 카드들 접힌 상태로 초기화
   render();
 }
 function renderCustomerRankingView() {
@@ -5551,10 +5544,12 @@ function renderCustomerRankingView() {
 }
 function showUnpaidSummary() {
   salesSpecialView = 'unpaidSummary';
+  openGroups = new Set(); // 다른 화면으로 넘어갈 때 열려있던 카드들 접힌 상태로 초기화
   render();
 }
 function exitUnpaidSummary() {
   salesSpecialView = null;
+  openGroups = new Set(); // 다른 화면으로 넘어갈 때 열려있던 카드들 접힌 상태로 초기화
   render();
 }
 function renderUnpaidSummaryView() {
@@ -7071,7 +7066,17 @@ async function confirmOrderReceiveInner(o) {
       if (yards.length === 0) { showToast('각 절의 실제 야드를 입력해주세요'); return; }
       raw = yards.length - carryoverCount; // 이월 체크한 절만큼은 "완료된 절"로 안 세서, 이월장부에 그만큼 그대로 남게 함
       yardsShipped = Math.round(yards.reduce((s, v) => s + v, 0) * 100) / 100;
-      inv = deductFromInventory(o.item, o.color, yardsShipped, null);
+      // 절(조각)마다 따로따로 재고에서 뺌 - 합쳐서 한번에 빼면, 나중에 취소할 때 어느 조각이 어디서 나갔는지 뒤섞여서 하나로 합쳐진 채 되돌아가는 문제가 있었음
+      let combinedBreakdown = [];
+      let totalDeducted = 0, totalShortBy = 0, anyOk = false;
+      for (const y of yards) {
+        const r1 = deductFromInventory(o.item, o.color, y, null);
+        if (r1.ok) anyOk = true;
+        combinedBreakdown = combinedBreakdown.concat(r1.breakdown);
+        totalDeducted = Math.round((totalDeducted + r1.deducted) * 100) / 100;
+        totalShortBy = Math.round((totalShortBy + r1.shortBy) * 100) / 100;
+      }
+      inv = { ok: anyOk, deducted: totalDeducted, shortBy: totalShortBy, breakdown: combinedBreakdown };
       if (inv.ok) await persistRolls();
     }
   } else {
@@ -7225,6 +7230,18 @@ function todayStr() {
   const mm = String(d.getMonth() + 1).padStart(2, '0');
   const dd = String(d.getDate()).padStart(2, '0');
   return `${yy}.${mm}.${dd}`;
+}
+function formatSavedAtLocal(isoStr) {
+  // 백업 저장시각이 UTC(세계시각)로 저장돼있어서, 한국 로컬시간으로 정확히 바꿔서 보여줌 (안 그러면 새벽 시간대엔 날짜가 하루 밀려 보일 수 있음)
+  if (!isoStr) return '-';
+  const d = new Date(isoStr);
+  if (isNaN(d.getTime())) return isoStr;
+  const yy = String(d.getFullYear()).slice(2);
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mi = String(d.getMinutes()).padStart(2, '0');
+  return `${yy}.${mm}.${dd} ${hh}:${mi}`;
 }
 function tomorrowStr() {
   const d = new Date();
