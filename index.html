@@ -885,7 +885,7 @@ const PASSWORD = "3059";
 const ADMIN_PASSWORD = "9503"; // 매출/미수금 탭 전용 - 필요하면 이 값만 바꿔서 변경 가능
 const LOW_STOCK_THRESHOLD = 100;
 const DATA_VERSION = "2026-08-03-v4"; // 재고/이월장부 씨앗 데이터를 바꿀 때마다 이 값을 새로 바꿔주세요
-const APP_CODE_VERSION = "2026-09-01-i"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
+const APP_CODE_VERSION = "2026-09-01-k"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
 const SCHEMA_STAMP = 2; // 서버 저장규칙이 확인하는 "최신 앱 도장" - 절대 자주 바꾸지 않음(이 값을 아는 코드만 저장 가능하게 서버에서 막을 때 씀)
 
 const firebaseConfig = {
@@ -967,6 +967,11 @@ let activeCat = null;
 let orderStatusFilter = 'active'; // active | done
 let orderGroupMode = 'customer'; // customer | item
 let shipmentLog = []; // {id, date, customer, factory, item, color, amount, unit, orderId, remainAfter}
+function genUniqueId() {
+  // 여러 기기(폰/컴퓨터)에서 거의 동시에 저장해도 절대 번호가 안 겹치도록, "지금까지 있는 것 중 제일 큰 번호+1" 방식 대신
+  // 현재 시각(밀리초) + 무작위 숫자를 조합해서 만듦 (기존처럼 숫자라서 정렬은 그대로 잘 됨)
+  return Date.now() * 1000 + Math.floor(Math.random() * 1000);
+}
 let nextLogId = 1;
 let salesAdminUnlocked = false;
 let salesDayFilter = monthStartStr(); // 기본은 이번 달 1일부터
@@ -1088,7 +1093,7 @@ async function loadAll() {
           lastSnapshotJSON.orders = doc.data().data;
         } else if (!loaded.orders) {
           orders = DEFAULT_ORDERS.map(([date, customer, factory, item, color, orderQty, unit, received, note]) =>
-            ({ id: nextOrderId++, date, customer, factory, item, color, orderQty, unit: unit || 'y', received, note, done: false }));
+            ({ id: genUniqueId(), date, customer, factory, item, color, orderQty, unit: unit || 'y', received, note, done: false }));
           persistOrders();
         }
         loaded.orders = true; render(); checkDone();
@@ -1184,7 +1189,7 @@ async function fallbackLoadAll() {
     nextOrderId = orders.reduce((m, r) => Math.max(m, r.id), 0) + 1;
   } catch (e) {
     orders = DEFAULT_ORDERS.map(([date, customer, factory, item, color, orderQty, unit, received, note]) =>
-      ({ id: nextOrderId++, date, customer, factory, item, color, orderQty, unit: unit || 'y', received, note, done: false }));
+      ({ id: genUniqueId(), date, customer, factory, item, color, orderQty, unit: unit || 'y', received, note, done: false }));
     await persistOrders();
   }
   try {
@@ -2802,7 +2807,7 @@ async function replaceOrdersWithAuthoritative20260810() {
   if (!confirm(`26.08.10자 인쇄물 기준 ${AUTHORITATIVE_ORDERS_20260810.length}건으로 "진행중" 발주를 통째로 교체할게요.\n\n지금 진행중으로 남아있는 기존 발주들은 다 지워지고 이 목록으로 바뀌어요. (완료된 이력은 안 건드려요)\n\n계속할까요?`)) return;
   orders = orders.filter(o => o.done); // 완료된 건 이력은 보존, 진행중인 건 전부 제거
   for (const [customer, factory, item, color, orderQty, unit, note] of AUTHORITATIVE_ORDERS_20260810) {
-    orders.push({ id: nextOrderId++, date: '26.08.10', customer, factory, item, color, orderQty, unit, received: 0, note, done: false });
+    orders.push({ id: genUniqueId(), date: '26.08.10', customer, factory, item, color, orderQty, unit, received: 0, note, done: false });
   }
   await persistOrders();
   render();
@@ -3514,7 +3519,7 @@ async function confirmSaleEdit(keepOpen) {
     const inv = skipInventory ? { ok: false, deducted: 0, breakdown: null } : deductFromInventory(item, color, yardsRaw, null);
     if (inv.ok) await persistRolls();
     shipmentLog.push({
-      id: nextLogId++, date: dateVal, orderId: null,
+      id: genUniqueId(), date: dateVal, orderId: null,
       customer, factory: '', item, color: resolvedColor,
       amount: yardsRaw, unit: 'y', yardsShipped: yardsRaw, remainAfter: 0, isFullCompletion: true,
       unitPrice: priceRaw, supplyAmount, taxAmount, saleAmount, paidAmount: 0, taxIncluded,
@@ -3944,7 +3949,9 @@ function openPreShipmentModal(customerName, orderIds) {
 
   for (const o of targetOrders) {
     const isJeol = (o.unit || 'y') === '절';
-    const yards = isJeol ? Math.round(o.orderQty * 55 * 100) / 100 : o.orderQty;
+    const remainQty = Math.max(0, (o.orderQty || 0) - (o.received || 0)); // 이미 나간 만큼은 빼고, 진짜 남은 양만 예상 항목으로 넣음 (안 그러면 이미 나간 게 아래 미수금 체크리스트랑 중복으로 잡힘)
+    if (remainQty <= 0) continue; // 이미 다 나간 발주면 예상 항목 자체가 필요 없음 (실제 매출 건이 아래 체크리스트에 이미 있음)
+    const yards = isJeol ? Math.round(remainQty * 55 * 100) / 100 : remainQty;
     const price = findRememberedPrice(o.customer, o.item, o.color);
     const swOrder = findSwatchOrderByItemColor(o.item, o.color);
     addPreShipRow(`${o.item} ${o.color || ''}${swOrder != null ? ` (${swOrder}번)` : ''}`, yards, price, null, o.note || '', o.item, o.color || '');
@@ -4119,7 +4126,10 @@ function buildStatementHTML(customerName, startDate, endDate, entryIdFilter, inc
     if (e.saleAmount == null) continue;
     if (e.isSample) continue; // 샘플로 준 건(매출 0원)은 예전 0원 처리처럼 명세서에 안 보이게 함
     if (e.item === '이월 미수금') continue; // "미수금" 이전 잔액 자체는 아래에서 잔액 기준으로 따로 계산하므로, 개별 항목으로는 안 보여줌
-    listedUnpaid += getRemaining(e); // 이 명세서에 실제로 적히는 항목들 중 아직 안 받은 만큼
+    { // 이 명세서 기준일(endDate)까지의 입금만 반영 - 아래 customerTotalUnpaid 계산이랑 기준을 정확히 맞춰서, 둘이 따로 놀지 않게 함
+      const paidAsOfEndForRow = (e.payments || []).filter(p => String(p.date) <= String(endDate)).reduce((s, p) => s + p.amount, 0);
+      listedUnpaid += Math.max(0, e.saleAmount - (e.discount || 0) - paidAsOfEndForRow);
+    }
     const defectAmt = e.defectYards > 0 ? Math.round(e.unitPrice * e.defectYards) : 0;
     const extraAmt = e.extraAmount || 0;
     const rowSupply = (e.supplyAmount != null ? e.supplyAmount : e.saleAmount) + defectAmt - extraAmt;
@@ -4276,7 +4286,7 @@ function buildStatementHTML(customerName, startDate, endDate, entryIdFilter, inc
           if (totalReturnDefect > 0) items.push({ label: '반품/불량 차감', value: `-${totalReturnDefect.toLocaleString()}원`, color: '#c0392b' });
           if (totalDiscount > 0) items.push({ label: '공제액', value: `${totalDiscount.toLocaleString()}원`, color: '#1a5f8a' });
           if (totalPaid > 0) items.push({ label: '입금 합계', value: `${totalPaid.toLocaleString()}원`, color: '#1a56db' });
-          if (carryoverAmt > 0) items.push({ label: '이 외 남은 미수금(다른 건)', value: `${carryoverAmt.toLocaleString()}원`, color: '#a15c1e' });
+          if (carryoverAmt > 0) items.push({ label: '미수금', value: `${carryoverAmt.toLocaleString()}원`, color: '#a15c1e' });
           let rowsOut = '';
           for (let i = 0; i < items.length; i += 2) {
             const a = items[i], c = items[i + 1];
@@ -5835,7 +5845,7 @@ async function editCarryoverBalance(customer, entryId) {
     overpaidCarryover = await creditOverpaymentIfAny(current);
   } else {
     shipmentLog.push({
-      id: nextLogId++, date: todayStr(), orderId: null,
+      id: genUniqueId(), date: todayStr(), orderId: null,
       customer, factory: '', item: '이월 미수금', color: '',
       amount: 1, unit: 'y', yardsShipped: 1, remainAfter: 0, isFullCompletion: true,
       unitPrice: amount, supplyAmount: amount, taxAmount: 0, saleAmount: amount, paidAmount: 0,
@@ -6675,7 +6685,7 @@ async function saveOrderAdd() {
           const unit = cr.querySelector('.o-color-unit').value;
           const note = cr.querySelector('.o-color-note').value.trim();
           if (!color && orderQty <= 0 && !note) return; // 아무것도 안 채운 빈 줄은 건너뜀
-          newOrders.push({ id: nextOrderId++, date, customer, factory, item, color, orderQty, unit, received: 0, note, done: false });
+          newOrders.push({ id: genUniqueId(), date, customer, factory, item, color, orderQty, unit, received: 0, note, done: false });
         });
       });
     });
@@ -6706,7 +6716,7 @@ async function saveOrderAdd() {
       }
     }
   } else {
-    orders.push({ id: nextOrderId++, date, customer, factory, item, color, orderQty, unit, received: 0, note, done: false });
+    orders.push({ id: genUniqueId(), date, customer, factory, item, color, orderQty, unit, received: 0, note, done: false });
   }
   await persistOrders(); closeOrderAddModal(); render(); showToast('저장되었습니다');
 }
@@ -7289,7 +7299,7 @@ async function confirmOrderReceiveInner(o) {
   const shipNote = document.getElementById('or-note').value.trim();
   const resolvedColorForLog = resolveInventoryColor(o.item, o.color);
   const newEntry = {
-    id: nextLogId++, date: todayStr(), orderId: o.id,
+    id: genUniqueId(), date: todayStr(), orderId: o.id,
     customer: o.customer, factory: o.factory, item: o.item, color: resolvedColorForLog,
     amount: raw, unit: o.unit || 'y', yardsShipped, remainAfter: remain, isFullCompletion: remain <= 0,
     unitPrice, supplyAmount, taxAmount, saleAmount, paidAmount: 0, yardsEstimated, taxIncluded: !!(supplyAmount && taxIncluded), isFlatTotal: priceMode === 'total',
@@ -7506,7 +7516,7 @@ function releasePendingFeeForOrder(o) {
   }
   const taxAmt = fee.taxIncluded ? Math.round(fee.amount * 0.1) : 0;
   shipmentLog.push({
-    id: nextLogId++, date: todayStr(), orderId: null,
+    id: genUniqueId(), date: todayStr(), orderId: null,
     customer: o.customer, factory: fee.factory || o.factory, item: '추가금', color: '', isFee: true, linkGroupId: o.linkGroupId, feeRegId: fee.feeRegId || null,
     amount: 1, unit: 'y', yardsShipped: 1, remainAfter: 0, isFullCompletion: true,
     unitPrice: fee.amount, supplyAmount: fee.amount, taxAmount: taxAmt, saleAmount: fee.amount + taxAmt, paidAmount: 0, taxIncluded: !!fee.taxIncluded,
@@ -7581,7 +7591,7 @@ async function openReturnFromMultiOrderForm() {
           const unit = cr.querySelector('.o-color-unit').value;
           const note = cr.querySelector('.o-color-note').value.trim();
           if (!color && orderQty <= 0 && !note) return; // 아무것도 안 채운 빈 줄은 건너뜀
-          newOrders.push({ id: nextOrderId++, date, customer, factory, item, color, orderQty, unit, received: 0, note, done: false });
+          newOrders.push({ id: genUniqueId(), date, customer, factory, item, color, orderQty, unit, received: 0, note, done: false });
         });
       });
     });
@@ -7634,7 +7644,7 @@ async function openReturnFromOrderForm() {
     }
   } else if (item) {
     // 발주 폼에 입력해둔 내용이 있으면 먼저 저장하고 넘어감 - 안 그러면 추가금만 등록되고 발주는 그냥 날아가버림
-    targetOrder = { id: nextOrderId++, date, customer, factory, item, color, orderQty, unit, received: 0, note, done: false };
+    targetOrder = { id: genUniqueId(), date, customer, factory, item, color, orderQty, unit, received: 0, note, done: false };
     orders.push(targetOrder);
   }
   let linkGroupId = null;
@@ -7770,7 +7780,7 @@ async function confirmReturn() {
 
     const taxAmt = taxIncluded ? Math.round(amount * 0.1) : 0;
     shipmentLog.push({
-      id: nextLogId++, date: todayStr(), orderId: null,
+      id: genUniqueId(), date: todayStr(), orderId: null,
       customer, factory: extraFactory, item: '추가금', color: '', isFee: true, linkGroupId: pendingReturnLinkGroupId,
       amount: 1, unit: 'y', yardsShipped: 1, remainAfter: 0, isFullCompletion: true,
       unitPrice: amount, supplyAmount: amount, taxAmount: taxAmt, saleAmount: amount + taxAmt, paidAmount: 0, taxIncluded,
@@ -7843,7 +7853,7 @@ async function confirmReturn() {
     }
 
     shipmentLog.push({
-      id: nextLogId++, date: todayStr(), orderId: o ? o.id : null,
+      id: genUniqueId(), date: todayStr(), orderId: o ? o.id : null,
       customer, factory: o ? o.factory : '', item, color,
       amount: -amt, unit, yardsShipped: -yardsAmount, remainAfter: remain,
       isFullCompletion: false, isReturn: !isDefectType, isDefect: isDefectType, note,
@@ -7910,7 +7920,7 @@ async function markOrderDone(id) {
   await persistOrders();
 
   shipmentLog.push({
-    id: nextLogId++, date: todayStr(), orderId: o.id,
+    id: genUniqueId(), date: todayStr(), orderId: o.id,
     customer: o.customer, factory: o.factory, item: o.item, color: resolveInventoryColor(o.item, o.color),
     amount: remain > 0 ? remain : 0, unit: o.unit || 'y', yardsShipped, remainAfter: 0,
     isFullCompletion: true, manualClose: remain <= 0, yardsEstimated: isJeol && remain > 0, taxIncluded,
@@ -7959,7 +7969,7 @@ async function deleteOrder(id) {
   }
   if (keepPendingFeeAsStandalone && target.pendingFee) {
     shipmentLog.push({
-      id: nextLogId++, date: todayStr(), orderId: null,
+      id: genUniqueId(), date: todayStr(), orderId: null,
       customer: target.customer, factory: target.pendingFee.factory || target.factory, item: '추가금', color: '', isFee: true, feeRegId: target.pendingFee.feeRegId || null,
       amount: 1, unit: 'y', yardsShipped: 1, remainAfter: 0, isFullCompletion: true,
       unitPrice: target.pendingFee.amount, supplyAmount: target.pendingFee.amount, taxAmount: 0, saleAmount: target.pendingFee.amount, paidAmount: 0,
@@ -8318,7 +8328,7 @@ async function hardResetOrders(silent) {
   }
 
   orders = DEFAULT_ORDERS.map(([date, customer, factory, item, color, orderQty, unit, received, note]) =>
-    ({ id: nextOrderId++, date, customer, factory, item, color, orderQty, unit: unit || 'y', received, note, done: false }));
+    ({ id: genUniqueId(), date, customer, factory, item, color, orderQty, unit: unit || 'y', received, note, done: false }));
   await persistOrders();
   render();
   if (!silent) showToast(`이월장부 ${orders.length}건으로 새로 시작했습니다`);
@@ -8380,7 +8390,7 @@ async function applyCarryoverUnpaidIfNeeded() {
   }
   for (const [customer, amount] of CARRYOVER_UNPAID) {
     shipmentLog.push({
-      id: nextLogId++, date: todayStr(), orderId: null,
+      id: genUniqueId(), date: todayStr(), orderId: null,
       customer, factory: '', item: '이월 미수금', color: '',
       amount: 1, unit: 'y', yardsShipped: 1, remainAfter: 0, isFullCompletion: true,
       unitPrice: amount, supplyAmount: amount, taxAmount: 0, saleAmount: amount, paidAmount: 0,
