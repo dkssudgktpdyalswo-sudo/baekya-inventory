@@ -595,6 +595,15 @@
   </div>
 </div>
 
+<!-- 비슷한 거래처 확인 -->
+<div class="modal-overlay" id="similarCustomerModal">
+  <div class="modal">
+    <h3>거래처 확인</h3>
+    <p id="similar-customer-desc" style="font-size:13px;color:var(--muted);margin-top:-6px;"></p>
+    <div id="similar-customer-list"></div>
+  </div>
+</div>
+
 <!-- 가공 종류 관리 -->
 <div class="modal-overlay" id="processingTypeModal">
   <div class="modal" style="max-width:420px;">
@@ -875,7 +884,7 @@ const PASSWORD = "3059";
 const ADMIN_PASSWORD = "9503"; // 매출/미수금 탭 전용 - 필요하면 이 값만 바꿔서 변경 가능
 const LOW_STOCK_THRESHOLD = 100;
 const DATA_VERSION = "2026-08-03-v4"; // 재고/이월장부 씨앗 데이터를 바꿀 때마다 이 값을 새로 바꿔주세요
-const APP_CODE_VERSION = "2026-09-01-e"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
+const APP_CODE_VERSION = "2026-09-01-f"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
 const SCHEMA_STAMP = 2; // 서버 저장규칙이 확인하는 "최신 앱 도장" - 절대 자주 바꾸지 않음(이 값을 아는 코드만 저장 가능하게 서버에서 막을 때 씀)
 
 const firebaseConfig = {
@@ -3470,12 +3479,12 @@ let _saveSaleInProgress = false;
 async function confirmSaleEdit(keepOpen) {
   if (_saveSaleInProgress) { showToast('처리 중이에요, 잠시만 기다려주세요'); return; }
   _saveSaleInProgress = true;
-  setTimeout(() => { _saveSaleInProgress = false; }, 3000); // 확인창 뜨는 사이 등에 연타해도 중복 등록 안 되게, 혹시 몰라 3초 뒤엔 자동으로 다시 풀어둠
+  setTimeout(() => { _saveSaleInProgress = false; }, 60000); // 확인창(비슷한 거래처 선택 등)에서 고민하는 사이에도 안전하게, 넉넉하게 60초 뒤에 자동으로 다시 풀어둠
   const isNew = pendingSaleEditId === null;
   const entry = isNew ? null : shipmentLog.find(e => e.id === pendingSaleEditId);
   if (!isNew && !entry) return;
   let customer = document.getElementById('sale-edit-customer').value.trim();
-  customer = confirmCustomerNameOrPick(customer);
+  customer = await confirmCustomerNameOrPick(customer);
   const dateVal = fromDateInputValue(document.getElementById('sale-edit-date').value) || todayStr();
   const item = document.getElementById('sale-edit-item').value.trim();
   const color = document.getElementById('sale-edit-color').value.trim();
@@ -5798,29 +5807,32 @@ function getAllKnownCustomerNames() {
     ...customerList.map(c => String(c).trim())
   ].filter(Boolean)));
 }
+let _similarCustomerResolve = null;
 function confirmCustomerNameOrPick(typed) {
   // 발주/매출 등록할 때, 이미 있는 거래처랑 이름이 비슷하면(대소문자만 다르거나, 한쪽이 다른쪽을 포함) 확인해서
-  // "호박C"/"호박c", "비비"/"비비텍" 처럼 실수로 다른 거래처가 되는 걸 막음
-  const t = String(typed).trim();
-  if (!t) return t;
-  const allNames = getAllKnownCustomerNames().filter(n => n !== t);
-  const exactCi = allNames.find(n => n.toLowerCase() === t.toLowerCase());
-  if (exactCi) {
-    if (confirm(`이미 등록된 "${exactCi}"와 같은 거래처 같아요 (대소문자만 달라요).\n"${exactCi}"로 사용할까요?\n("취소"를 누르면 입력하신 "${t}" 그대로 새 거래처로 등록돼요)`)) {
-      return exactCi;
-    }
-    return t;
-  }
-  const partial = allNames.filter(n => n.toLowerCase().includes(t.toLowerCase()) || t.toLowerCase().includes(n.toLowerCase()));
-  if (partial.length > 0) {
-    const msg = `"${t}"랑 비슷한 이름의 거래처가 이미 있어요:\n${partial.map((n, i) => `${i + 1}. ${n}`).join('\n')}\n\n이 중 하나가 맞으면 그 번호를 입력해주세요.\n정말 새 거래처("${t}")면 0을 입력해주세요.`;
-    const raw = prompt(msg, '0');
-    if (raw === null) return t;
-    const idx = parseInt(raw);
-    if (idx >= 1 && idx <= partial.length) return partial[idx - 1];
-    return t;
-  }
-  return t;
+  // "호박C"/"호박c", "비비"/"비비텍" 처럼 실수로 다른 거래처가 되는 걸 막음 - 숫자 입력 대신 눌러서 고르는 방식
+  return new Promise((resolve) => {
+    const t = String(typed).trim();
+    if (!t) { resolve(t); return; }
+    const allNames = getAllKnownCustomerNames().filter(n => n !== t);
+    const exactCi = allNames.find(n => n.toLowerCase() === t.toLowerCase());
+    const partial = allNames.filter(n => n.toLowerCase().includes(t.toLowerCase()) || t.toLowerCase().includes(n.toLowerCase()));
+    const candidates = exactCi ? [exactCi] : partial;
+    if (candidates.length === 0) { resolve(t); return; }
+
+    _similarCustomerResolve = resolve;
+    document.getElementById('similar-customer-desc').textContent = `"${t}"를 입력하셨는데, 비슷한 이름의 거래처가 이미 있어요. 맞는 걸 골라주세요.`;
+    document.getElementById('similar-customer-list').innerHTML = candidates.map(n => `
+      <div onclick="resolveSimilarCustomerChoice('${escAttr(n)}')" style="padding:13px 12px; font-size:15px; border:1px solid var(--border); border-radius:8px; margin-top:8px; cursor:pointer; background:#eef3f8;">${esc(n)}</div>
+    `).join('') + `
+      <div onclick="resolveSimilarCustomerChoice('${escAttr(t)}')" style="padding:13px 12px; font-size:14px; border:1px dashed var(--border); border-radius:8px; margin-top:8px; cursor:pointer; color:var(--muted);">아니에요, "${esc(t)}"로 새로 등록할게요</div>
+    `;
+    document.getElementById('similarCustomerModal').classList.add('open');
+  });
+}
+function resolveSimilarCustomerChoice(name) {
+  document.getElementById('similarCustomerModal').classList.remove('open');
+  if (_similarCustomerResolve) { _similarCustomerResolve(name); _similarCustomerResolve = null; }
 }
 async function addCustomerName() {
   const raw = prompt('새 거래처 이름을 입력해주세요', '');
@@ -6547,11 +6559,11 @@ let _saveOrderInProgress = false;
 async function saveOrderAdd() {
   if (_saveOrderInProgress) { showToast('처리 중이에요, 잠시만 기다려주세요'); return; }
   _saveOrderInProgress = true;
-  setTimeout(() => { _saveOrderInProgress = false; }, 3000); // 확인창 뜨는 사이 등에 연타해도 중복 등록 안 되게, 혹시 몰라 3초 뒤엔 자동으로 다시 풀어둠
+  setTimeout(() => { _saveOrderInProgress = false; }, 60000); // 확인창(비슷한 거래처 선택 등)에서 고민하는 사이에도 안전하게, 넉넉하게 60초 뒤에 자동으로 다시 풀어둠
   const date = fromDateInputValue(document.getElementById('o-date').value) || todayStr();
   let customer = document.getElementById('o-customer').value.trim();
   if (!customer) { showToast('거래처를 확인해주세요'); return; }
-  customer = confirmCustomerNameOrPick(customer);
+  customer = await confirmCustomerNameOrPick(customer);
 
   if (editingOrderId === null) {
     const factoryGroups = document.querySelectorAll('.o-factory-group');
@@ -7612,12 +7624,12 @@ let _saveReturnInProgress = false;
 async function confirmReturn() {
   if (_saveReturnInProgress) { showToast('처리 중이에요, 잠시만 기다려주세요'); return; }
   _saveReturnInProgress = true;
-  setTimeout(() => { _saveReturnInProgress = false; }, 3000); // 확인창 뜨는 사이 등에 연타해도 중복 등록 안 되게, 혹시 몰라 3초 뒤엔 자동으로 다시 풀어둠
+  setTimeout(() => { _saveReturnInProgress = false; }, 60000); // 확인창(비슷한 거래처 선택 등)에서 고민하는 사이에도 안전하게, 넉넉하게 60초 뒤에 자동으로 다시 풀어둠
   const type = document.querySelector('input[name="ret-type"]:checked').value;
 
   if (type === 'extra') {
     let customer = document.getElementById('ret-customer').value.trim();
-    customer = confirmCustomerNameOrPick(customer);
+    customer = await confirmCustomerNameOrPick(customer);
     const amount = parseFloat(document.getElementById('ret-extra-amount').value);
     const note = document.getElementById('ret-note').value.trim();
     const extraFactory = document.getElementById('ret-extra-factory').value.trim();
@@ -7679,7 +7691,7 @@ async function confirmReturn() {
 
   const isDefectType = type === 'defect';
   let customer = document.getElementById('ret-customer').value.trim();
-  if (customer) customer = confirmCustomerNameOrPick(customer);
+  if (customer) customer = await confirmCustomerNameOrPick(customer);
   const rowEls = document.querySelectorAll('.ret-row');
   const o0 = pendingReturnOrderId != null ? orders.find(x => x.id === pendingReturnOrderId) : null;
   if (!customer) { showToast('거래처를 확인해주세요'); return; }
