@@ -885,7 +885,7 @@ const PASSWORD = "3059";
 const ADMIN_PASSWORD = "9503"; // 매출/미수금 탭 전용 - 필요하면 이 값만 바꿔서 변경 가능
 const LOW_STOCK_THRESHOLD = 100;
 const DATA_VERSION = "2026-08-03-v4"; // 재고/이월장부 씨앗 데이터를 바꿀 때마다 이 값을 새로 바꿔주세요
-const APP_CODE_VERSION = "2026-09-01-k"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
+const APP_CODE_VERSION = "2026-09-01-m"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
 const SCHEMA_STAMP = 2; // 서버 저장규칙이 확인하는 "최신 앱 도장" - 절대 자주 바꾸지 않음(이 값을 아는 코드만 저장 가능하게 서버에서 막을 때 씀)
 
 const firebaseConfig = {
@@ -3686,11 +3686,16 @@ function recordPayment(logId) {
   document.querySelector('input[name="payment-method"][value="cash"]').checked = true;
   document.getElementById('paymentModal').classList.add('open');
 }
-function recordGroupPayment(entryIds, extraDeduction) {
+function recordGroupPayment(entryIds, extraDeduction, overrideTotal) {
   const entries = entryIds.map(id => shipmentLog.find(e => e.id === id)).filter(Boolean);
-  let totalRemaining = entries.reduce((s, e) => s + getRemaining(e), 0);
+  let totalRemaining;
+  if (overrideTotal != null) {
+    totalRemaining = overrideTotal; // 건별로 끊어서 계산하지 않는, 진짜 정확한 공용 계산값을 그대로 씀
+  } else {
+    totalRemaining = entries.reduce((s, e) => s + getRemaining(e), 0);
+    if (extraDeduction) totalRemaining = Math.max(0, Math.round((totalRemaining - extraDeduction) * 100) / 100); // 반품/불량으로 이미 깎인 금액은 미수금에서 빼줌
+  }
   pendingPaymentExtraDeduction = extraDeduction || 0;
-  if (extraDeduction) totalRemaining = Math.max(0, Math.round((totalRemaining - extraDeduction) * 100) / 100); // 반품/불량으로 이미 깎인 금액은 미수금에서 빼줌
   if (totalRemaining <= 0) { showToast('이미 전액 입금 처리됐어요'); return; }
   pendingPaymentEntryIds = entryIds;
   document.getElementById('payment-desc').textContent = `미수금 합계 ${totalRemaining.toLocaleString()}원`;
@@ -4126,10 +4131,7 @@ function buildStatementHTML(customerName, startDate, endDate, entryIdFilter, inc
     if (e.saleAmount == null) continue;
     if (e.isSample) continue; // 샘플로 준 건(매출 0원)은 예전 0원 처리처럼 명세서에 안 보이게 함
     if (e.item === '이월 미수금') continue; // "미수금" 이전 잔액 자체는 아래에서 잔액 기준으로 따로 계산하므로, 개별 항목으로는 안 보여줌
-    { // 이 명세서 기준일(endDate)까지의 입금만 반영 - 아래 customerTotalUnpaid 계산이랑 기준을 정확히 맞춰서, 둘이 따로 놀지 않게 함
-      const paidAsOfEndForRow = (e.payments || []).filter(p => String(p.date) <= String(endDate)).reduce((s, p) => s + p.amount, 0);
-      listedUnpaid += Math.max(0, e.saleAmount - (e.discount || 0) - paidAsOfEndForRow);
-    }
+    listedUnpaid += getRemaining(e); // 날짜 범위 상관없이, 다른 화면이랑 항상 똑같은 방식(진짜 현재 남은 금액)으로 통일
     const defectAmt = e.defectYards > 0 ? Math.round(e.unitPrice * e.defectYards) : 0;
     const extraAmt = e.extraAmount || 0;
     const rowSupply = (e.supplyAmount != null ? e.supplyAmount : e.saleAmount) + defectAmt - extraAmt;
@@ -4217,18 +4219,8 @@ function buildStatementHTML(customerName, startDate, endDate, entryIdFilter, inc
       </tr>`;
   }).join('');
 
-  // "미수금액"은 이 명세서 기준일(endDate) 시점까지의 미수금이어야 함 (그 이후에 생긴 매출/입금은 반영하면 안 됨 - 안 그러면 예전 명세서를 나중에 다시 뽑을 때 최신 미수금이 찍혀서 뒤죽박죽이 됨)
-  let customerTotalUnpaid = 0;
-  for (const e of shipmentLog) {
-    if (String(e.customer || '').trim() !== t_c) continue;
-    if (String(e.date) > String(endDate)) continue; // 이 명세서 기준일보다 나중에 생긴 건 그 시점 미수금 계산에서 제외
-    if (e.saleAmount != null) {
-      const paidAsOfEnd = (e.payments || []).filter(p => String(p.date) <= String(endDate)).reduce((s, p) => s + p.amount, 0);
-      customerTotalUnpaid += Math.max(0, e.saleAmount - (e.discount || 0) - paidAsOfEnd);
-    } else if ((e.isReturn || e.isDefect) && e.deductAmount != null) {
-      customerTotalUnpaid -= e.deductAmount;
-    }
-  }
+  // "미수금액"은 날짜 범위와 상관없이, 다른 화면(입금 처리, 원장 등)이랑 항상 똑같은 "진짜 현재 미수금"이어야 함 - 공용 함수 하나만 씀
+  const customerTotalUnpaid = getCustomerTrueUnpaid(t_c);
   const balance = Math.max(0, customerTotalUnpaid + extraTotal + taxOverrideExtra);
   // "미수금"(이전) = 기존에 갖고 있던 미수금 중, 이 명세서에 실제로 적힌 항목들 말고 나머지 (새로 추가하는 선수금 항목은 안 섞음 - 그건 표에 이미 따로 나옴)
   const carryoverAmt = Math.max(0, customerTotalUnpaid - listedUnpaid);
@@ -5808,11 +5800,7 @@ function payCustomerUnpaid(customer) {
     .sort((a, b) => a.date.localeCompare(b.date) || a.id - b.id)
     .map(e => e.id);
   if (entryIds.length === 0) { showToast('이 거래처는 남은 미수금이 없어요'); return; }
-  // 반품/불량으로 깎인 금액까지 정확히 반영한 진짜 미수금이 되도록 (미수금표·원장이랑 똑같은 방식)
-  const totalReturnDefect = shipmentLog
-    .filter(e => e.customer && String(e.customer).trim() === String(customer).trim() && (e.isReturn || e.isDefect) && e.deductAmount != null)
-    .reduce((s, e) => s + e.deductAmount, 0);
-  recordGroupPayment(entryIds, totalReturnDefect);
+  recordGroupPayment(entryIds, 0, getCustomerTrueUnpaid(customer));
 }
 async function editCarryoverBalance(customer, entryId) {
   const current = entryId != null ? shipmentLog.find(e => e.id === entryId) : null;
@@ -5898,6 +5886,26 @@ async function renameCustomer(oldName) {
   await persistCustomerList();
   render();
   showToast(`"${oldName}" → "${newName}"(으)로 이름을 바꿨습니다`);
+}
+function getCustomerTrueUnpaid(customer) {
+  // 이 거래처의 "진짜, 지금 이 순간의" 총 미수금 - 날짜 범위 상관없이 항상 이 하나의 계산 방식만 씀
+  // 원장(거래처원장)이랑 완전히 똑같이, 건별로 끊어서 0 밑으로 안 내려가게 막지 않고, 전체를 하나의 흐름으로 누적계산함
+  // (건별로 끊어서 계산하면, 한 건이 다 받아지고 나중에 그 건에 공제가 걸린 경우 초과분이 다른 건에 안 넘어가서 실제보다 크게 나오는 문제가 있었음)
+  const t_c = String(customer).trim();
+  let total = 0;
+  for (const e of shipmentLog) {
+    if (String(e.customer || '').trim() !== t_c) continue;
+    if (e.isSample) continue;
+    if (e.isReturn || e.isDefect) {
+      if (e.deductAmount != null) total -= e.deductAmount;
+      continue;
+    }
+    if (e.saleAmount != null) {
+      total += Math.round((e.saleAmount - (e.discount || 0)) * 100) / 100;
+      for (const p of (e.payments || [])) total -= p.amount;
+    }
+  }
+  return Math.max(0, Math.round(total * 100) / 100);
 }
 function getAllKnownCustomerNames() {
   return Array.from(new Set([
@@ -6144,7 +6152,7 @@ function renderSales() {
                 <input type="checkbox" class="main-flag-checkbox" data-customer="${escAttr(k)}" data-ids="${entries.map(e => e.id).join(',')}" data-start="${escAttr(entries.reduce((a, e) => a < e.date ? a : e.date, entries[0].date))}" data-end="${escAttr(entries.reduce((a, e) => a > e.date ? a : e.date, entries[0].date))}" ${isMainGroup ? 'checked' : ''} onchange="toggleMainFlag([${entries.map(e => e.id).join(',')}], this.checked)" style="width:auto;">
                 메인(내역서 포함)
               </label>
-              ${custUnpaid > 0 ? `<button onclick="recordGroupPayment([${entries.map(e => e.id).join(',')}], ${custReturnDefect})" style="border:none;background:#eaf3ec;color:#2f6b46;border-radius:6px;padding:5px 10px;font-size:12px;font-weight:600;">입금 처리</button>` : ''}
+              ${custUnpaid > 0 ? `<button onclick="recordGroupPayment([${entries.map(e => e.id).join(',')}], 0, getCustomerTrueUnpaid('${escAttr(k)}'))" style="border:none;background:#eaf3ec;color:#2f6b46;border-radius:6px;padding:5px 10px;font-size:12px;font-weight:600;">입금 처리</button>` : ''}
               ${entries.some(e => getPaidAmount(e) > 0) ? `<button onclick="resetGroupPayment([${entries.map(e => e.id).join(',')}])" style="border:none;background:#f1eee7;color:var(--muted);border-radius:6px;padding:5px 10px;font-size:12px;margin-left:6px;">입금 취소</button>` : ''}
               <button onclick="openSaleAddModal('${escAttr(k)}')" style="border:none;background:#eaf3ec;color:#2f6b46;border-radius:6px;padding:5px 10px;font-size:12px;margin-left:6px;">+ 품목 추가</button>
               <button onclick="openDefectReturnForCustomer('${escAttr(k)}')" style="border:none;background:#fdecea;color:var(--danger);border-radius:6px;padding:5px 10px;font-size:12px;margin-left:6px;">반품/불량/추가금</button>
