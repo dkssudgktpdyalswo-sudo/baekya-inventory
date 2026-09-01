@@ -240,6 +240,7 @@
     <button onclick="archiveOldSalesLog()" style="border:none;background:#fff3d6;color:#a15c1e;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">🗑 매출장부 내보내기+정리</button>
     <button onclick="openBizInfoModal()" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">사업자 정보 설정</button>
     <button onclick="showAvailableBackups()" style="border:none;background:#f1eee7;color:var(--muted);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">🗄 백업 목록/복구</button>
+    <button onclick="showDuplicateCheck()" style="border:none;background:#f1eee7;color:var(--muted);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">🔍 중복 데이터 점검</button>
     <button onclick="manualBackupNow()" style="border:none;background:#eaf3ec;color:#2f6b46;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">📸 지금 이 순간 백업하기</button>
   </div>
 </div>
@@ -884,7 +885,7 @@ const PASSWORD = "3059";
 const ADMIN_PASSWORD = "9503"; // 매출/미수금 탭 전용 - 필요하면 이 값만 바꿔서 변경 가능
 const LOW_STOCK_THRESHOLD = 100;
 const DATA_VERSION = "2026-08-03-v4"; // 재고/이월장부 씨앗 데이터를 바꿀 때마다 이 값을 새로 바꿔주세요
-const APP_CODE_VERSION = "2026-09-01-g"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
+const APP_CODE_VERSION = "2026-09-01-i"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
 const SCHEMA_STAMP = 2; // 서버 저장규칙이 확인하는 "최신 앱 도장" - 절대 자주 바꾸지 않음(이 값을 아는 코드만 저장 가능하게 서버에서 막을 때 씀)
 
 const firebaseConfig = {
@@ -4090,6 +4091,8 @@ function buildStatementHTML(customerName, startDate, endDate, entryIdFilter, inc
   } else {
     custEntries = shipmentLog.filter(e => String(e.customer || '').trim() === t_c && inRange(e.date));
   }
+  // 혹시 데이터에 같은 id가 중복으로 있어도(비정상 상황) 명세서 합계에서 절대 두 번 세지 않도록 안전하게 걸러냄
+  { const seenIds = new Set(); custEntries = custEntries.filter(e => { if (seenIds.has(e.id)) return false; seenIds.add(e.id); return true; }); }
   if (custEntries.length === 0 && !entryIdFilter && extraRows.length === 0) return null;
   if (entryIdFilter && custEntries.length > 0) {
     const ds = custEntries.map(e => e.date);
@@ -4273,7 +4276,7 @@ function buildStatementHTML(customerName, startDate, endDate, entryIdFilter, inc
           if (totalReturnDefect > 0) items.push({ label: '반품/불량 차감', value: `-${totalReturnDefect.toLocaleString()}원`, color: '#c0392b' });
           if (totalDiscount > 0) items.push({ label: '공제액', value: `${totalDiscount.toLocaleString()}원`, color: '#1a5f8a' });
           if (totalPaid > 0) items.push({ label: '입금 합계', value: `${totalPaid.toLocaleString()}원`, color: '#1a56db' });
-          if (carryoverAmt > 0) items.push({ label: '미수금', value: `${carryoverAmt.toLocaleString()}원`, color: '#a15c1e' });
+          if (carryoverAmt > 0) items.push({ label: '이 외 남은 미수금(다른 건)', value: `${carryoverAmt.toLocaleString()}원`, color: '#a15c1e' });
           let rowsOut = '';
           for (let i = 0; i < items.length; i += 2) {
             const a = items[i], c = items[i + 1];
@@ -4284,7 +4287,7 @@ function buildStatementHTML(customerName, startDate, endDate, entryIdFilter, inc
           }
           return `<table style="font-size:${sizes.totalsFont}; margin-top:${sizes.totalsGap};">
             ${rowsOut}
-            <tr><td style="background:#d3e9f7;color:#1a5f8a;font-weight:800;padding:1px 4px;">미수금액</td><td colspan="3" style="text-align:right;font-weight:800;padding:1px 4px;">${balance.toLocaleString()}원</td></tr>
+            <tr><td style="background:#d3e9f7;color:#1a5f8a;font-weight:800;padding:1px 4px;">총 미수금액(전체)</td><td colspan="3" style="text-align:right;font-weight:800;padding:1px 4px;">${balance.toLocaleString()}원</td></tr>
           </table>`;
         })()}
         ${b.bankInfo ? `<div style="margin-top:${sizes.bankGap}; font-size:${sizes.bankSize}; color:#333;">입금계좌: ${esc(b.bankInfo)}</div>` : ''}
@@ -5033,6 +5036,70 @@ async function showAvailableBackups() {
   salesSpecialView = 'backupManager';
   openGroups = new Set(); // 다른 화면으로 넘어갈 때 열려있던 카드들 접힌 상태로 초기화
   render();
+}
+function showDuplicateCheck() {
+  salesSpecialView = 'duplicateCheck';
+  openGroups = new Set(); // 다른 화면으로 넘어갈 때 열려있던 카드들 접힌 상태로 초기화
+  render();
+}
+function exitDuplicateCheck() {
+  salesSpecialView = null;
+  openGroups = new Set(); // 다른 화면으로 넘어갈 때 열려있던 카드들 접힌 상태로 초기화
+  render();
+}
+function renderDuplicateCheckView() {
+  const list = document.getElementById('list');
+  list.innerHTML = '';
+
+  const backBtn = document.createElement('button');
+  backBtn.textContent = '← 돌아가기';
+  backBtn.style.cssText = 'border:none;background:#eee;color:#555;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;margin-bottom:10px;';
+  backBtn.onclick = exitDuplicateCheck;
+  list.appendChild(backBtn);
+
+  // 매출장부(shipmentLog) 안에 같은 고유번호(id)를 가진 기록이 실수로 여러 개 있는지 점검함
+  const byId = new Map();
+  for (const e of shipmentLog) {
+    if (!byId.has(e.id)) byId.set(e.id, []);
+    byId.get(e.id).push(e);
+  }
+  const dupGroups = Array.from(byId.entries()).filter(([id, list2]) => list2.length > 1);
+
+  const wrap = document.createElement('div');
+  if (dupGroups.length === 0) {
+    wrap.innerHTML = '<div class="group"><div style="padding:16px 12px; text-align:center; color:#2f6b46; font-weight:600;">✓ 중복된 매출 기록이 없어요. 정상이에요.</div></div>';
+  } else {
+    wrap.innerHTML = `
+      <div class="group" style="margin-bottom:12px;">
+        <div style="padding:10px 12px; font-weight:700; font-size:14px; color:var(--danger); border-bottom:1px solid var(--border);">⚠️ 같은 번호(id)를 가진 매출 기록이 ${dupGroups.length}건 발견됐어요</div>
+        <div style="padding:8px 12px; font-size:12px; color:var(--muted);">아래에서 내용을 확인하시고, 잘못 중복된 쪽을 "이 항목 삭제"로 지워주세요. (재고/미수금에는 영향 없이, 이 기록 한 줄만 지워져요)</div>
+      </div>
+    ` + dupGroups.map(([id, entries]) => `
+      <div class="group" style="margin-bottom:10px;">
+        <div style="padding:8px 12px; font-weight:700; font-size:13px; background:#fdecea;">번호(id) ${id} — ${entries.length}개 중복</div>
+        ${entries.map((e, i) => `
+          <div style="padding:10px 12px; border-bottom:1px dashed var(--border);">
+            <div style="font-size:13px;">${esc(e.date)} · ${esc(e.customer || '')} · ${esc(e.item)} ${esc(e.color || '')}</div>
+            <div style="font-size:12px; color:var(--muted); margin-top:2px;">${e.yardsShipped || e.amount || 0}${e.unit || 'y'}${e.unitPrice ? ` × ${e.unitPrice.toLocaleString()}원/y` : ''} · 매출액 ${(e.saleAmount || 0).toLocaleString()}원${e.isReturn ? ' (반품)' : ''}${e.isDefect ? ' (불량)' : ''}</div>
+            <button onclick="deleteDuplicateShipmentEntry(${id}, ${i})" style="border:none;background:#fdecea;color:var(--danger);border-radius:6px;padding:5px 10px;font-size:11px;margin-top:6px;">이 항목 삭제</button>
+          </div>
+        `).join('')}
+      </div>
+    `).join('');
+  }
+  list.appendChild(wrap);
+}
+async function deleteDuplicateShipmentEntry(id, indexAmongDupes) {
+  const matches = shipmentLog.filter(e => e.id === id);
+  if (indexAmongDupes >= matches.length) return;
+  const target = matches[indexAmongDupes];
+  if (!confirm(`이 매출 기록(${target.date} · ${target.item} ${target.color || ''})을 삭제할까요?\n재고나 다른 계산에는 손대지 않고, 이 중복된 기록 한 줄만 지워요.`)) return;
+  const idxInFull = shipmentLog.indexOf(target);
+  if (idxInFull === -1) return;
+  shipmentLog.splice(idxInFull, 1);
+  await persistShipmentLog();
+  render();
+  showToast('삭제했어요');
 }
 function exitBackupManager() {
   salesSpecialView = null;
@@ -5920,6 +5987,11 @@ function renderSales() {
   if (salesSpecialView === 'backupManager') {
     document.getElementById('stats').innerHTML = '';
     renderBackupManagerList();
+    return;
+  }
+  if (salesSpecialView === 'duplicateCheck') {
+    document.getElementById('stats').innerHTML = '';
+    renderDuplicateCheckView();
     return;
   }
 
