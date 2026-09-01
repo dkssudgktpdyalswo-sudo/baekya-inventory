@@ -227,6 +227,7 @@
   <div id="sales-dd-reports" class="hidden" style="display:flex; gap:6px; margin-top:6px; flex-wrap:wrap; align-items:center; padding:8px; background:#faf6ff; border-radius:10px;">
     <button onclick="addCustomerName()" style="border:none;background:#eaf3ec;color:#2f6b46;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">+ 거래처 추가</button>
     <button onclick="openSaleAddModal('')" style="border:none;background:#fff3d6;color:#a15c1e;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">+ 새 매출 등록</button>
+    <button onclick="openDefectReturnForCustomer('')" style="border:none;background:#fdecea;color:var(--danger);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">+ 반품/불량 등록</button>
     <button onclick="showCustomerLedger()" style="border:none;background:#e8edf5;color:#3d4f6b;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">📒 거래처원장</button>
     <button onclick="showPaymentLedger()" style="border:none;background:#e6f0fa;color:#1a56db;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">💰 입금장부</button>
     <button onclick="showCustomerRanking()" style="border:none;background:#f0e6fa;color:#6b3fa0;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">📊 거래처 순위</button>
@@ -874,7 +875,7 @@ const PASSWORD = "3059";
 const ADMIN_PASSWORD = "9503"; // 매출/미수금 탭 전용 - 필요하면 이 값만 바꿔서 변경 가능
 const LOW_STOCK_THRESHOLD = 100;
 const DATA_VERSION = "2026-08-03-v4"; // 재고/이월장부 씨앗 데이터를 바꿀 때마다 이 값을 새로 바꿔주세요
-const APP_CODE_VERSION = "2026-08-31-c"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
+const APP_CODE_VERSION = "2026-09-01-e"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
 const SCHEMA_STAMP = 2; // 서버 저장규칙이 확인하는 "최신 앱 도장" - 절대 자주 바꾸지 않음(이 값을 아는 코드만 저장 가능하게 서버에서 막을 때 씀)
 
 const firebaseConfig = {
@@ -3656,21 +3657,25 @@ async function confirmDefect() {
 }
 
 let pendingPaymentEntryIds = [];
+let pendingPaymentExtraDeduction = 0; // 반품/불량으로 이미 깎인 금액 - "완불로 처리" 버튼 누를 때도 정확히 반영되게 기억해둠
 function recordPayment(logId) {
   const entry = shipmentLog.find(e => e.id === logId);
   if (!entry) return;
   const remaining = getRemaining(entry);
   if (remaining <= 0) { showToast('이미 전액 처리됐어요'); return; }
   pendingPaymentEntryIds = [logId];
+  pendingPaymentExtraDeduction = 0; // 이 건은 이미 개별로 정확한 금액이라, 별도 조정 없음
   document.getElementById('payment-desc').textContent = `${entry.customer || ''} · ${entry.item} ${entry.color || ''} (미수금 ${remaining.toLocaleString()}원)`;
   document.getElementById('payment-amount').value = remaining;
   document.getElementById('payment-date').value = toDateInputValue(todayStr());
   document.querySelector('input[name="payment-method"][value="cash"]').checked = true;
   document.getElementById('paymentModal').classList.add('open');
 }
-function recordGroupPayment(entryIds) {
+function recordGroupPayment(entryIds, extraDeduction) {
   const entries = entryIds.map(id => shipmentLog.find(e => e.id === id)).filter(Boolean);
-  const totalRemaining = entries.reduce((s, e) => s + getRemaining(e), 0);
+  let totalRemaining = entries.reduce((s, e) => s + getRemaining(e), 0);
+  pendingPaymentExtraDeduction = extraDeduction || 0;
+  if (extraDeduction) totalRemaining = Math.max(0, Math.round((totalRemaining - extraDeduction) * 100) / 100); // 반품/불량으로 이미 깎인 금액은 미수금에서 빼줌
   if (totalRemaining <= 0) { showToast('이미 전액 입금 처리됐어요'); return; }
   pendingPaymentEntryIds = entryIds;
   document.getElementById('payment-desc').textContent = `미수금 합계 ${totalRemaining.toLocaleString()}원`;
@@ -3715,7 +3720,8 @@ async function confirmPaymentModal(mode) {
   const method = document.querySelector('input[name="payment-method"]:checked').value;
   const payDate = fromDateInputValue(document.getElementById('payment-date').value) || todayStr();
   if (mode === 'full') {
-    const totalRemainingNow = entries.reduce((s, e) => s + getRemaining(e), 0);
+    let totalRemainingNow = entries.reduce((s, e) => s + getRemaining(e), 0);
+    totalRemainingNow = Math.max(0, Math.round((totalRemainingNow - (pendingPaymentExtraDeduction || 0)) * 100) / 100);
     document.getElementById('payment-amount').value = totalRemainingNow;
   }
   let amt = parseFloat(document.getElementById('payment-amount').value);
@@ -4475,6 +4481,7 @@ function showCustomerLedger(customer) {
   salesSpecialView = 'customerLedger';
   openGroups = new Set(); // 다른 화면으로 넘어갈 때 열려있던 카드들 접힌 상태로 초기화
   ledgerCustomer = customer || ledgerCustomer || '';
+  ledgerStartDate = null; ledgerEndDate = null; // 매번 새로 들어올 때마다 "이번 달" 기준으로 다시 계산되게 함 (예전에 봤던 달 범위에 그대로 갇혀있지 않도록)
   render();
 }
 function exitCustomerLedger() {
@@ -4952,17 +4959,23 @@ function renderCustomerLedgerTable() {
 
   if (events.length === 0) { wrap.innerHTML = '<div class="empty">거래 내역이 없습니다</div>'; return; }
 
+  // 잔액은 날짜 범위랑 상관없이 항상 "전체 흐름" 기준으로 정확하게 미리 계산해둠 (그래야 잔액이 곧 실제 미수금과 항상 똑같아짐)
+  let runningFull = 0;
+  const eventsWithBalance = events.map(ev => {
+    runningFull = Math.round((runningFull + ev.amount) * 100) / 100;
+    return { ...ev, _balance: runningFull };
+  });
+
   let openingBalance = 0;
   const rowsInRange = [];
-  for (const ev of events) {
-    if (startDate && ev.date < startDate) { openingBalance += ev.amount; continue; }
+  for (const ev of eventsWithBalance) {
+    if (startDate && ev.date < startDate) { openingBalance = ev._balance; continue; }
     if (endDate && ev.date > endDate) continue;
     rowsInRange.push(ev);
   }
 
-  let running = openingBalance;
   const rowsHtml = rowsInRange.map(ev => {
-    running = Math.round((running + ev.amount) * 100) / 100;
+    const running = ev._balance; // 화면에 보여줄 줄만 골랐을 뿐, 잔액 자체는 전체 흐름 기준 그대로 씀
     const color = ev.type === '매출' ? '#c0392b' : (ev.type === '입금' ? '#1a56db' : '#a15c1e');
     const clickable = ev.id != null || (ev.refs && ev.refs.length > 0);
     let clickHandler = '';
@@ -5687,7 +5700,11 @@ function payCustomerUnpaid(customer) {
     .sort((a, b) => a.date.localeCompare(b.date) || a.id - b.id)
     .map(e => e.id);
   if (entryIds.length === 0) { showToast('이 거래처는 남은 미수금이 없어요'); return; }
-  recordGroupPayment(entryIds);
+  // 반품/불량으로 깎인 금액까지 정확히 반영한 진짜 미수금이 되도록 (미수금표·원장이랑 똑같은 방식)
+  const totalReturnDefect = shipmentLog
+    .filter(e => e.customer && String(e.customer).trim() === String(customer).trim() && (e.isReturn || e.isDefect) && e.deductAmount != null)
+    .reduce((s, e) => s + e.deductAmount, 0);
+  recordGroupPayment(entryIds, totalReturnDefect);
 }
 async function editCarryoverBalance(customer, entryId) {
   const current = entryId != null ? shipmentLog.find(e => e.id === entryId) : null;
@@ -6011,7 +6028,7 @@ function renderSales() {
                 <input type="checkbox" class="main-flag-checkbox" data-customer="${escAttr(k)}" data-ids="${entries.map(e => e.id).join(',')}" data-start="${escAttr(entries.reduce((a, e) => a < e.date ? a : e.date, entries[0].date))}" data-end="${escAttr(entries.reduce((a, e) => a > e.date ? a : e.date, entries[0].date))}" ${isMainGroup ? 'checked' : ''} onchange="toggleMainFlag([${entries.map(e => e.id).join(',')}], this.checked)" style="width:auto;">
                 메인(내역서 포함)
               </label>
-              ${custUnpaid > 0 ? `<button onclick="recordGroupPayment([${entries.map(e => e.id).join(',')}])" style="border:none;background:#eaf3ec;color:#2f6b46;border-radius:6px;padding:5px 10px;font-size:12px;font-weight:600;">입금 처리</button>` : ''}
+              ${custUnpaid > 0 ? `<button onclick="recordGroupPayment([${entries.map(e => e.id).join(',')}], ${custReturnDefect})" style="border:none;background:#eaf3ec;color:#2f6b46;border-radius:6px;padding:5px 10px;font-size:12px;font-weight:600;">입금 처리</button>` : ''}
               ${entries.some(e => getPaidAmount(e) > 0) ? `<button onclick="resetGroupPayment([${entries.map(e => e.id).join(',')}])" style="border:none;background:#f1eee7;color:var(--muted);border-radius:6px;padding:5px 10px;font-size:12px;margin-left:6px;">입금 취소</button>` : ''}
               <button onclick="openSaleAddModal('${escAttr(k)}')" style="border:none;background:#eaf3ec;color:#2f6b46;border-radius:6px;padding:5px 10px;font-size:12px;margin-left:6px;">+ 품목 추가</button>
               <button onclick="openDefectReturnForCustomer('${escAttr(k)}')" style="border:none;background:#fdecea;color:var(--danger);border-radius:6px;padding:5px 10px;font-size:12px;margin-left:6px;">반품/불량/추가금</button>
@@ -7607,6 +7624,10 @@ async function confirmReturn() {
     const taxIncluded = document.getElementById('ret-extra-tax').checked;
     if (!customer) { showToast('거래처를 확인해주세요'); return; }
     if (!amount || amount <= 0) { showToast('금액을 확인해주세요'); return; }
+    if (!customerList.some(c => String(c).trim() === customer)) {
+      customerList.push(customer);
+      await persistCustomerList();
+    }
     const feeRegId = 'feereg-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8); // 이 추가금 등록 자체를 가리키는 고유값 - 나중에 매출로 반영될 때 "이미 반영됐는지"를 여기로 정확히 확인함
 
     // 거래처 카드에서 연 경우, 어느 발주 것인지 정확히 골라서 그 발주(들)에만 보류
@@ -7662,6 +7683,10 @@ async function confirmReturn() {
   const rowEls = document.querySelectorAll('.ret-row');
   const o0 = pendingReturnOrderId != null ? orders.find(x => x.id === pendingReturnOrderId) : null;
   if (!customer) { showToast('거래처를 확인해주세요'); return; }
+  if (!customerList.some(c => String(c).trim() === customer)) {
+    customerList.push(customer);
+    await persistCustomerList();
+  }
 
   let processedCount = 0;
   let totalDeduct = 0;
