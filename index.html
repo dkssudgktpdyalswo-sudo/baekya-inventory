@@ -884,7 +884,7 @@ const PASSWORD = "3059";
 const ADMIN_PASSWORD = "9503"; // 매출/미수금 탭 전용 - 필요하면 이 값만 바꿔서 변경 가능
 const LOW_STOCK_THRESHOLD = 100;
 const DATA_VERSION = "2026-08-03-v4"; // 재고/이월장부 씨앗 데이터를 바꿀 때마다 이 값을 새로 바꿔주세요
-const APP_CODE_VERSION = "2026-09-01-f"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
+const APP_CODE_VERSION = "2026-09-01-g"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
 const SCHEMA_STAMP = 2; // 서버 저장규칙이 확인하는 "최신 앱 도장" - 절대 자주 바꾸지 않음(이 값을 아는 코드만 저장 가능하게 서버에서 막을 때 씀)
 
 const firebaseConfig = {
@@ -5461,9 +5461,16 @@ function printMonthlyReport() {
   document.getElementById('printArea').innerHTML = `<div style="padding:10mm; font-family:-apple-system,'Malgun Gothic',sans-serif;">${content.innerHTML}</div>`;
   setTimeout(() => window.print(), 100);
 }
+let customerRankingOffset = 0; // 0=이번달, -1=지난달 ...
 function showCustomerRanking() {
   salesSpecialView = 'customerRanking';
   openGroups = new Set(); // 다른 화면으로 넘어갈 때 열려있던 카드들 접힌 상태로 초기화
+  customerRankingOffset = 0;
+  render();
+}
+function shiftCustomerRanking(delta) {
+  customerRankingOffset += delta;
+  if (customerRankingOffset > 0) customerRankingOffset = 0;
   render();
 }
 function exitCustomerRanking() {
@@ -5475,15 +5482,30 @@ function renderCustomerRankingView() {
   const list = document.getElementById('list');
   list.innerHTML = '';
 
+  const topBar = document.createElement('div');
+  topBar.style.cssText = 'display:flex; gap:8px; align-items:center; margin-bottom:10px;';
   const backBtn = document.createElement('button');
   backBtn.textContent = '← 돌아가기';
-  backBtn.style.cssText = 'border:none;background:#eee;color:#555;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;margin-bottom:10px;';
+  backBtn.style.cssText = 'border:none;background:#eee;color:#555;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;';
   backBtn.onclick = exitCustomerRanking;
-  list.appendChild(backBtn);
+  topBar.appendChild(backBtn);
+  const prevBtn = document.createElement('button');
+  prevBtn.textContent = '◀ 이전달';
+  prevBtn.style.cssText = 'border:none;background:#eee;color:#555;border-radius:8px;padding:7px 12px;font-size:12px;';
+  prevBtn.onclick = () => shiftCustomerRanking(-1);
+  topBar.appendChild(prevBtn);
+  const nextBtn = document.createElement('button');
+  nextBtn.textContent = '다음달 ▶';
+  nextBtn.style.cssText = 'border:none;background:#eee;color:#555;border-radius:8px;padding:7px 12px;font-size:12px;';
+  nextBtn.disabled = customerRankingOffset >= 0;
+  nextBtn.onclick = () => shiftCustomerRanking(1);
+  topBar.appendChild(nextBtn);
+  list.appendChild(topBar);
 
   const now = new Date();
-  const curMonthKey = `${String(now.getFullYear()).slice(2)}.${String(now.getMonth() + 1).padStart(2, '0')}`;
-  const prevDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  const target = new Date(now.getFullYear(), now.getMonth() + customerRankingOffset, 1);
+  const curMonthKey = `${String(target.getFullYear()).slice(2)}.${String(target.getMonth() + 1).padStart(2, '0')}`;
+  const prevDate = new Date(target.getFullYear(), target.getMonth() - 1, 1);
   const prevMonthKey = `${String(prevDate.getFullYear()).slice(2)}.${String(prevDate.getMonth() + 1).padStart(2, '0')}`;
 
   // 거래처별 이번달/지난달 매출 합계 (반품/불량은 차감, 이월미수금은 제외)
