@@ -885,7 +885,7 @@ const PASSWORD = "3059";
 const ADMIN_PASSWORD = "9503"; // 매출/미수금 탭 전용 - 필요하면 이 값만 바꿔서 변경 가능
 const LOW_STOCK_THRESHOLD = 100;
 const DATA_VERSION = "2026-08-03-v4"; // 재고/이월장부 씨앗 데이터를 바꿀 때마다 이 값을 새로 바꿔주세요
-const APP_CODE_VERSION = "2026-09-01-m"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
+const APP_CODE_VERSION = "2026-09-02-a"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
 const SCHEMA_STAMP = 2; // 서버 저장규칙이 확인하는 "최신 앱 도장" - 절대 자주 바꾸지 않음(이 값을 아는 코드만 저장 가능하게 서버에서 막을 때 씀)
 
 const firebaseConfig = {
@@ -1507,14 +1507,14 @@ function showSuggestionsGeneric(inputEl, candidates, labelMap) {
   const box = document.getElementById('itemSuggestBox');
   let matches;
   if (!q) {
-    matches = candidates.slice(0, 20);
+    matches = candidates.slice(0, 200);
   } else if (isChosungOnly(q)) {
     matches = candidates.filter(n => getChosung(n).includes(q));
   } else {
     matches = candidates.filter(n => n.toLowerCase().includes(q.toLowerCase()));
   }
   if (matches.length === 0) { box.classList.add('hidden'); return; }
-  box.innerHTML = matches.slice(0, 30).map(n => {
+  box.innerHTML = matches.slice(0, 200).map(n => {
     const label = labelMap && labelMap[n] != null
       ? `<span style="display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:50%;background:var(--primary);color:#fff;font-size:11px;font-weight:800;margin-right:6px;vertical-align:middle;">${esc(labelMap[n])}</span>${esc(n)}`
       : esc(n);
