@@ -885,7 +885,7 @@ const PASSWORD = "3059";
 const ADMIN_PASSWORD = "9503"; // 매출/미수금 탭 전용 - 필요하면 이 값만 바꿔서 변경 가능
 const LOW_STOCK_THRESHOLD = 100;
 const DATA_VERSION = "2026-08-03-v4"; // 재고/이월장부 씨앗 데이터를 바꿀 때마다 이 값을 새로 바꿔주세요
-const APP_CODE_VERSION = "2026-09-02-a"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
+const APP_CODE_VERSION = "2026-09-02-c"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
 const SCHEMA_STAMP = 2; // 서버 저장규칙이 확인하는 "최신 앱 도장" - 절대 자주 바꾸지 않음(이 값을 아는 코드만 저장 가능하게 서버에서 막을 때 씀)
 
 const firebaseConfig = {
@@ -1452,7 +1452,7 @@ function esc(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').re
 function escAttr(s) { return String(s).replace(/'/g, "\\'"); }
 function escJsonAttr(obj) { return JSON.stringify(obj).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
 
-document.getElementById('search').addEventListener('input', e => { searchTerm = e.target.value; render(); showSearchSuggestions(e.target); });
+document.getElementById('search').addEventListener('input', e => { searchTerm = e.target.value; if (searchTerm.trim()) activeCat = null; render(); showSearchSuggestions(e.target); });
 document.getElementById('search').addEventListener('focus', e => { showSearchSuggestions(e.target); });
 document.getElementById('search').addEventListener('blur', () => { hideItemSuggestionsDelayed(); });
 function showSearchSuggestions(inputEl) {
@@ -1495,6 +1495,14 @@ function getChosung(str) {
     }
   }
   return result;
+}
+function matchesSearchWords(term, ...fields) {
+  // "2 인디고"처럼 띄어서 검색해도, "2"는 품목에 "인디고"는 컬러에 있는 식으로 서로 다른 칸에 나뉘어 있으면 못 찾던 문제 해결
+  // - 입력한 단어들을 띄어쓰기로 나눠서, 그 단어들이 (여러 필드를 합친 것 중에) 전부 어딘가에 포함만 되면 매칭시킴
+  const words = term.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  if (words.length === 0) return true;
+  const combined = fields.map(f => String(f || '').toLowerCase()).join(' ');
+  return words.every(w => combined.includes(w));
 }
 function isChosungOnly(str) {
   return str.length > 0 && [...str].every(ch => CHOSUNG_LIST.includes(ch));
@@ -1822,8 +1830,8 @@ function renderInv() {
   let groups = buildGroups(); // 컬러 단위 (cat,item,color,rolls[])
   if (activeCat !== null) groups = groups.filter(g => g.cat === activeCat);
   if (searchTerm.trim()) {
-    const t = searchTerm.trim().toLowerCase();
-    groups = groups.filter(g => g.item.toLowerCase().includes(t) || g.color.toLowerCase().includes(t));
+    const t = searchTerm.trim();
+    groups = groups.filter(g => matchesSearchWords(t, g.item, g.color));
   }
   for (const g of groups) g._swatch = findSwatchFor(g.cat, g.item, g.color);
 
@@ -2404,8 +2412,8 @@ function renderCost() {
   let list2 = costs.filter(c => !c.color);
   if (activeCat !== null) list2 = list2.filter(c => c.cat === activeCat);
   if (searchTerm.trim()) {
-    const t = searchTerm.trim().toLowerCase();
-    list2 = list2.filter(c => String(c.item).toLowerCase().includes(t));
+    const t = searchTerm.trim();
+    list2 = list2.filter(c => matchesSearchWords(t, c.item));
   }
   list2.sort((a, b) => String(a.item).localeCompare(String(b.item), 'ko'));
 
