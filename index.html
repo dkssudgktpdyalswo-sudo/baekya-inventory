@@ -888,7 +888,7 @@ const PASSWORD = "3059";
 const ADMIN_PASSWORD = "9503"; // 매출/미수금 탭 전용 - 필요하면 이 값만 바꿔서 변경 가능
 const LOW_STOCK_THRESHOLD = 100;
 const DATA_VERSION = "2026-08-03-v4"; // 재고/이월장부 씨앗 데이터를 바꿀 때마다 이 값을 새로 바꿔주세요
-const APP_CODE_VERSION = "2026-09-02-f"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
+const APP_CODE_VERSION = "2026-09-02-h"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
 const SCHEMA_STAMP = 2; // 서버 저장규칙이 확인하는 "최신 앱 도장" - 절대 자주 바꾸지 않음(이 값을 아는 코드만 저장 가능하게 서버에서 막을 때 씀)
 
 const firebaseConfig = {
@@ -1718,10 +1718,12 @@ function getLowStockAlerts() {
 
   // 품목+컬러별 현재고 합계
   const stockMap = new Map(); // "item|color" -> qty
+  const catMap = new Map(); // "item|color" -> cat (스왓치 조회용)
   for (const r of rolls) {
     if (r.defective) continue;
     const k = `${String(r.item).trim()}|${String(r.color).trim()}`;
     stockMap.set(k, (stockMap.get(k) || 0) + r.qty);
+    if (!catMap.has(k)) catMap.set(k, r.cat);
   }
   // 최근 30일 출고 횟수(반품/불량/추가금 제외) + 출고량 합계
   const shipCountMap = new Map();
@@ -1741,10 +1743,19 @@ function getLowStockAlerts() {
     if ((shipCountMap.get(k) || 0) < MIN_SHIP_COUNT) continue;
     if (dismissed.has(k)) continue;
     const [item, color] = k.split('|');
-    alerts.push({ key: k, item, color, qty: Math.round(qty * 100) / 100, shippedRecently: Math.round((shipQtyMap.get(k) || 0) * 100) / 100 });
+    const sw = findSwatchFor(catMap.get(k), item, color);
+    alerts.push({ key: k, item, color, qty: Math.round(qty * 100) / 100, shippedRecently: Math.round((shipQtyMap.get(k) || 0) * 100) / 100, swOrder: sw && sw.order != null ? sw.order : null });
   }
-  alerts.sort((a, b) => b.shippedRecently - a.shippedRecently); // 최근에 많이 빠진(잘 나간) 순 - 더 중요한 품목이 위로
+  alerts.sort((a, b) => a.item.localeCompare(b.item, 'ko') || (a.swOrder ?? Infinity) - (b.swOrder ?? Infinity) || a.color.localeCompare(b.color, 'ko')); // 재고 탭이랑 같은 순서(품목명 가나다/숫자 순)
   return alerts;
+}
+function goToLowStockItem(item, color) {
+  searchTerm = item;
+  activeCat = null;
+  openGroups = new Set(); // 재고부족 알림도 접어둠
+  document.getElementById('search').value = item;
+  render();
+  showToast(`"${item} ${color}" 재고로 이동했어요`);
 }
 function renderLowStockAlerts(list) {
   const alerts = getLowStockAlerts();
@@ -1762,8 +1773,8 @@ function renderLowStockAlerts(list) {
     byItem.get(a.item).push(a);
   }
   const itemGroupsSorted = Array.from(byItem.entries())
-    .map(([item, colors]) => ({ item, colors, totalShipped: colors.reduce((s, c) => s + c.shippedRecently, 0) }))
-    .sort((a, b) => b.totalShipped - a.totalShipped);
+    .map(([item, colors]) => ({ item, colors }))
+    .sort((a, b) => a.item.localeCompare(b.item, 'ko')); // 재고 탭이랑 같은 순서(품목명 가나다/숫자 순)
 
   const banner = document.createElement('div');
   banner.style.cssText = 'background:#fff3d6; border:1px solid #e8c98a; border-radius:10px; padding:10px 12px; margin-bottom:10px;';
@@ -1778,7 +1789,7 @@ function renderLowStockAlerts(list) {
           <div style="font-weight:600; font-size:13px;">${esc(g.item)}</div>
           ${g.colors.map(a => `
             <div style="display:flex; justify-content:space-between; align-items:center; padding:3px 0 3px 10px; font-size:12px;">
-              <div>${esc(a.color)} · 남은 재고 ${a.qty}y · 최근 30일 ${a.shippedRecently}y 나감</div>
+              <div style="cursor:pointer; text-decoration:underline; text-decoration-style:dotted;" onclick="event.stopPropagation();goToLowStockItem('${escAttr(a.item)}','${escAttr(a.color)}')">${esc(a.color)}${a.swOrder != null ? ` (${a.swOrder}번)` : ''} · 남은 재고 ${a.qty}y · 최근 30일 ${a.shippedRecently}y 나감</div>
               <button onclick="event.stopPropagation();dismissLowStockAlert('${escAttr(a.key)}')" style="border:none;background:#f1eee7;color:var(--muted);border-radius:6px;padding:3px 8px;font-size:11px;">무시하기</button>
             </div>
           `).join('')}
@@ -4633,7 +4644,7 @@ function renderPaymentLedgerView() {
       row.innerHTML = `
         <div class="order-top">
           <div>
-            <div class="order-name">${esc(customer)}</div>
+            <div class="order-name" onclick="event.stopPropagation(); showCustomerLedger('${escAttr(customer)}');" style="text-decoration:underline; text-decoration-style:dotted;">${esc(customer)}</div>
             <div class="order-sub">${cash > 0 ? `현금 ${cash.toLocaleString()}원` : ''}${cash > 0 && online > 0 ? ' · ' : ''}${online > 0 ? `온라인 ${online.toLocaleString()}원` : ''}${list2.length > 1 ? ` (${list2.length}건)` : ''} · <span style="color:${remaining > 0 ? 'var(--danger)' : 'var(--muted)'};">미수금 ${remaining.toLocaleString()}원 남음</span></div>
           </div>
           <div class="order-status status-done">${total.toLocaleString()}원</div>
@@ -5671,7 +5682,7 @@ function renderCustomerRankingView() {
         <div style="display:flex; justify-content:space-between; align-items:center; padding:10px 12px; border-bottom:1px dashed var(--border);">
           <div style="display:flex; align-items:center; gap:8px;">
             <span style="font-weight:700; color:${rankColors[i] || 'var(--muted)'}; width:28px;">${i + 1}위</span>
-            <span style="font-weight:600;">${esc(r.cust)}</span>
+            <span style="font-weight:600; cursor:pointer; text-decoration:underline; text-decoration-style:dotted;" onclick="showCustomerLedger('${escAttr(r.cust)}')">${esc(r.cust)}</span>
           </div>
           <div style="text-align:right;">
             <div style="font-weight:700;">${r.cur.toLocaleString()}원</div>
@@ -5687,7 +5698,7 @@ function renderCustomerRankingView() {
         <div style="padding:10px 12px; font-weight:700; font-size:14px; color:#a15c1e; border-bottom:1px solid var(--border);">⚠️ 최근 뜸해진 거래처</div>
         ${quiet.map(q => `
           <div style="padding:8px 12px; border-bottom:1px dashed var(--border); font-size:13px;">
-            <b>${esc(q.cust)}</b> - ${q.daysSince}일째 주문 없음 <span style="color:var(--muted); font-size:11px;">(마지막 주문: ${esc(q.last)})</span>
+            <b style="cursor:pointer; text-decoration:underline; text-decoration-style:dotted;" onclick="showCustomerLedger('${escAttr(q.cust)}')">${esc(q.cust)}</b> - ${q.daysSince}일째 주문 없음 <span style="color:var(--muted); font-size:11px;">(마지막 주문: ${esc(q.last)})</span>
           </div>
         `).join('')}
       </div>
@@ -5761,7 +5772,7 @@ function renderUnpaidSummaryList() {
       </div>
       ${depositMemos.length === 0 ? '<div style="font-size:12px;color:var(--muted);">아직 메모가 없어요</div>' : depositMemos.slice().reverse().map(m => `
         <div style="display:flex; justify-content:space-between; align-items:center; padding:4px 0; font-size:12px;">
-          <div><b>${esc(m.customer)}</b> · ${esc(m.date)} · ${esc(m.text)}</div>
+          <div><b style="cursor:pointer; text-decoration:underline; text-decoration-style:dotted;" onclick="showCustomerLedger('${escAttr(m.customer)}')">${esc(m.customer)}</b> · ${esc(m.date)} · ${esc(m.text)}</div>
           <button onclick="deleteDepositMemo(${m.id})" style="border:none;background:none;color:var(--muted);font-size:11px;">삭제</button>
         </div>
       `).join('')}
@@ -5775,7 +5786,7 @@ function renderUnpaidSummaryList() {
       <div style="padding:8px 4px; font-weight:700; font-size:14px; border-bottom:1px solid var(--border); margin-bottom:4px;">총 미수금 ${total.toLocaleString()}원 (${rows.length}개 거래처)</div>
       ${rows.map(r => `
         <div style="display:flex; justify-content:space-between; align-items:center; padding:12px 6px; border-bottom:1px dashed var(--border);">
-          <div style="font-size:15px; font-weight:600;">${esc(r.customer)}</div>
+          <div style="font-size:15px; font-weight:600; cursor:pointer; text-decoration:underline; text-decoration-style:dotted;" onclick="showCustomerLedger('${escAttr(r.customer)}')">${esc(r.customer)}</div>
           <div style="display:flex; align-items:center; gap:10px;">
             <span style="font-weight:700; font-size:15px; color:var(--danger);">${r.unpaid.toLocaleString()}원</span>
             <button onclick="payCustomerUnpaid('${escAttr(r.customer)}')" style="border:none;background:#eaf3ec;color:#2f6b46;border-radius:6px;padding:6px 10px;font-size:12px;">입금 처리</button>
@@ -6283,8 +6294,9 @@ function renderSales() {
         }
         const paidAmt = getPaidAmount(e);
         const remaining = getRemaining(e);
-        const statusLabel2 = remaining <= 0 ? '입금완료' : (paidAmt > 0 ? '일부입금' : '미수금');
-        const statusClass2 = remaining <= 0 ? 'status-done' : (paidAmt > 0 ? 'status-partial' : 'status-wait');
+        const noPriceWarn = (e.item !== '이월 미수금' && e.unitPrice == null);
+        const statusLabel2 = noPriceWarn ? '⚠️ 단가 미입력' : (remaining <= 0 ? '입금완료' : (paidAmt > 0 ? '일부입금' : '미수금'));
+        const statusClass2 = noPriceWarn ? 'status-wait' : (remaining <= 0 ? 'status-done' : (paidAmt > 0 ? 'status-partial' : 'status-wait'));
         row.innerHTML = `
           <div class="order-top">
             <div>
@@ -7357,6 +7369,7 @@ async function confirmOrderReceiveInner(o) {
 
   const shipNote = document.getElementById('or-note').value.trim();
   const resolvedColorForLog = resolveInventoryColor(o.item, o.color);
+  if (saleAmount == null) { saleAmount = 0; supplyAmount = supplyAmount || 0; } // 단가를 실수로 안 넣고 출고해도, 매출 목록에서 아예 안 보이지 않고 0원으로라도 남게 함 (샘플만 isSample로 따로 안 보이게 처리됨)
   const newEntry = {
     id: genUniqueId(), date: todayStr(), orderId: o.id,
     customer: o.customer, factory: o.factory, item: o.item, color: resolvedColorForLog,
@@ -7984,6 +7997,7 @@ async function markOrderDone(id) {
   o.doneDate = todayStr();
   await persistOrders();
 
+  if (remain > 0 && saleAmount == null) { saleAmount = 0; supplyAmount = supplyAmount || 0; } // 실제로 뭔가 나갔는데 단가를 안 넣으면, 매출 목록에서 아예 안 보이지 않고 0원으로라도 남게 함
   shipmentLog.push({
     id: genUniqueId(), date: todayStr(), orderId: o.id,
     customer: o.customer, factory: o.factory, item: o.item, color: resolveInventoryColor(o.item, o.color),
