@@ -660,7 +660,8 @@
     <input id="exp-note" placeholder="예: 점심 - 김밥천국">
     <button onclick="addExpense()" style="border:none;background:#eaf3ec;color:#2f6b46;border-radius:8px;padding:9px 14px;font-size:13px;font-weight:600;margin-top:8px;width:100%;">+ 추가</button>
     <div id="expense-filter-row" style="display:flex; gap:6px; margin-top:12px;"></div>
-    <div id="expense-list" style="margin-top:8px; max-height:340px; overflow-y:auto;"></div>
+    <div id="expense-calendar" style="margin-top:8px;"></div>
+    <div id="expense-list" style="margin-top:8px; max-height:280px; overflow-y:auto;"></div>
     <div class="modal-actions">
       <button class="btn-cancel" onclick="closeExpenseModal()">닫기</button>
     </div>
@@ -888,7 +889,7 @@ const PASSWORD = "3059";
 const ADMIN_PASSWORD = "9503"; // 매출/미수금 탭 전용 - 필요하면 이 값만 바꿔서 변경 가능
 const LOW_STOCK_THRESHOLD = 100;
 const DATA_VERSION = "2026-08-03-v4"; // 재고/이월장부 씨앗 데이터를 바꿀 때마다 이 값을 새로 바꿔주세요
-const APP_CODE_VERSION = "2026-09-02-h"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
+const APP_CODE_VERSION = "2026-09-03-d"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
 const SCHEMA_STAMP = 2; // 서버 저장규칙이 확인하는 "최신 앱 도장" - 절대 자주 바꾸지 않음(이 값을 아는 코드만 저장 가능하게 서버에서 막을 때 씀)
 
 const firebaseConfig = {
@@ -898,6 +899,7 @@ const firebaseConfig = {
 };
 let useFirebase = false;
 let lastSnapshotJSON = { orders: null, shipmentLog: null, rolls: null, settings: null, costs: null, swatchInfo: null, priceBook: null, depositMemos: null, customerList: null, expenses: null }; // 여러 명이 동시에 쓸 때 덮어쓰기 사고 막기용
+let settingsFirstLoadDone = false; // 서버에서 사업자정보/설정을 최초로 한 번이라도 받아왔는지 - 이게 true가 되기 전엔 저장을 막아서, 빈 값으로 서버를 덮어쓰는 사고를 원천 차단
 
 function mergeArrayInPlace(localArr, remoteArr) {
   // 배열 자체를 통째로 새 걸로 바꾸지 않고, id 기준으로 내용만 갱신해서
@@ -1079,11 +1081,14 @@ async function loadAll() {
           // 예전 형식(객체를 그대로 저장한 것) - 읽은 뒤 새 형식으로 한 번 옮겨 저장
           settings = { ...DEFAULT_SETTINGS, ...doc.data() };
           lastSnapshotJSON.settings = null;
+          settingsFirstLoadDone = true;
           persistSettings();
         } else if (!loaded.settings) {
           settings = { ...DEFAULT_SETTINGS };
+          settingsFirstLoadDone = true;
           persistSettings();
         }
+        settingsFirstLoadDone = true;
         loaded.settings = true; updateRateBar(); render(); checkDone();
       });
 
@@ -1344,6 +1349,11 @@ async function persistRolls() { return await persistGuarded('rolls', 'rolls', ro
 async function persistCosts() { return await persistGuarded('costs', 'costs', costs); }
 async function persistSettings() {
   if (!useFirebase) { await safeStorage.set('settings', JSON.stringify(settings), true); return true; }
+  if (!settingsFirstLoadDone) {
+    // 서버 데이터를 아직 한 번도 못 받아온 상태 - 이 상태로 저장하면 빈 값(기본값)으로 서버를 덮어쓸 위험이 있어서 막아둠
+    alert('⚠️ 아직 서버 데이터를 불러오는 중이에요.\n잠시 후 다시 시도해주세요. (계속 뜨면 화면을 새로고침해주세요)');
+    return false;
+  }
   const newJSON = JSON.stringify(settings);
   const ref = db.collection('inventory').doc('settings');
   beginWrite();
@@ -1455,7 +1465,7 @@ function esc(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').re
 function escAttr(s) { return String(s).replace(/'/g, "\\'"); }
 function escJsonAttr(obj) { return JSON.stringify(obj).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
 
-document.getElementById('search').addEventListener('input', e => { searchTerm = e.target.value; if (searchTerm.trim()) activeCat = null; render(); showSearchSuggestions(e.target); });
+document.getElementById('search').addEventListener('input', e => { searchTerm = e.target.value; if (searchTerm.trim()) { activeCat = null; openGroups.delete('lowstock-alert'); } render(); showSearchSuggestions(e.target); });
 document.getElementById('search').addEventListener('focus', e => { showSearchSuggestions(e.target); });
 document.getElementById('search').addEventListener('blur', () => { hideItemSuggestionsDelayed(); });
 function showSearchSuggestions(inputEl) {
@@ -1683,13 +1693,13 @@ function renderChips() {
   const allChip = document.createElement('div');
   allChip.className = 'chip' + (activeCat === null ? ' active' : '');
   allChip.textContent = '전체';
-  allChip.onclick = () => { activeCat = null; render(); };
+  allChip.onclick = () => { activeCat = null; openGroups.delete('lowstock-alert'); render(); };
   row.appendChild(allChip);
   for (const c of cats) {
     const chip = document.createElement('div');
     chip.className = 'chip' + (activeCat === c ? ' active' : '');
     chip.textContent = c;
-    chip.onclick = () => { activeCat = (activeCat === c ? null : c); render(); };
+    chip.onclick = () => { activeCat = (activeCat === c ? null : c); openGroups.delete('lowstock-alert'); render(); };
     row.appendChild(chip);
   }
   const tools = document.getElementById('invTools');
@@ -1789,7 +1799,7 @@ function renderLowStockAlerts(list) {
           <div style="font-weight:600; font-size:13px;">${esc(g.item)}</div>
           ${g.colors.map(a => `
             <div style="display:flex; justify-content:space-between; align-items:center; padding:3px 0 3px 10px; font-size:12px;">
-              <div style="cursor:pointer; text-decoration:underline; text-decoration-style:dotted;" onclick="event.stopPropagation();goToLowStockItem('${escAttr(a.item)}','${escAttr(a.color)}')">${esc(a.color)}${a.swOrder != null ? ` (${a.swOrder}번)` : ''} · 남은 재고 ${a.qty}y · 최근 30일 ${a.shippedRecently}y 나감</div>
+              <div style="cursor:pointer; " onclick="event.stopPropagation();goToLowStockItem('${escAttr(a.item)}','${escAttr(a.color)}')">${esc(a.color)}${a.swOrder != null ? ` (${a.swOrder}번)` : ''} · 남은 재고 ${a.qty}y · 최근 30일 ${a.shippedRecently}y 나감</div>
               <button onclick="event.stopPropagation();dismissLowStockAlert('${escAttr(a.key)}')" style="border:none;background:#f1eee7;color:var(--muted);border-radius:6px;padding:3px 8px;font-size:11px;">무시하기</button>
             </div>
           `).join('')}
@@ -2393,8 +2403,17 @@ async function unmarkRollDefective(id) {
 async function deleteRoll(id) {
   if (!confirm('이 롤을 삭제하시겠습니까?')) return;
   const target = rolls.find(x => x.id === id);
-  rolls = rolls.filter(x => x.id !== id);
-  if (target) compactTangsForItemColor(target.item, target.color);
+  if (!target) return;
+  const t_item = String(target.item).trim(), t_color = String(target.color).trim();
+  const stillHasOtherStock = rolls.some(r => r.id !== id && String(r.item).trim() === t_item && String(r.color).trim() === t_color && !r.defective);
+  if (stillHasOtherStock || target.defective) {
+    // 다른 재고가 남아있으면(또는 불량 롤이면) 그냥 지움 - 컬러 카드는 다른 롤 덕분에 계속 보임
+    rolls = rolls.filter(x => x.id !== id);
+  } else {
+    // 이게 이 컬러의 마지막 재고였으면, 완전히 지우지 않고 0y로만 남김 (컬러 카드/스왓치 번호가 화면에서 사라지지 않게)
+    target.qty = 0;
+  }
+  compactTangsForItemColor(target.item, target.color);
   await persistRolls(); render(); showToast('삭제되었습니다');
 }
 async function deleteAllRollsForColor(item, color) {
@@ -4542,7 +4561,9 @@ function exitPaymentLedger() {
   openGroups = new Set(); // 다른 화면으로 넘어갈 때 열려있던 카드들 접힌 상태로 초기화
   render();
 }
+let _prevSalesSpecialView = null; // 원장에 들어가기 전 어느 화면에 있었는지 기억해서, 나갈 때 그 화면으로 정확히 돌아가기 위함
 function showCustomerLedger(customer) {
+  if (salesSpecialView !== 'customerLedger') _prevSalesSpecialView = salesSpecialView;
   salesSpecialView = 'customerLedger';
   openGroups = new Set(); // 다른 화면으로 넘어갈 때 열려있던 카드들 접힌 상태로 초기화
   ledgerCustomer = customer || ledgerCustomer || '';
@@ -4550,7 +4571,8 @@ function showCustomerLedger(customer) {
   render();
 }
 function exitCustomerLedger() {
-  salesSpecialView = null;
+  salesSpecialView = _prevSalesSpecialView; // 원장 들어가기 전 있었던 화면(미수금장부, 거래처순위 등)으로 정확히 돌아감
+  _prevSalesSpecialView = null;
   openGroups = new Set(); // 다른 화면으로 넘어갈 때 열려있던 카드들 접힌 상태로 초기화
   ledgerCustomer = null;
   ledgerStartDate = null;
@@ -4644,7 +4666,7 @@ function renderPaymentLedgerView() {
       row.innerHTML = `
         <div class="order-top">
           <div>
-            <div class="order-name" onclick="event.stopPropagation(); showCustomerLedger('${escAttr(customer)}');" style="text-decoration:underline; text-decoration-style:dotted;">${esc(customer)}</div>
+            <div class="order-name" onclick="event.stopPropagation(); showCustomerLedger('${escAttr(customer)}');" style="">${esc(customer)}</div>
             <div class="order-sub">${cash > 0 ? `현금 ${cash.toLocaleString()}원` : ''}${cash > 0 && online > 0 ? ' · ' : ''}${online > 0 ? `온라인 ${online.toLocaleString()}원` : ''}${list2.length > 1 ? ` (${list2.length}건)` : ''} · <span style="color:${remaining > 0 ? 'var(--danger)' : 'var(--muted)'};">미수금 ${remaining.toLocaleString()}원 남음</span></div>
           </div>
           <div class="order-status status-done">${total.toLocaleString()}원</div>
@@ -5286,6 +5308,11 @@ function openExpenseModal() {
   document.querySelector('input[name="exp-type"][value="expense"]').checked = true;
   document.querySelector('input[name="exp-method"][value="cash"]').checked = true;
   expenseFilterMethod = 'all';
+  const now = new Date();
+  expenseViewYear = now.getFullYear();
+  expenseViewMonth = now.getMonth() + 1;
+  expenseSelectedDate = null;
+  renderExpenseCalendar();
   renderExpenseList();
   document.getElementById('expenseModal').classList.add('open');
 }
@@ -5304,6 +5331,7 @@ async function addExpense() {
   document.getElementById('exp-amount').value = '';
   document.getElementById('exp-title').value = '';
   document.getElementById('exp-note').value = '';
+  renderExpenseCalendar();
   renderExpenseList();
   showToast(type === 'income' ? '입금 등록했습니다' : '지출 등록했습니다');
 }
@@ -5311,10 +5339,68 @@ async function deleteExpense(id) {
   if (!confirm('이 항목을 삭제할까요?')) return;
   expenses = expenses.filter(e => e.id !== id);
   await persistExpenses();
+  renderExpenseCalendar();
   renderExpenseList();
 }
 let expenseFilterMethod = 'all';
-function setExpenseFilterMethod(m) { expenseFilterMethod = m; renderExpenseList(); }
+let expenseViewYear = null, expenseViewMonth = null; // null이면 openExpenseModal에서 이번달로 채움
+let expenseSelectedDate = null; // 특정 날짜 클릭해서 그날만 보는 중이면 그 날짜, 아니면 null(그 달 전체)
+function setExpenseFilterMethod(m) { expenseFilterMethod = m; renderExpenseCalendar(); renderExpenseList(); }
+function shiftExpenseMonth(delta) {
+  let m = expenseViewMonth + delta, y = expenseViewYear;
+  if (m < 1) { m = 12; y--; } else if (m > 12) { m = 1; y++; }
+  expenseViewYear = y; expenseViewMonth = m;
+  expenseSelectedDate = null;
+  renderExpenseCalendar(); renderExpenseList();
+}
+function pickExpenseDate(dateStr) {
+  expenseSelectedDate = (expenseSelectedDate === dateStr) ? null : dateStr; // 같은 날 다시 누르면 선택 해제(그 달 전체 보기로)
+  renderExpenseCalendar(); renderExpenseList();
+}
+function renderExpenseCalendar() {
+  const wrap = document.getElementById('expense-calendar');
+  const y = expenseViewYear, m = expenseViewMonth;
+  const monthKey = `${String(y).slice(2)}.${String(m).padStart(2, '0')}`;
+  const daysInMonth = new Date(y, m, 0).getDate();
+  const firstDow = new Date(y, m - 1, 1).getDay(); // 0=일요일
+
+  // 그 달의 날짜별 지출/입금 합계 (현재 방법 필터 적용)
+  const byDay = new Map();
+  for (const e of expenses) {
+    if (expenseFilterMethod !== 'all' && (e.method || 'cash') !== expenseFilterMethod) continue;
+    if (!String(e.date).startsWith(monthKey)) continue;
+    const day = parseInt(String(e.date).split('.')[2]);
+    if (!byDay.has(day)) byDay.set(day, { expense: 0, income: 0 });
+    const rec = byDay.get(day);
+    if (e.type === 'income') rec.income += e.amount; else rec.expense += e.amount;
+  }
+
+  let cellsHtml = '';
+  for (let i = 0; i < firstDow; i++) cellsHtml += '<div></div>';
+  for (let d = 1; d <= daysInMonth; d++) {
+    const dateStr = `${monthKey}.${String(d).padStart(2, '0')}`;
+    const rec = byDay.get(d);
+    const isSelected = expenseSelectedDate === dateStr;
+    cellsHtml += `
+      <div onclick="pickExpenseDate('${dateStr}')" style="cursor:pointer; border-radius:6px; padding:4px 2px; text-align:center; background:${isSelected ? '#2c5f7c' : (rec ? '#fdf6e3' : 'transparent')}; color:${isSelected ? '#fff' : 'var(--text)'};">
+        <div style="font-size:12px; font-weight:${rec ? '700' : '400'};">${d}</div>
+        ${rec ? `<div style="font-size:9px; line-height:1.3;">${rec.expense > 0 ? `<div style="color:${isSelected ? '#ffd6d6' : 'var(--danger)'};">-${(rec.expense / 10000).toFixed(0)}만</div>` : ''}${rec.income > 0 ? `<div style="color:${isSelected ? '#c9f0d8' : '#2f6b46'};">+${(rec.income / 10000).toFixed(0)}만</div>` : ''}</div>` : ''}
+      </div>`;
+  }
+
+  wrap.innerHTML = `
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+      <button onclick="shiftExpenseMonth(-1)" style="border:none;background:#eee;color:#555;border-radius:8px;padding:5px 10px;font-size:12px;">◀</button>
+      <div style="font-weight:700; font-size:14px;">${y}년 ${m}월</div>
+      <button onclick="shiftExpenseMonth(1)" style="border:none;background:#eee;color:#555;border-radius:8px;padding:5px 10px;font-size:12px;">▶</button>
+    </div>
+    <div style="display:grid; grid-template-columns:repeat(7,1fr); gap:2px; font-size:11px; color:var(--muted); text-align:center; margin-bottom:2px;">
+      <div>일</div><div>월</div><div>화</div><div>수</div><div>목</div><div>금</div><div>토</div>
+    </div>
+    <div style="display:grid; grid-template-columns:repeat(7,1fr); gap:2px;">${cellsHtml}</div>
+    ${expenseSelectedDate ? `<div style="text-align:center; font-size:11px; color:var(--muted); margin-top:6px;">${esc(expenseSelectedDate)}만 보는 중 · <span style="text-decoration:underline; cursor:pointer;" onclick="pickExpenseDate('${expenseSelectedDate}')">해제</span></div>` : ''}
+  `;
+}
 function renderExpenseList() {
   const filterEl = document.getElementById('expense-filter-row');
   const methodLabel = { all: '전체', cash: '현금', online: '온라인', sample: '샘플' };
@@ -5323,9 +5409,13 @@ function renderExpenseList() {
   `).join('');
 
   const listEl = document.getElementById('expense-list');
-  const filtered = expenseFilterMethod === 'all' ? expenses.slice() : expenses.filter(e => (e.method || 'cash') === expenseFilterMethod);
+  const monthKey = `${String(expenseViewYear).slice(2)}.${String(expenseViewMonth).padStart(2, '0')}`;
+  let filtered = expenseFilterMethod === 'all' ? expenses.slice() : expenses.filter(e => (e.method || 'cash') === expenseFilterMethod);
+  filtered = expenseSelectedDate
+    ? filtered.filter(e => e.date === expenseSelectedDate)
+    : filtered.filter(e => String(e.date).startsWith(monthKey));
   const sorted = filtered.sort((a, b) => b.date.localeCompare(a.date) || b.id - a.id);
-  if (sorted.length === 0) { listEl.innerHTML = '<div class="empty">기록이 없습니다</div>'; return; }
+  if (sorted.length === 0) { listEl.innerHTML = '<div class="empty">이 기간엔 기록이 없습니다</div>'; return; }
 
   const byDate = new Map();
   for (const e of sorted) {
@@ -5682,7 +5772,7 @@ function renderCustomerRankingView() {
         <div style="display:flex; justify-content:space-between; align-items:center; padding:10px 12px; border-bottom:1px dashed var(--border);">
           <div style="display:flex; align-items:center; gap:8px;">
             <span style="font-weight:700; color:${rankColors[i] || 'var(--muted)'}; width:28px;">${i + 1}위</span>
-            <span style="font-weight:600; cursor:pointer; text-decoration:underline; text-decoration-style:dotted;" onclick="showCustomerLedger('${escAttr(r.cust)}')">${esc(r.cust)}</span>
+            <span style="font-weight:600; cursor:pointer; " onclick="showCustomerLedger('${escAttr(r.cust)}')">${esc(r.cust)}</span>
           </div>
           <div style="text-align:right;">
             <div style="font-weight:700;">${r.cur.toLocaleString()}원</div>
@@ -5698,7 +5788,7 @@ function renderCustomerRankingView() {
         <div style="padding:10px 12px; font-weight:700; font-size:14px; color:#a15c1e; border-bottom:1px solid var(--border);">⚠️ 최근 뜸해진 거래처</div>
         ${quiet.map(q => `
           <div style="padding:8px 12px; border-bottom:1px dashed var(--border); font-size:13px;">
-            <b style="cursor:pointer; text-decoration:underline; text-decoration-style:dotted;" onclick="showCustomerLedger('${escAttr(q.cust)}')">${esc(q.cust)}</b> - ${q.daysSince}일째 주문 없음 <span style="color:var(--muted); font-size:11px;">(마지막 주문: ${esc(q.last)})</span>
+            <b style="cursor:pointer; " onclick="showCustomerLedger('${escAttr(q.cust)}')">${esc(q.cust)}</b> - ${q.daysSince}일째 주문 없음 <span style="color:var(--muted); font-size:11px;">(마지막 주문: ${esc(q.last)})</span>
           </div>
         `).join('')}
       </div>
@@ -5772,7 +5862,7 @@ function renderUnpaidSummaryList() {
       </div>
       ${depositMemos.length === 0 ? '<div style="font-size:12px;color:var(--muted);">아직 메모가 없어요</div>' : depositMemos.slice().reverse().map(m => `
         <div style="display:flex; justify-content:space-between; align-items:center; padding:4px 0; font-size:12px;">
-          <div><b style="cursor:pointer; text-decoration:underline; text-decoration-style:dotted;" onclick="showCustomerLedger('${escAttr(m.customer)}')">${esc(m.customer)}</b> · ${esc(m.date)} · ${esc(m.text)}</div>
+          <div><b style="cursor:pointer; " onclick="showCustomerLedger('${escAttr(m.customer)}')">${esc(m.customer)}</b> · ${esc(m.date)} · ${esc(m.text)}</div>
           <button onclick="deleteDepositMemo(${m.id})" style="border:none;background:none;color:var(--muted);font-size:11px;">삭제</button>
         </div>
       `).join('')}
@@ -5786,7 +5876,7 @@ function renderUnpaidSummaryList() {
       <div style="padding:8px 4px; font-weight:700; font-size:14px; border-bottom:1px solid var(--border); margin-bottom:4px;">총 미수금 ${total.toLocaleString()}원 (${rows.length}개 거래처)</div>
       ${rows.map(r => `
         <div style="display:flex; justify-content:space-between; align-items:center; padding:12px 6px; border-bottom:1px dashed var(--border);">
-          <div style="font-size:15px; font-weight:600; cursor:pointer; text-decoration:underline; text-decoration-style:dotted;" onclick="showCustomerLedger('${escAttr(r.customer)}')">${esc(r.customer)}</div>
+          <div style="font-size:15px; font-weight:600; cursor:pointer; " onclick="showCustomerLedger('${escAttr(r.customer)}')">${esc(r.customer)}</div>
           <div style="display:flex; align-items:center; gap:10px;">
             <span style="font-weight:700; font-size:15px; color:var(--danger);">${r.unpaid.toLocaleString()}원</span>
             <button onclick="payCustomerUnpaid('${escAttr(r.customer)}')" style="border:none;background:#eaf3ec;color:#2f6b46;border-radius:6px;padding:6px 10px;font-size:12px;">입금 처리</button>
