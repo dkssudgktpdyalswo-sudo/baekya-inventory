@@ -885,7 +885,7 @@ const PASSWORD = "3059";
 const ADMIN_PASSWORD = "9503"; // 매출/미수금 탭 전용 - 필요하면 이 값만 바꿔서 변경 가능
 const LOW_STOCK_THRESHOLD = 100;
 const DATA_VERSION = "2026-08-03-v4"; // 재고/이월장부 씨앗 데이터를 바꿀 때마다 이 값을 새로 바꿔주세요
-const APP_CODE_VERSION = "2026-09-04-b"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
+const APP_CODE_VERSION = "2026-09-04-d"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
 const SCHEMA_STAMP = 2; // 서버 저장규칙이 확인하는 "최신 앱 도장" - 절대 자주 바꾸지 않음(이 값을 아는 코드만 저장 가능하게 서버에서 막을 때 씀)
 
 const firebaseConfig = {
@@ -1652,6 +1652,14 @@ function buildGroups() {
     if (!map.has(k)) map.set(k, { cat: r.cat, item: r.item, color: r.color, rolls: [] });
     map.get(k).rolls.push(r);
   }
+  // 재고(rolls)는 하나도 없지만, 스왓치 번호/중국품번이 등록된 컬러는 카드가 계속 보이게 빈 그룹으로 추가함
+  // (재고 0y를 자리표시로 남기지 않는 대신, 이렇게 등록정보 기준으로 카드를 유지함)
+  for (const s of swatchInfo) {
+    if (s.order == null && s.chinaCode == null) continue; // 번호도 품번도 없는 빈 스왓치 정보는 카드로 안 만듦
+    if (s.color == null || !s.item) continue;
+    const k = (s.cat || '') + '|' + s.item + '|' + s.color;
+    if (!map.has(k)) map.set(k, { cat: s.cat || '', item: s.item, color: s.color, rolls: [] });
+  }
   return Array.from(map.values());
 }
 function findCostFor(itemName) {
@@ -1844,7 +1852,8 @@ function renderInv() {
   const totalQty = rolls.reduce((s, r) => s + (r.defective ? 0 : r.qty), 0);
   const defectiveQty = rolls.reduce((s, r) => s + (r.defective ? r.qty : 0), 0);
   const items = new Set(rolls.map(r => r.item)).size;
-  document.getElementById('stats').innerHTML = `<span>품번 ${items}종</span><span>총 롤 ${rolls.length}개</span><span>총 마수 ${totalQty.toLocaleString()}y</span>${defectiveQty > 0 ? `<span style="color:#ffb3a7;">불량 ${defectiveQty.toLocaleString()}y</span>` : ''}<span>스왓치정보 ${swatchInfo.length}건</span>`;
+  const realRollCount = rolls.filter(r => r.qty > 0).length; // 재고가 0인 자리표시 롤은 "진짜 롤"로 안 세야 정확함
+  document.getElementById('stats').innerHTML = `<span>품번 ${items}종</span><span>총 롤 ${realRollCount}개</span><span>총 마수 ${totalQty.toLocaleString()}y</span>${defectiveQty > 0 ? `<span style="color:#ffb3a7;">불량 ${defectiveQty.toLocaleString()}y</span>` : ''}<span>스왓치정보 ${swatchInfo.length}건</span>`;
   renderChips();
 
   let groups = buildGroups(); // 컬러 단위 (cat,item,color,rolls[])
@@ -1923,7 +1932,7 @@ function renderInv() {
     const itemInner = itemDiv.querySelector('.rolls');
 
     for (const g of ig.colors) {
-      const normalRolls = g.rolls.filter(r => !r.defective);
+      const normalRolls = g.rolls.filter(r => !r.defective && r.qty > 0); // 재고가 0인 자리표시 롤은 "진짜 롤"로 안 세야 정확함
       const defectiveRolls = g.rolls.filter(r => r.defective);
       const total = normalRolls.reduce((s, r) => s + r.qty, 0);
       const defectiveTotal = defectiveRolls.reduce((s, r) => s + r.qty, 0);
@@ -2400,15 +2409,8 @@ async function deleteRoll(id) {
   if (!confirm('이 롤을 삭제하시겠습니까?')) return;
   const target = rolls.find(x => x.id === id);
   if (!target) return;
-  const t_item = String(target.item).trim(), t_color = String(target.color).trim();
-  const stillHasOtherStock = rolls.some(r => r.id !== id && String(r.item).trim() === t_item && String(r.color).trim() === t_color && !r.defective);
-  if (stillHasOtherStock || target.defective) {
-    // 다른 재고가 남아있으면(또는 불량 롤이면) 그냥 지움 - 컬러 카드는 다른 롤 덕분에 계속 보임
-    rolls = rolls.filter(x => x.id !== id);
-  } else {
-    // 이게 이 컬러의 마지막 재고였으면, 완전히 지우지 않고 0y로만 남김 (컬러 카드/스왓치 번호가 화면에서 사라지지 않게)
-    target.qty = 0;
-  }
+  // 이게 이 컬러의 마지막 재고였어도 0y로 남기지 않고 완전히 지움 (컬러 카드는 스왓치정보 기준으로 계속 보이니 안 사라짐)
+  rolls = rolls.filter(x => x.id !== id);
   compactTangsForItemColor(target.item, target.color);
   await persistRolls(); render(); showToast('삭제되었습니다');
 }
@@ -7387,14 +7389,11 @@ function closeOrderReceiveModal() {
   }
 }
 function cleanupDepletedRolls(item, color, touchedRollIds) {
-  // 이번 거래로 재고 0이 된 롤들을 정리하되, 그 품목·컬러가 화면에서 완전히 사라지지 않게 1줄은 남김
-  const t_item = String(item).trim();
-  const t_color = String(color).trim();
+  // 이번 거래로 재고 0이 된 롤들은 완전히 삭제함 (0y로 남겨두면 직원들이 헷갈리니까)
+  // 컬러 카드 자체는 스왓치정보 기준으로 계속 보이니, 롤을 다 지워도 카드가 안 사라짐
   const zeroed = rolls.filter(r => touchedRollIds.includes(r.id) && r.qty <= 0);
   if (zeroed.length === 0) return;
-  const stillHasStock = rolls.some(r => String(r.item).trim() === t_item && String(r.color).trim() === t_color && r.qty > 0);
-  const toRemove = stillHasStock ? zeroed : zeroed.slice(1); // 다른 재고가 하나도 없으면 1개는 0으로 남김
-  const removeIds = new Set(toRemove.map(r => r.id));
+  const removeIds = new Set(zeroed.map(r => r.id));
   rolls = rolls.filter(r => !removeIds.has(r.id));
 }
 
