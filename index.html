@@ -885,7 +885,7 @@ const PASSWORD = "3059";
 const ADMIN_PASSWORD = "9503"; // 매출/미수금 탭 전용 - 필요하면 이 값만 바꿔서 변경 가능
 const LOW_STOCK_THRESHOLD = 100;
 const DATA_VERSION = "2026-08-03-v4"; // 재고/이월장부 씨앗 데이터를 바꿀 때마다 이 값을 새로 바꿔주세요
-const APP_CODE_VERSION = "2026-09-03-j"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
+const APP_CODE_VERSION = "2026-09-03-l"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
 const SCHEMA_STAMP = 2; // 서버 저장규칙이 확인하는 "최신 앱 도장" - 절대 자주 바꾸지 않음(이 값을 아는 코드만 저장 가능하게 서버에서 막을 때 씀)
 
 const firebaseConfig = {
@@ -5031,8 +5031,9 @@ function renderCustomerProfileSummary(t_c) {
   for (const e of shipmentLog) {
     if (String(e.customer || '').trim() !== t_c) continue;
     if (e.isSample) continue;
-    if (e.item === '이월 미수금') continue; // 예전 잔액이지 이 기간의 실제 매출 실적은 아니라서 집계에서 제외
-    if (e.saleAmount != null && !e.isReturn && !e.isDefect) {
+    // "이월 미수금"은 예전 잔액이지 이 기간의 실제 매출 실적은 아니라서 매출 집계에서만 제외함
+    // (예전엔 continue로 통째로 건너뛰어서, 이월 미수금 항목에 달린 입금 기록까지 같이 무시되던 버그가 있었음)
+    if (e.item !== '이월 미수금' && e.saleAmount != null && !e.isReturn && !e.isDefect) {
       const net = Math.round((e.saleAmount - (e.discount || 0)) * 100) / 100;
       totalSale += net;
       const monthKey = String(e.date).slice(0, 5);
@@ -5057,50 +5058,49 @@ function renderCustomerProfileSummary(t_c) {
 
   wrap.innerHTML = `
     <div style="background:var(--primary-dark); border-radius:10px 10px 0 0; padding:10px 14px; color:#fff; font-weight:700; font-size:14px;">${esc(t_c)}</div>
-    <div style="display:grid; grid-template-columns:1fr 1fr; gap:1px; background:var(--border); margin-bottom:10px;">
-      <div style="background:#fff; padding:10px 12px;">
-        <div style="font-size:11px; color:var(--muted);">누적 총매출</div>
-        <div style="font-size:15px; font-weight:700; margin-top:2px;">${Math.round(totalSale).toLocaleString()}원</div>
-      </div>
-      <div style="background:#fff; padding:10px 12px;">
-        <div style="font-size:11px; color:var(--muted);">현재 미수금</div>
-        <div style="font-size:15px; font-weight:700; margin-top:2px; color:${unpaid > 0 ? 'var(--danger)' : 'inherit'};">${unpaid.toLocaleString()}원</div>
-      </div>
-      <div style="background:#fff; padding:10px 12px;">
-        <div style="font-size:11px; color:var(--muted);">마지막 결제일</div>
-        <div style="font-size:15px; font-weight:700; margin-top:2px;">${lastPaymentDate ? `${esc(lastPaymentDate)} <span style="font-size:11px; font-weight:600; color:var(--muted);">(${daysSincePayment}일 전)</span>` : '-'}</div>
-        ${lastPaymentDate ? `<div style="font-size:11px; color:var(--muted); margin-top:1px;">${lastPaymentAmount.toLocaleString()}원 입금</div>` : ''}
-      </div>
-      <div style="background:#fff; padding:10px 12px;">
-        <div style="font-size:11px; color:var(--muted);">이번 달 매출</div>
-        <div style="display:flex; align-items:baseline; gap:6px; margin-top:2px;">
-          <span style="font-size:15px; font-weight:700;">${Math.round(curMonthSale).toLocaleString()}원</span>
-          ${momChange != null ? `<span style="font-size:11px; font-weight:700; color:${momChange >= 0 ? '#639922' : 'var(--danger)'};">${momChange >= 0 ? '▲' : '▼'}${Math.abs(momChange)}%</span>` : ''}
+    <div style="display:flex; flex-wrap:wrap; gap:1px; background:var(--border); margin-bottom:10px;">
+      <div style="flex:1 1 320px; display:grid; grid-template-columns:1fr 1fr; gap:1px; background:var(--border);">
+        <div style="background:#fff; padding:10px 12px;">
+          <div style="font-size:11px; color:var(--muted);">누적 총매출</div>
+          <div style="font-size:15px; font-weight:700; margin-top:2px;">${Math.round(totalSale).toLocaleString()}원</div>
+        </div>
+        <div style="background:#fff; padding:10px 12px;">
+          <div style="font-size:11px; color:var(--muted);">현재 미수금</div>
+          <div style="font-size:15px; font-weight:700; margin-top:2px; color:${unpaid > 0 ? 'var(--danger)' : 'inherit'};">${unpaid.toLocaleString()}원</div>
+        </div>
+        <div style="background:#fff; padding:10px 12px;">
+          <div style="font-size:11px; color:var(--muted);">마지막 결제일</div>
+          <div style="font-size:15px; font-weight:700; margin-top:2px;">${lastPaymentDate ? `${esc(lastPaymentDate)} <span style="font-size:11px; font-weight:600; color:var(--muted);">(${daysSincePayment}일 전)</span>` : '-'}</div>
+          ${lastPaymentDate ? `<div style="font-size:11px; color:var(--muted); margin-top:1px;">${lastPaymentAmount.toLocaleString()}원 입금</div>` : ''}
+        </div>
+        <div style="background:#fff; padding:10px 12px;">
+          <div style="font-size:11px; color:var(--muted);">이번 달 매출</div>
+          <div style="display:flex; align-items:baseline; gap:6px; margin-top:2px;">
+            <span style="font-size:15px; font-weight:700;">${Math.round(curMonthSale).toLocaleString()}원</span>
+            ${momChange != null ? `<span style="font-size:11px; font-weight:700; color:${momChange >= 0 ? '#639922' : 'var(--danger)'};">${momChange >= 0 ? '▲' : '▼'}${Math.abs(momChange)}%</span>` : ''}
+          </div>
         </div>
       </div>
-    </div>
-    ${topItems.length > 0 ? `
-      <div style="margin-bottom:10px;">
-        <div style="font-size:13px; font-weight:700; margin-bottom:6px;">자주 사가는 품목 Top ${topItems.length}</div>
-        <div style="display:flex; flex-direction:column; gap:5px;">
-          ${topItems.map((it, i) => {
+      ${topItems.length > 0 ? `
+        <div style="flex:1 1 260px; background:#fff; padding:10px 14px;">
+          <div style="font-size:12px; font-weight:700; margin-bottom:6px;">자주 사가는 품목 Top ${topItems.length}</div>
+          <div style="display:flex; flex-direction:column; gap:4px;">
+            ${topItems.map((it, i) => {
     const sw = swOf(it.item, it.color);
     return `
-              <div style="display:flex; align-items:center; justify-content:space-between; background:#fff; border:1px solid var(--border); border-radius:8px; padding:7px 10px;">
-                <div style="display:flex; align-items:center; gap:8px;">
-                  <div style="width:18px; height:18px; border-radius:50%; background:var(--accent); color:#fff; font-size:10px; font-weight:700; display:flex; align-items:center; justify-content:center; flex:none;">${i + 1}</div>
-                  <div>
-                    <div style="font-size:13px; font-weight:600;">${esc(it.item)} ${esc(it.color)}${sw != null ? ` (${sw}번)` : ''}</div>
-                    <div style="font-size:11px; color:var(--muted);">누적 ${it.yards}y</div>
+                <div style="display:flex; align-items:center; justify-content:space-between; padding:4px 0;${i < topItems.length - 1 ? ' border-bottom:1px solid #f1eee7;' : ''}">
+                  <div style="display:flex; align-items:center; gap:7px;">
+                    <div style="width:16px; height:16px; border-radius:50%; background:var(--accent); color:#fff; font-size:9px; font-weight:700; display:flex; align-items:center; justify-content:center; flex:none;">${i + 1}</div>
+                    <div style="font-size:12px;">${esc(it.item)} ${esc(it.color)}${sw != null ? ` (${sw}번)` : ''} <span style="color:var(--muted);">· ${it.yards}y</span></div>
                   </div>
+                  <div style="font-size:11px; color:var(--primary); font-weight:600; flex:none; margin-left:8px;">${it.count}건</div>
                 </div>
-                <div style="font-size:12px; color:var(--primary); font-weight:600;">${it.count}건</div>
-              </div>
-            `;
+              `;
   }).join('')}
+          </div>
         </div>
-      </div>
-    ` : ''}
+      ` : ''}
+    </div>
   `;
 }
 function renderCustomerLedgerTable() {
