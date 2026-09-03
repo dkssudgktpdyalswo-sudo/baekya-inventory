@@ -889,7 +889,7 @@ const PASSWORD = "3059";
 const ADMIN_PASSWORD = "9503"; // 매출/미수금 탭 전용 - 필요하면 이 값만 바꿔서 변경 가능
 const LOW_STOCK_THRESHOLD = 100;
 const DATA_VERSION = "2026-08-03-v4"; // 재고/이월장부 씨앗 데이터를 바꿀 때마다 이 값을 새로 바꿔주세요
-const APP_CODE_VERSION = "2026-09-03-d"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
+const APP_CODE_VERSION = "2026-09-03-g"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
 const SCHEMA_STAMP = 2; // 서버 저장규칙이 확인하는 "최신 앱 도장" - 절대 자주 바꾸지 않음(이 값을 아는 코드만 저장 가능하게 서버에서 막을 때 씀)
 
 const firebaseConfig = {
@@ -5132,7 +5132,27 @@ function renderDuplicateCheckView() {
   backBtn.onclick = exitDuplicateCheck;
   list.appendChild(backBtn);
 
-  // 매출장부(shipmentLog) 안에 같은 고유번호(id)를 가진 기록이 실수로 여러 개 있는지 점검함
+  // 0) "이월 미수금" 항목이 거래처당 여러 개 중복으로 있는지 (설정 초기화 등으로 재반영된 경우)
+  const carryoverGroups = new Map();
+  for (const e of shipmentLog) {
+    if (e.item !== '이월 미수금') continue;
+    const key = String(e.customer || '').trim();
+    if (!carryoverGroups.has(key)) carryoverGroups.set(key, []);
+    carryoverGroups.get(key).push(e);
+  }
+  const carryoverDupCount = Array.from(carryoverGroups.values()).filter(l => l.length > 1).length;
+  if (carryoverDupCount > 0) {
+    const banner = document.createElement('div');
+    banner.style.cssText = 'background:#fdecea; border:1px solid #f3b3ab; border-radius:10px; padding:12px; margin-bottom:12px;';
+    banner.innerHTML = `
+      <div style="font-weight:700; font-size:14px; color:var(--danger); margin-bottom:6px;">⚠️ "이월 미수금" 항목이 ${carryoverDupCount}개 거래처에서 중복으로 발견됐어요</div>
+      <div style="font-size:12px; color:var(--muted); margin-bottom:8px;">거래처당 가장 오래된(원래) 것 1개만 남기고, 나머지는 안전하게 정리할 수 있어요.</div>
+      <button onclick="cleanupDuplicateCarryoverUnpaid()" style="border:none;background:var(--danger);color:#fff;border-radius:8px;padding:8px 14px;font-size:13px;font-weight:700;">지금 바로 정리하기</button>
+    `;
+    list.appendChild(banner);
+  }
+
+  // 1) 같은 고유번호(id)를 가진 기록이 있는지
   const byId = new Map();
   for (const e of shipmentLog) {
     if (!byId.has(e.id)) byId.set(e.id, []);
@@ -5140,29 +5160,70 @@ function renderDuplicateCheckView() {
   }
   const dupGroups = Array.from(byId.entries()).filter(([id, list2]) => list2.length > 1);
 
+  // 2) 고유번호는 다르지만 내용이 완전히 똑같은 기록이 있는지 (이중저장 버그가 서로 다른 번호로 저장했을 경우 대비)
+  const byContent = new Map();
+  for (const e of shipmentLog) {
+    if (e.isSample) continue;
+    const key = [e.customer, e.item, e.color, e.date, e.amount, e.yardsShipped, e.saleAmount, e.unitPrice, e.isReturn ? 'R' : '', e.isDefect ? 'D' : ''].map(v => v == null ? '' : v).join('|');
+    if (!byContent.has(key)) byContent.set(key, []);
+    byContent.get(key).push(e);
+  }
+  const contentDupGroups = Array.from(byContent.entries()).filter(([k, list2]) => list2.length > 1 && k.split('|')[0]); // 거래처 없는 건 제외
+
   const wrap = document.createElement('div');
-  if (dupGroups.length === 0) {
+  if (dupGroups.length === 0 && contentDupGroups.length === 0) {
     wrap.innerHTML = '<div class="group"><div style="padding:16px 12px; text-align:center; color:#2f6b46; font-weight:600;">✓ 중복된 매출 기록이 없어요. 정상이에요.</div></div>';
   } else {
-    wrap.innerHTML = `
-      <div class="group" style="margin-bottom:12px;">
-        <div style="padding:10px 12px; font-weight:700; font-size:14px; color:var(--danger); border-bottom:1px solid var(--border);">⚠️ 같은 번호(id)를 가진 매출 기록이 ${dupGroups.length}건 발견됐어요</div>
-        <div style="padding:8px 12px; font-size:12px; color:var(--muted);">아래에서 내용을 확인하시고, 잘못 중복된 쪽을 "이 항목 삭제"로 지워주세요. (재고/미수금에는 영향 없이, 이 기록 한 줄만 지워져요)</div>
-      </div>
-    ` + dupGroups.map(([id, entries]) => `
-      <div class="group" style="margin-bottom:10px;">
-        <div style="padding:8px 12px; font-weight:700; font-size:13px; background:#fdecea;">번호(id) ${id} — ${entries.length}개 중복</div>
-        ${entries.map((e, i) => `
-          <div style="padding:10px 12px; border-bottom:1px dashed var(--border);">
-            <div style="font-size:13px;">${esc(e.date)} · ${esc(e.customer || '')} · ${esc(e.item)} ${esc(e.color || '')}</div>
-            <div style="font-size:12px; color:var(--muted); margin-top:2px;">${e.yardsShipped || e.amount || 0}${e.unit || 'y'}${e.unitPrice ? ` × ${e.unitPrice.toLocaleString()}원/y` : ''} · 매출액 ${(e.saleAmount || 0).toLocaleString()}원${e.isReturn ? ' (반품)' : ''}${e.isDefect ? ' (불량)' : ''}</div>
-            <button onclick="deleteDuplicateShipmentEntry(${id}, ${i})" style="border:none;background:#fdecea;color:var(--danger);border-radius:6px;padding:5px 10px;font-size:11px;margin-top:6px;">이 항목 삭제</button>
-          </div>
-        `).join('')}
-      </div>
-    `).join('');
+    let html = '';
+    if (dupGroups.length > 0) {
+      html += `
+        <div class="group" style="margin-bottom:12px;">
+          <div style="padding:10px 12px; font-weight:700; font-size:14px; color:var(--danger); border-bottom:1px solid var(--border);">⚠️ 같은 번호(id)를 가진 매출 기록이 ${dupGroups.length}건 발견됐어요</div>
+        </div>
+      ` + dupGroups.map(([id, entries]) => `
+        <div class="group" style="margin-bottom:10px;">
+          <div style="padding:8px 12px; font-weight:700; font-size:13px; background:#fdecea;">번호(id) ${id} — ${entries.length}개 중복</div>
+          ${entries.map((e, i) => `
+            <div style="padding:10px 12px; border-bottom:1px dashed var(--border);">
+              <div style="font-size:13px;">${esc(e.date)} · ${esc(e.customer || '')} · ${esc(e.item)} ${esc(e.color || '')}</div>
+              <div style="font-size:12px; color:var(--muted); margin-top:2px;">${e.yardsShipped || e.amount || 0}${e.unit || 'y'}${e.unitPrice ? ` × ${e.unitPrice.toLocaleString()}원/y` : ''} · 매출액 ${(e.saleAmount || 0).toLocaleString()}원${e.isReturn ? ' (반품)' : ''}${e.isDefect ? ' (불량)' : ''}</div>
+              <button onclick="deleteDuplicateShipmentEntry(${id}, ${i})" style="border:none;background:#fdecea;color:var(--danger);border-radius:6px;padding:5px 10px;font-size:11px;margin-top:6px;">이 항목 삭제</button>
+            </div>
+          `).join('')}
+        </div>
+      `).join('');
+    }
+    if (contentDupGroups.length > 0) {
+      html += `
+        <div class="group" style="margin-bottom:12px; margin-top:16px;">
+          <div style="padding:10px 12px; font-weight:700; font-size:14px; color:var(--danger); border-bottom:1px solid var(--border);">⚠️ 번호는 다른데 내용이 완전히 똑같은 기록이 ${contentDupGroups.length}건 발견됐어요</div>
+          <div style="padding:8px 12px; font-size:12px; color:var(--muted);">같은 거래처·품목·컬러·날짜·수량·금액이 여러 번 등록된 경우예요. 진짜로 같은 걸 두 번 파신 게 아니라면, 중복된 쪽을 지워주세요.</div>
+        </div>
+      ` + contentDupGroups.map(([k, entries]) => `
+        <div class="group" style="margin-bottom:10px;">
+          <div style="padding:8px 12px; font-weight:700; font-size:13px; background:#fdecea;">${esc(entries[0].customer || '')} · ${esc(entries[0].item)} ${esc(entries[0].color || '')} — ${entries.length}개 중복</div>
+          ${entries.map((e) => `
+            <div style="padding:10px 12px; border-bottom:1px dashed var(--border);">
+              <div style="font-size:13px;">번호(id) ${e.id} · ${esc(e.date)}</div>
+              <div style="font-size:12px; color:var(--muted); margin-top:2px;">${e.yardsShipped || e.amount || 0}${e.unit || 'y'}${e.unitPrice ? ` × ${e.unitPrice.toLocaleString()}원/y` : ''} · 매출액 ${(e.saleAmount || 0).toLocaleString()}원${e.isReturn ? ' (반품)' : ''}${e.isDefect ? ' (불량)' : ''}</div>
+              <button onclick="deleteDuplicateShipmentEntryById(${e.id})" style="border:none;background:#fdecea;color:var(--danger);border-radius:6px;padding:5px 10px;font-size:11px;margin-top:6px;">이 항목 삭제</button>
+            </div>
+          `).join('')}
+        </div>
+      `).join('');
+    }
+    wrap.innerHTML = html;
   }
   list.appendChild(wrap);
+}
+async function deleteDuplicateShipmentEntryById(id) {
+  const target = shipmentLog.find(e => e.id === id);
+  if (!target) return;
+  if (!confirm(`이 매출 기록(${target.date} · ${target.item} ${target.color || ''})을 삭제할까요?\n재고나 다른 계산에는 손대지 않고, 이 기록 한 줄만 지워요.`)) return;
+  shipmentLog = shipmentLog.filter(e => e.id !== id);
+  await persistShipmentLog();
+  render();
+  showToast('삭제했어요');
 }
 async function deleteDuplicateShipmentEntry(id, indexAmongDupes) {
   const matches = shipmentLog.filter(e => e.id === id);
@@ -5241,14 +5302,15 @@ async function renderBackupManagerList() {
     card.style.marginBottom = '8px';
     const itemsHtml = Object.keys(keyLabels).map(k => {
       const item = info.items[k];
-      return `<span style="display:inline-block; margin-right:10px; font-size:12px; color:${item ? 'var(--text)' : 'var(--muted)'};">${item ? '✓' : '✕'} ${keyLabels[k]}</span>`;
+      if (!item) return `<span style="display:inline-block; margin:2px 6px 2px 0; font-size:12px; color:var(--muted);">✕ ${keyLabels[k]}</span>`;
+      return `<span style="display:inline-flex; align-items:center; gap:4px; margin:2px 6px 2px 0; font-size:12px; color:var(--text); background:#f1eee7; border-radius:6px; padding:2px 6px;">✓ ${keyLabels[k]} <button onclick="restoreBackupSingleDoc('${escAttr(label)}','${escAttr(item.docId)}','${k}')" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:5px;padding:1px 6px;font-size:10px;">이것만 복구</button></span>`;
     }).join('');
     const docIdsJson = escJsonAttr(Object.values(info.items).map(i => i.docId));
     card.innerHTML = `
       <div style="padding:10px 12px;">
         <div style="font-weight:700; font-size:13px; margin-bottom:2px;">${esc(label)}</div>
         <div style="font-size:11px; color:var(--muted); margin-bottom:6px;">저장시각: ${esc(formatSavedAtLocal(info.savedAt))}</div>
-        <div style="margin-bottom:8px;">${itemsHtml}</div>
+        <div style="margin-bottom:8px; display:flex; flex-wrap:wrap;">${itemsHtml}</div>
         <div style="display:flex; gap:8px;">
           <button onclick="restoreBackupMoment('${escAttr(label)}', '${docIdsJson}')" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:6px;padding:6px 10px;font-size:12px;font-weight:600;">이 시점으로 통째로 복구하기</button>
           <button onclick="deleteBackupMoment('${escAttr(label)}', '${docIdsJson}')" style="border:none;background:#fdecea;color:var(--danger);border-radius:6px;padding:6px 10px;font-size:12px;">이 백업 삭제</button>
@@ -5256,6 +5318,20 @@ async function renderBackupManagerList() {
       </div>
     `;
     list.appendChild(card);
+  }
+}
+async function restoreBackupSingleDoc(label, docId, key) {
+  const keyLabels = { rolls: '재고', orders: '이월장부', shipmentLog: '매출장부', swatchInfo: '스왓치정보', settings: '사업자정보/설정', costs: '원가표', priceBook: '단가장부', depositMemos: '선입금메모', customerList: '거래처목록', expenses: '지출내역' };
+  const keyLabel = keyLabels[key] || key;
+  if (!confirm(`"${label}" 시점의 "${keyLabel}"만 복구할게요.\n다른 항목(재고, 매출 등)은 전혀 안 건드려요.\n\n⚠️ 지금 있는 "${keyLabel}"의 최신 내용은 덮어써져요. 계속할까요?`)) return;
+  try {
+    const snap = await db.collection('inventory_backups').doc(docId).get();
+    if (!snap.exists) { showToast('이 백업을 찾을 수 없어요'); return; }
+    await db.collection('inventory').doc(key).set({ data: snap.data().data, stamp: SCHEMA_STAMP });
+    alert(`"${keyLabel}"만 복구했어요. 화면을 새로고침할게요.`);
+    location.reload();
+  } catch (e) {
+    showToast('복구 중 오류가 났어요');
   }
 }
 async function restoreBackupMoment(label, docIdsJson) {
@@ -8557,7 +8633,14 @@ async function applyCarryoverUnpaidIfNeeded() {
     await fixMeiWonNameIfNeeded();
     return;
   }
+  // 설정값(carryoverUnpaidApplied)이 어떤 이유로 리셋되더라도 절대 중복 생성되지 않도록,
+  // shipmentLog 자체에 이미 그 거래처의 "이월 미수금" 항목이 있는지 직접 한 번 더 확인함
+  const alreadyHave = new Set(
+    shipmentLog.filter(e => e.item === '이월 미수금').map(e => String(e.customer || '').trim())
+  );
+  let addedCount = 0;
   for (const [customer, amount] of CARRYOVER_UNPAID) {
+    if (alreadyHave.has(String(customer).trim())) continue; // 이미 있으면 절대 다시 안 만듦
     shipmentLog.push({
       id: genUniqueId(), date: todayStr(), orderId: null,
       customer, factory: '', item: '이월 미수금', color: '',
@@ -8565,11 +8648,18 @@ async function applyCarryoverUnpaidIfNeeded() {
       unitPrice: amount, supplyAmount: amount, taxAmount: 0, saleAmount: amount, paidAmount: 0,
       note: '2026-08-06 기준 이월 미수금'
     });
+    addedCount++;
+  }
+  if (addedCount === 0) {
+    // 실제로 추가한 게 하나도 없었다는 건, 예전에 이미 다 반영됐었는데 설정값만 리셋된 상황 - 플래그만 다시 세워두고 끝냄
+    settings = { ...settings, carryoverUnpaidApplied: true };
+    await persistSettings();
+    return;
   }
   await persistShipmentLog();
   settings = { ...settings, carryoverUnpaidApplied: true };
   await persistSettings();
-  showToast(`기존 거래처 미수금 ${CARRYOVER_UNPAID.length}건을 반영했어요`);
+  showToast(`기존 거래처 미수금 ${addedCount}건을 반영했어요`);
 }
 async function fixMeiWonNameIfNeeded() {
   if (settings.meiWonNameFixed) return;
