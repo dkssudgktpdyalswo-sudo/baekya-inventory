@@ -885,7 +885,7 @@ const PASSWORD = "3059";
 const ADMIN_PASSWORD = "9503"; // 매출/미수금 탭 전용 - 필요하면 이 값만 바꿔서 변경 가능
 const LOW_STOCK_THRESHOLD = 100;
 const DATA_VERSION = "2026-08-03-v4"; // 재고/이월장부 씨앗 데이터를 바꿀 때마다 이 값을 새로 바꿔주세요
-const APP_CODE_VERSION = "2026-09-03-m"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
+const APP_CODE_VERSION = "2026-09-03-q"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
 const SCHEMA_STAMP = 2; // 서버 저장규칙이 확인하는 "최신 앱 도장" - 절대 자주 바꾸지 않음(이 값을 아는 코드만 저장 가능하게 서버에서 막을 때 씀)
 
 const firebaseConfig = {
@@ -5020,7 +5020,8 @@ function renderCustomerProfileSummary(t_c) {
   if (!wrap) return;
 
   let totalSale = 0;
-  let lastPaymentDate = null, lastPaymentAmount = 0;
+  let lastPaymentDate = null;
+  const paymentsByDate = new Map(); // 날짜 -> 그날 들어온 입금 합계 (같은 날 여러 건 나눠 입금된 경우 다 더해야 정확함)
   const itemStats = new Map(); // "품목|컬러" -> {item, color, yards, count}
   const now = new Date();
   const curMonthKey = `${String(now.getFullYear()).slice(2)}.${String(now.getMonth() + 1).padStart(2, '0')}`;
@@ -5046,9 +5047,11 @@ function renderCustomerProfileSummary(t_c) {
       st.count += 1;
     }
     for (const p of (e.payments || [])) {
-      if (!lastPaymentDate || String(p.date) > String(lastPaymentDate)) { lastPaymentDate = p.date; lastPaymentAmount = p.amount; }
+      if (!lastPaymentDate || String(p.date) > String(lastPaymentDate)) lastPaymentDate = p.date;
+      paymentsByDate.set(p.date, Math.round(((paymentsByDate.get(p.date) || 0) + p.amount) * 100) / 100);
     }
   }
+  const lastPaymentAmount = lastPaymentDate ? (paymentsByDate.get(lastPaymentDate) || 0) : 0;
 
   const unpaid = getCustomerTrueUnpaid(t_c);
   const topItems = Array.from(itemStats.values()).sort((a, b) => b.yards - a.yards).slice(0, 5);
@@ -5239,6 +5242,29 @@ function renderDuplicateCheckView() {
       <button onclick="cleanupDuplicateCarryoverUnpaid()" style="border:none;background:var(--danger);color:#fff;border-radius:8px;padding:8px 14px;font-size:13px;font-weight:700;">지금 바로 정리하기</button>
     `;
     list.appendChild(banner);
+  }
+
+  // 0.5) 절 단위 출고에서, 적힌 "몇 절"이 실제로 탕별로 나간 조각 개수보다 더 많게 잘못 기록된 건이 있는지
+  // (예전 버그: "탕별로 직접 골라서" 출고할 때, 미리 입력했던 예상 절수를 그대로 믿고 저장해서, 실제로 나간 것보다 부풀려진 채 완료 처리되던 문제)
+  const jeolMismatches = shipmentLog.filter(e =>
+    e.unit === '절' && !e.isReturn && !e.isDefect && !e.isFee && e.deductBreakdown && e.deductBreakdown.length > 0 && e.amount > e.deductBreakdown.length
+  );
+  if (jeolMismatches.length > 0) {
+    const banner2 = document.createElement('div');
+    banner2.style.cssText = 'background:#fdecea; border:1px solid #f3b3ab; border-radius:10px; padding:12px; margin-bottom:12px;';
+    banner2.innerHTML = `
+      <div style="font-weight:700; font-size:14px; color:var(--danger); margin-bottom:6px;">⚠️ "몇 절"로 적힌 숫자가 실제로 나간 조각 수보다 많은 출고건이 ${jeolMismatches.length}건 있어요</div>
+      <div style="font-size:12px; color:var(--muted); margin-bottom:8px;">발주가 실제보다 더 많이 나간 것처럼 기록되어, 이월이 덜 남았거나 완료 처리가 잘못됐을 수 있어요. 하나씩 확인해서 이월장부에서 "다시 열기 → 수정"으로 바로잡아주세요.</div>
+      <div style="display:flex; flex-direction:column; gap:6px;">
+        ${jeolMismatches.map(e => `
+          <div style="background:#fff; border-radius:8px; padding:8px 10px; font-size:12px;">
+            <div style="font-weight:600;">${esc(e.date)} · ${esc(e.customer || '')} · ${esc(e.item)} ${esc(e.color || '')}</div>
+            <div style="color:var(--muted); margin-top:2px;">기록된 절수: ${e.amount}절 · 실제 나간 조각: ${e.deductBreakdown.length}개 (${e.deductBreakdown.map(b => `탕${b.tang}:${b.qty}y`).join('+')})</div>
+          </div>
+        `).join('')}
+      </div>
+    `;
+    list.appendChild(banner2);
   }
 
   // 1) 같은 고유번호(id)를 가진 기록이 있는지
@@ -7174,7 +7200,7 @@ function openOrderReceiveModal(id) {
     jeolWrap.classList.remove('hidden');
     rollsWrap.classList.add('hidden');
     manualWrap.classList.add('hidden');
-    const defaultCount = remain > 0 ? Math.ceil(remain) : 1;
+    const defaultCount = remain > 0 ? Math.ceil(remain) : 0; // 남은 게 0 이하인데 기본값을 1로 채우면, 실수로 그대로 저장했을 때 0y가 1절로 잘못 출고 처리될 위험이 있었음
     document.getElementById('or-jeol-count').value = defaultCount;
 
     const stockRolls = findInventoryRolls(o.item, o.color).filter(r => r.qty > 0);
@@ -7494,7 +7520,7 @@ async function confirmOrderReceiveInner(o) {
         if (qty > 0) { newTangYards += qty; newTangEntries.push({ tang, qty: Math.round(qty * 100) / 100, manualCostPerY }); }
       });
       yardsShipped = Math.round((allocations.reduce((s, a) => s + a.amt, 0) + newTangYards) * 100) / 100;
-      raw = jeolCount;
+      raw = allocations.length + newTangEntries.length; // "몇 절인지" 미리 입력했던 예상치가 아니라, 실제로 탕별로 채워서 뺀 조각 개수를 정확히 씀 (예상치랑 실제 채운 개수가 다르면 완료처리가 잘못될 수 있었음)
       const jeolBreakdown = [];
       for (const a of allocations) {
         const roll = rolls.find(r => r.id === a.rollId);
