@@ -885,7 +885,7 @@ const PASSWORD = "3059";
 const ADMIN_PASSWORD = "9503"; // 매출/미수금 탭 전용 - 필요하면 이 값만 바꿔서 변경 가능
 const LOW_STOCK_THRESHOLD = 100;
 const DATA_VERSION = "2026-08-03-v4"; // 재고/이월장부 씨앗 데이터를 바꿀 때마다 이 값을 새로 바꿔주세요
-const APP_CODE_VERSION = "2026-09-03-i"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
+const APP_CODE_VERSION = "2026-09-03-j"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
 const SCHEMA_STAMP = 2; // 서버 저장규칙이 확인하는 "최신 앱 도장" - 절대 자주 바꾸지 않음(이 값을 아는 코드만 저장 가능하게 서버에서 막을 때 씀)
 
 const firebaseConfig = {
@@ -4735,6 +4735,10 @@ function renderCustomerLedgerView() {
   document.getElementById('ledger-start').value = ledgerStartDate;
   document.getElementById('ledger-end').value = ledgerEndDate;
 
+  const profileWrap = document.createElement('div');
+  profileWrap.id = 'ledger-profile-wrap';
+  list.appendChild(profileWrap);
+
   const memoWrap = document.createElement('div');
   memoWrap.id = 'ledger-memo-wrap';
   list.appendChild(memoWrap);
@@ -5011,6 +5015,94 @@ function buildCustomerLedgerEvents(t_c) {
   merged.sort((a, b) => String(a.date).localeCompare(String(b.date)));
   return merged;
 }
+function renderCustomerProfileSummary(t_c) {
+  const wrap = document.getElementById('ledger-profile-wrap');
+  if (!wrap) return;
+
+  let totalSale = 0;
+  let lastPaymentDate = null, lastPaymentAmount = 0;
+  const itemStats = new Map(); // "품목|컬러" -> {item, color, yards, count}
+  const now = new Date();
+  const curMonthKey = `${String(now.getFullYear()).slice(2)}.${String(now.getMonth() + 1).padStart(2, '0')}`;
+  const prevD = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  const prevMonthKey = `${String(prevD.getFullYear()).slice(2)}.${String(prevD.getMonth() + 1).padStart(2, '0')}`;
+  let curMonthSale = 0, prevMonthSale = 0;
+
+  for (const e of shipmentLog) {
+    if (String(e.customer || '').trim() !== t_c) continue;
+    if (e.isSample) continue;
+    if (e.item === '이월 미수금') continue; // 예전 잔액이지 이 기간의 실제 매출 실적은 아니라서 집계에서 제외
+    if (e.saleAmount != null && !e.isReturn && !e.isDefect) {
+      const net = Math.round((e.saleAmount - (e.discount || 0)) * 100) / 100;
+      totalSale += net;
+      const monthKey = String(e.date).slice(0, 5);
+      if (monthKey === curMonthKey) curMonthSale += net;
+      if (monthKey === prevMonthKey) prevMonthSale += net;
+      const key = `${e.item}|${e.color || ''}`;
+      if (!itemStats.has(key)) itemStats.set(key, { item: e.item, color: e.color || '', yards: 0, count: 0 });
+      const st = itemStats.get(key);
+      st.yards = Math.round((st.yards + (e.yardsShipped || e.amount || 0)) * 100) / 100;
+      st.count += 1;
+    }
+    for (const p of (e.payments || [])) {
+      if (!lastPaymentDate || String(p.date) > String(lastPaymentDate)) { lastPaymentDate = p.date; lastPaymentAmount = p.amount; }
+    }
+  }
+
+  const unpaid = getCustomerTrueUnpaid(t_c);
+  const topItems = Array.from(itemStats.values()).sort((a, b) => b.yards - a.yards).slice(0, 5);
+  const daysSincePayment = lastPaymentDate ? Math.round((parseKDate(todayStr()) - parseKDate(lastPaymentDate)) / 86400000) : null;
+  const momChange = prevMonthSale > 0 ? Math.round(((curMonthSale - prevMonthSale) / prevMonthSale) * 100) : null;
+  const swOf = (item, color) => findSwatchOrderByItemColor(item, color);
+
+  wrap.innerHTML = `
+    <div style="background:var(--primary-dark); border-radius:10px 10px 0 0; padding:10px 14px; color:#fff; font-weight:700; font-size:14px;">${esc(t_c)}</div>
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:1px; background:var(--border); margin-bottom:10px;">
+      <div style="background:#fff; padding:10px 12px;">
+        <div style="font-size:11px; color:var(--muted);">누적 총매출</div>
+        <div style="font-size:15px; font-weight:700; margin-top:2px;">${Math.round(totalSale).toLocaleString()}원</div>
+      </div>
+      <div style="background:#fff; padding:10px 12px;">
+        <div style="font-size:11px; color:var(--muted);">현재 미수금</div>
+        <div style="font-size:15px; font-weight:700; margin-top:2px; color:${unpaid > 0 ? 'var(--danger)' : 'inherit'};">${unpaid.toLocaleString()}원</div>
+      </div>
+      <div style="background:#fff; padding:10px 12px;">
+        <div style="font-size:11px; color:var(--muted);">마지막 결제일</div>
+        <div style="font-size:15px; font-weight:700; margin-top:2px;">${lastPaymentDate ? `${esc(lastPaymentDate)} <span style="font-size:11px; font-weight:600; color:var(--muted);">(${daysSincePayment}일 전)</span>` : '-'}</div>
+        ${lastPaymentDate ? `<div style="font-size:11px; color:var(--muted); margin-top:1px;">${lastPaymentAmount.toLocaleString()}원 입금</div>` : ''}
+      </div>
+      <div style="background:#fff; padding:10px 12px;">
+        <div style="font-size:11px; color:var(--muted);">이번 달 매출</div>
+        <div style="display:flex; align-items:baseline; gap:6px; margin-top:2px;">
+          <span style="font-size:15px; font-weight:700;">${Math.round(curMonthSale).toLocaleString()}원</span>
+          ${momChange != null ? `<span style="font-size:11px; font-weight:700; color:${momChange >= 0 ? '#639922' : 'var(--danger)'};">${momChange >= 0 ? '▲' : '▼'}${Math.abs(momChange)}%</span>` : ''}
+        </div>
+      </div>
+    </div>
+    ${topItems.length > 0 ? `
+      <div style="margin-bottom:10px;">
+        <div style="font-size:13px; font-weight:700; margin-bottom:6px;">자주 사가는 품목 Top ${topItems.length}</div>
+        <div style="display:flex; flex-direction:column; gap:5px;">
+          ${topItems.map((it, i) => {
+    const sw = swOf(it.item, it.color);
+    return `
+              <div style="display:flex; align-items:center; justify-content:space-between; background:#fff; border:1px solid var(--border); border-radius:8px; padding:7px 10px;">
+                <div style="display:flex; align-items:center; gap:8px;">
+                  <div style="width:18px; height:18px; border-radius:50%; background:var(--accent); color:#fff; font-size:10px; font-weight:700; display:flex; align-items:center; justify-content:center; flex:none;">${i + 1}</div>
+                  <div>
+                    <div style="font-size:13px; font-weight:600;">${esc(it.item)} ${esc(it.color)}${sw != null ? ` (${sw}번)` : ''}</div>
+                    <div style="font-size:11px; color:var(--muted);">누적 ${it.yards}y</div>
+                  </div>
+                </div>
+                <div style="font-size:12px; color:var(--primary); font-weight:600;">${it.count}건</div>
+              </div>
+            `;
+  }).join('')}
+        </div>
+      </div>
+    ` : ''}
+  `;
+}
 function renderCustomerLedgerTable() {
   const customer = (ledgerCustomer || document.getElementById('ledger-customer').value).trim();
   const startDate = fromDateInputValue(document.getElementById('ledger-start').value);
@@ -5019,6 +5111,7 @@ function renderCustomerLedgerTable() {
   const memoWrap = document.getElementById('ledger-memo-wrap');
   if (!customer) { wrap.innerHTML = '<div class="empty">거래처를 입력해주세요</div>'; if (memoWrap) memoWrap.innerHTML = ''; return; }
   const t_c = customer.trim();
+  renderCustomerProfileSummary(t_c);
 
   if (memoWrap) {
     const custMemos = depositMemos.filter(m => String(m.customer).trim() === t_c);
