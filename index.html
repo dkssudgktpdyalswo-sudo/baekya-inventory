@@ -885,7 +885,7 @@ const PASSWORD = "3059";
 const ADMIN_PASSWORD = "9503"; // 매출/미수금 탭 전용 - 필요하면 이 값만 바꿔서 변경 가능
 const LOW_STOCK_THRESHOLD = 100;
 const DATA_VERSION = "2026-08-03-v4"; // 재고/이월장부 씨앗 데이터를 바꿀 때마다 이 값을 새로 바꿔주세요
-const APP_CODE_VERSION = "2026-09-03-q"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
+const APP_CODE_VERSION = "2026-09-04-b"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
 const SCHEMA_STAMP = 2; // 서버 저장규칙이 확인하는 "최신 앱 도장" - 절대 자주 바꾸지 않음(이 값을 아는 코드만 저장 가능하게 서버에서 막을 때 씀)
 
 const firebaseConfig = {
@@ -5244,29 +5244,6 @@ function renderDuplicateCheckView() {
     list.appendChild(banner);
   }
 
-  // 0.5) 절 단위 출고에서, 적힌 "몇 절"이 실제로 탕별로 나간 조각 개수보다 더 많게 잘못 기록된 건이 있는지
-  // (예전 버그: "탕별로 직접 골라서" 출고할 때, 미리 입력했던 예상 절수를 그대로 믿고 저장해서, 실제로 나간 것보다 부풀려진 채 완료 처리되던 문제)
-  const jeolMismatches = shipmentLog.filter(e =>
-    e.unit === '절' && !e.isReturn && !e.isDefect && !e.isFee && e.deductBreakdown && e.deductBreakdown.length > 0 && e.amount > e.deductBreakdown.length
-  );
-  if (jeolMismatches.length > 0) {
-    const banner2 = document.createElement('div');
-    banner2.style.cssText = 'background:#fdecea; border:1px solid #f3b3ab; border-radius:10px; padding:12px; margin-bottom:12px;';
-    banner2.innerHTML = `
-      <div style="font-weight:700; font-size:14px; color:var(--danger); margin-bottom:6px;">⚠️ "몇 절"로 적힌 숫자가 실제로 나간 조각 수보다 많은 출고건이 ${jeolMismatches.length}건 있어요</div>
-      <div style="font-size:12px; color:var(--muted); margin-bottom:8px;">발주가 실제보다 더 많이 나간 것처럼 기록되어, 이월이 덜 남았거나 완료 처리가 잘못됐을 수 있어요. 하나씩 확인해서 이월장부에서 "다시 열기 → 수정"으로 바로잡아주세요.</div>
-      <div style="display:flex; flex-direction:column; gap:6px;">
-        ${jeolMismatches.map(e => `
-          <div style="background:#fff; border-radius:8px; padding:8px 10px; font-size:12px;">
-            <div style="font-weight:600;">${esc(e.date)} · ${esc(e.customer || '')} · ${esc(e.item)} ${esc(e.color || '')}</div>
-            <div style="color:var(--muted); margin-top:2px;">기록된 절수: ${e.amount}절 · 실제 나간 조각: ${e.deductBreakdown.length}개 (${e.deductBreakdown.map(b => `탕${b.tang}:${b.qty}y`).join('+')})</div>
-          </div>
-        `).join('')}
-      </div>
-    `;
-    list.appendChild(banner2);
-  }
-
   // 1) 같은 고유번호(id)를 가진 기록이 있는지
   const byId = new Map();
   for (const e of shipmentLog) {
@@ -7546,17 +7523,22 @@ async function confirmOrderReceiveInner(o) {
         }
       });
       if (yards.length === 0) { showToast('각 절의 실제 야드를 입력해주세요'); return; }
-      raw = yards.length - carryoverCount; // 이월 체크한 절만큼은 "완료된 절"로 안 세서, 이월장부에 그만큼 그대로 남게 함
       yardsShipped = Math.round(yards.reduce((s, v) => s + v, 0) * 100) / 100;
       // 절(조각)마다 따로따로 재고에서 뺌 - 합쳐서 한번에 빼면, 나중에 취소할 때 어느 조각이 어디서 나갔는지 뒤섞여서 하나로 합쳐진 채 되돌아가는 문제가 있었음
       let combinedBreakdown = [];
-      let totalDeducted = 0, totalShortBy = 0, anyOk = false;
+      let totalDeducted = 0, totalShortBy = 0, anyOk = false, fullySucceededCount = 0;
       for (const y of yards) {
         const r1 = deductFromInventory(o.item, o.color, y, null);
         if (r1.ok) anyOk = true;
+        if (r1.shortBy <= 0.001) fullySucceededCount++; // 이 절만큼은 재고에서 정확히 다 빠짐 (부족분 없음) - "완료"로 셀 수 있는 절만 이렇게 셈
         combinedBreakdown = combinedBreakdown.concat(r1.breakdown);
         totalDeducted = Math.round((totalDeducted + r1.deducted) * 100) / 100;
         totalShortBy = Math.round((totalShortBy + r1.shortBy) * 100) / 100;
+      }
+      // "몇 절 완료됐다"는 실제로 재고에서 완전히 빠진 절 개수만 정확히 셈 (입력한 칸 개수를 그냥 믿지 않음 - 재고 부족해서 일부만 빠졌는데 다 완료된 것처럼 기록되던 버그가 있었음)
+      raw = Math.max(0, fullySucceededCount - carryoverCount);
+      if (totalShortBy > 0) {
+        alert(`⚠️ 재고가 부족해서 ${totalShortBy}y만큼 못 뺐어요.\n부족한 만큼은 "완료된 절"로 안 세고 이월로 남겨뒀어요. 재고를 확인해서 입고를 먼저 등록해주세요.`);
       }
       inv = { ok: anyOk, deducted: totalDeducted, shortBy: totalShortBy, breakdown: combinedBreakdown };
       if (inv.ok) await persistRolls();
