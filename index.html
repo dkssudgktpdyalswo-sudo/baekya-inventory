@@ -384,7 +384,6 @@
       <div id="o-received-wrap" class="hidden">
         <label>이미 처리(출고)된 양 — 이게 잘못됐으면 여기서 고치세요</label>
         <input id="o-received" type="number" step="0.1" placeholder="예: 20" oninput="updateOrderEditRemainHint('received')">
-        <p id="o-remain-hint" style="font-size:12px; color:var(--muted); margin-top:4px;"></p>
       </div>
       </div>
       <button onclick="openReturnFromOrderForm()" style="border:none;background:#fce8d6;color:#a15c1e;border-radius:8px;padding:9px 12px;font-size:13px;font-weight:600;margin-top:10px;width:100%;">추가금 등록</button>
@@ -886,7 +885,7 @@ const PASSWORD = "3059";
 const ADMIN_PASSWORD = "9503"; // 매출/미수금 탭 전용 - 필요하면 이 값만 바꿔서 변경 가능
 const LOW_STOCK_THRESHOLD = 100;
 const DATA_VERSION = "2026-08-03-v4"; // 재고/이월장부 씨앗 데이터를 바꿀 때마다 이 값을 새로 바꿔주세요
-const APP_CODE_VERSION = "2026-09-03-h"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
+const APP_CODE_VERSION = "2026-09-03-i"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
 const SCHEMA_STAMP = 2; // 서버 저장규칙이 확인하는 "최신 앱 도장" - 절대 자주 바꾸지 않음(이 값을 아는 코드만 저장 가능하게 서버에서 막을 때 씀)
 
 const firebaseConfig = {
@@ -6861,7 +6860,6 @@ function openOrderEditModal(id) {
   document.getElementById('orderAddModal').classList.add('open');
 }
 function updateOrderEditRemainHint(changedField) {
-  const hintEl = document.getElementById('o-remain-hint');
   const isEditMode = !document.getElementById('o-edit-remain-wrap').classList.contains('hidden');
   const unit = document.getElementById('o-unit').value || 'y';
   if (isEditMode) {
@@ -6871,19 +6869,16 @@ function updateOrderEditRemainHint(changedField) {
       const remain = Math.max(0, Math.round((_editOrderOriginalQty - received) * 100) / 100);
       document.getElementById('o-remain').value = remain;
       document.getElementById('o-qty').value = _editOrderOriginalQty;
-      hintEl.textContent = `→ 발주 총량 ${_editOrderOriginalQty}${unit} 기준으로, 이월이 ${remain}${unit}로 다시 계산됐어요`;
     } else {
       // "이월 남은 양"을 직접 고친 경우 - 그 의도를 그대로 반영해서 총량을 새로 계산함
       const remain = parseFloat(document.getElementById('o-remain').value) || 0;
       const total = Math.round((received + remain) * 100) / 100;
       document.getElementById('o-qty').value = total;
-      hintEl.textContent = `→ 발주 총량 ${total}${unit}로 계산돼요 (이미 처리 ${received}${unit} + 이월 ${remain}${unit})`;
     }
   } else {
     const qty = parseFloat(document.getElementById('o-qty').value) || 0;
     const received = parseFloat(document.getElementById('o-received').value) || 0;
     const remain = Math.round(Math.max(0, qty - received) * 100) / 100;
-    hintEl.textContent = remain > 0 ? `→ 이월로 남는 양: ${remain}${unit}` : `→ 남는 양 없음 (전량 처리완료로 처리돼요)`;
   }
 }
 function closeOrderAddModal() { document.getElementById('orderAddModal').classList.remove('open'); editingOrderId = null; }
