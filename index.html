@@ -885,7 +885,7 @@ const PASSWORD = "3059";
 const ADMIN_PASSWORD = "9503"; // 매출/미수금 탭 전용 - 필요하면 이 값만 바꿔서 변경 가능
 const LOW_STOCK_THRESHOLD = 100;
 const DATA_VERSION = "2026-08-03-v4"; // 재고/이월장부 씨앗 데이터를 바꿀 때마다 이 값을 새로 바꿔주세요
-const APP_CODE_VERSION = "2026-09-04-f"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
+const APP_CODE_VERSION = "2026-09-04-g"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
 const SCHEMA_STAMP = 2; // 서버 저장규칙이 확인하는 "최신 앱 도장" - 절대 자주 바꾸지 않음(이 값을 아는 코드만 저장 가능하게 서버에서 막을 때 씀)
 
 const firebaseConfig = {
@@ -2440,11 +2440,18 @@ async function deleteAllRollsForColor(item, color) {
   const t_item = String(item).trim();
   const t_color = String(color).trim();
   const count = rolls.filter(r => String(r.item).trim() === t_item && String(r.color).trim() === t_color).length;
-  const hasSwatch = swatchInfo.some(s => String(s.item).trim() === t_item && String(s.color).trim() === t_color);
-  if (count === 0 && !hasSwatch) { showToast('삭제할 게 없어요'); return; }
-  if (!confirm(`"${item} ${color}"을(를) 완전히 삭제할까요?${count > 0 ? ` (재고 ${count}개 포함)` : ''}\n스왓치 번호·중국품번 등록 정보도 같이 지워져요.`)) return;
+  const targetSwatch = swatchInfo.find(s => String(s.item).trim() === t_item && String(s.color).trim() === t_color);
+  if (count === 0 && !targetSwatch) { showToast('삭제할 게 없어요'); return; }
+  if (!confirm(`"${item} ${color}"을(를) 완전히 삭제할까요?${count > 0 ? ` (재고 ${count}개 포함)` : ''}\n스왓치 번호·중국품번 등록 정보도 같이 지워지고, 뒤 번호들은 한 칸씩 당겨져요.`)) return;
   rolls = rolls.filter(r => !(String(r.item).trim() === t_item && String(r.color).trim() === t_color));
+  const deletedOrder = targetSwatch ? targetSwatch.order : null;
   swatchInfo = swatchInfo.filter(s => !(String(s.item).trim() === t_item && String(s.color).trim() === t_color));
+  if (deletedOrder != null) {
+    // 지운 번호보다 뒤에 있던 것들을 한 칸씩 당김 (삭제 = 이제 안 쓰는 컬러니까, 입고할 때 번호 밀리는 것과 똑같은 원리로 자동 정리)
+    const toShiftDown = swatchInfo.filter(s => String(s.item).trim() === t_item && s.order != null && s.order > deletedOrder);
+    toShiftDown.sort((a, b) => a.order - b.order); // 앞에서부터 당겨야 서로 안 겹침
+    for (const s of toShiftDown) s.order = s.order - 1;
+  }
   await persistRolls();
   await persistSwatchInfo();
   render(); showToast('삭제되었습니다');
