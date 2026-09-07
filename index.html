@@ -885,7 +885,7 @@
 const PASSWORD = "3059";
 const ADMIN_PASSWORD = "9503"; // 매출/미수금 탭 전용 - 필요하면 이 값만 바꿔서 변경 가능
 const DATA_VERSION = "2026-08-03-v4"; // 재고/이월장부 씨앗 데이터를 바꿀 때마다 이 값을 새로 바꿔주세요
-const APP_CODE_VERSION = "2026-09-07-t"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
+const APP_CODE_VERSION = "2026-09-08-b"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
 const SCHEMA_STAMP = 2; // 서버 저장규칙이 확인하는 "최신 앱 도장" - 절대 자주 바꾸지 않음(이 값을 아는 코드만 저장 가능하게 서버에서 막을 때 씀)
 
 const firebaseConfig = {
@@ -4625,7 +4625,7 @@ function renderCustomerPriceListView() {
   }
 
   const wrap = document.createElement('div');
-  wrap.style.cssText = 'display:grid; grid-template-columns:repeat(auto-fill, minmax(220px, 1fr)); gap:8px;';
+  wrap.style.cssText = 'column-width:220px; column-gap:8px;';
   wrap.innerHTML = itemList.map(item => {
     const colorMap = byItem.get(item);
     const colors = Array.from(colorMap.keys()).sort((a, b) => a.localeCompare(b, 'ko'));
@@ -4633,7 +4633,7 @@ function renderCustomerPriceListView() {
     if (prices.length === 1) {
       // 이 품목의 컬러들이 전부 단가가 같으면, 한 줄로 합쳐서 보여줌 (제일 흔한 경우라서 이렇게 단순화함)
       return `
-        <div style="background:#fff; border-radius:10px; border:1px solid var(--border); overflow:hidden;">
+        <div style="background:#fff; border-radius:10px; border:1px solid var(--border); overflow:hidden; break-inside:avoid; margin-bottom:8px;">
           <div onclick="editStandingPriceForAllColors('${escAttr(t_c)}','${escAttr(item)}',${JSON.stringify(colors).replace(/"/g, '&quot;')},${prices[0]})" style="display:flex; justify-content:space-between; align-items:center; padding:11px 14px; cursor:pointer;">
             <span style="font-size:14px; font-weight:600;">${esc(item)}</span>
             <span style="font-size:14px; font-weight:700; color:#8a5a1e;">${prices[0].toLocaleString()}원<span style="font-size:11px; font-weight:400; color:var(--muted);">/y</span></span>
@@ -4643,14 +4643,14 @@ function renderCustomerPriceListView() {
     }
     // 컬러마다 단가가 다르면(예외적인 경우), 컬러별로 풀어서 보여줌
     return `
-      <div style="background:#fff; border-radius:10px; border:1px solid var(--border); overflow:hidden;">
-        <div style="padding:9px 14px 4px; font-size:12px; font-weight:600; color:var(--muted);">${esc(item)} · 컬러마다 달라요</div>
+      <div style="background:#fff; border-radius:10px; border:1px solid var(--border); overflow:hidden; break-inside:avoid; margin-bottom:8px;">
+        <div style="padding:11px 14px 4px;"><span style="font-size:14px; font-weight:600;">${esc(item)}</span> <span style="font-size:11px; font-weight:400; color:var(--muted);">· 컬러마다 달라요</span></div>
         ${colors.map(c => {
     const info = colorMap.get(c);
     return `
-            <div onclick="editStandingPrice('${escAttr(t_c)}','${escAttr(item)}','${escAttr(c)}',${info.unitPrice})" style="display:flex; justify-content:space-between; align-items:center; padding:9px 14px; border-top:1px solid #f1eee7; font-size:13px; cursor:pointer;">
-              <span>${esc(c) || '(컬러 없음)'}</span>
-              <span style="font-weight:700; color:#8a5a1e;">${info.unitPrice.toLocaleString()}원/y</span>
+            <div onclick="editStandingPrice('${escAttr(t_c)}','${escAttr(item)}','${escAttr(c)}',${info.unitPrice})" style="display:flex; justify-content:space-between; align-items:center; padding:9px 14px; border-top:1px solid #f1eee7; cursor:pointer;">
+              <span style="font-size:14px;">${esc(c) || '(컬러 없음)'}</span>
+              <span style="font-size:14px; font-weight:700; color:#8a5a1e;">${info.unitPrice.toLocaleString()}원<span style="font-size:11px; font-weight:400; color:var(--muted);">/y</span></span>
             </div>
           `;
   }).join('')}
