@@ -234,6 +234,7 @@
     <button onclick="showMonthlyReport()" style="border:none;background:#e6faf0;color:#1a7a4a;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">📅 월간 리포트</button>
     <button onclick="showUnpaidSummary()" style="border:none;background:#fce8d6;color:#a15c1e;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">📋 거래처 미수금표</button>
     <button onclick="showItemMonthlyStats()" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">📊 품목출고량</button>
+    <button onclick="showCustomerPriceList()" style="border:none;background:#fdf0e0;color:#8a5a1e;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">💵 거래처 단가표</button>
   </div>
   <div id="sales-dd-manage" class="hidden" style="display:flex; gap:6px; margin-top:6px; flex-wrap:wrap; align-items:center; padding:8px; background:#f6f4f0; border-radius:10px;">
     <button onclick="exportSalesLog()" style="border:none;background:#fff3d6;color:#a15c1e;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">📤 매출장부 내보내기</button>
@@ -884,7 +885,7 @@
 const PASSWORD = "3059";
 const ADMIN_PASSWORD = "9503"; // 매출/미수금 탭 전용 - 필요하면 이 값만 바꿔서 변경 가능
 const DATA_VERSION = "2026-08-03-v4"; // 재고/이월장부 씨앗 데이터를 바꿀 때마다 이 값을 새로 바꿔주세요
-const APP_CODE_VERSION = "2026-09-07-m"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
+const APP_CODE_VERSION = "2026-09-07-t"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
 const SCHEMA_STAMP = 2; // 서버 저장규칙이 확인하는 "최신 앱 도장" - 절대 자주 바꾸지 않음(이 값을 아는 코드만 저장 가능하게 서버에서 막을 때 씀)
 
 const firebaseConfig = {
@@ -979,6 +980,8 @@ let salesDayFilterEnd = monthEndStr(); // 기본은 이번 달 말일까지 - �
 let printSelectedIds = new Set(); // 선택인쇄(메인 체크) 상태 - 이 화면 켜져있는 동안만 기억, 서버엔 저장 안 해서 껐다 켜면 초기화됨
 let itemStatsViewMode = 'month'; // day | month
 let itemStatsPeriodIndex = 0; // 지금 보고 있는 기간(월/일)이 periods 배열에서 몇 번째인지 - 최신이 0번
+let priceListCustomer = ''; // 거래처 단가표에서 지금 보고 있는 거래처
+let priceListYear = null; // 거래처 단가표에서 지금 보고 있는 연도 (null이면 전체기간)
 let salesSpecialView = null; // null | 'itemMonthly' | 'customerLedger'
 let ledgerCustomer = null;
 let ledgerStartDate = null;
@@ -4514,6 +4517,152 @@ function exitItemMonthlyStats() {
   openGroups = new Set(); // 다른 화면으로 넘어갈 때 열려있던 카드들 접힌 상태로 초기화
   render();
 }
+function showCustomerPriceList() {
+  salesSpecialView = 'priceList';
+  priceListYear = null;
+  openGroups = new Set();
+  render();
+}
+function exitCustomerPriceList() {
+  salesSpecialView = null;
+  openGroups = new Set();
+  render();
+}
+async function editStandingPriceForAllColors(customer, item, colors, currentPrice) {
+  const raw = prompt(`"${customer}" · ${item} (컬러 ${colors.length}개 전체)\n앞으로 이 품목에 쓸 기준 단가를 입력해주세요\n(과거 거래 기록은 전혀 안 바뀌고, 다음 출고 때부터만 이 단가가 자동으로 채워져요)`, currentPrice);
+  if (raw === null) return;
+  const newPrice = parseFloat(raw);
+  if (!newPrice || newPrice <= 0) { showToast('올바른 단가를 입력해주세요'); return; }
+  for (const c of colors) {
+    await rememberPrice(customer, item, c, newPrice);
+  }
+  render();
+  showToast(`다음부터 ${newPrice.toLocaleString()}원/y으로 적용돼요`);
+}
+async function editStandingPrice(customer, item, color, currentPrice) {
+  const raw = prompt(`"${customer}" · ${item} ${color}\n앞으로 이 원단에 쓸 기준 단가를 입력해주세요\n(과거 거래 기록은 전혀 안 바뀌고, 다음 출고 때부터만 이 단가가 자동으로 채워져요)`, currentPrice);
+  if (raw === null) return;
+  const newPrice = parseFloat(raw);
+  if (!newPrice || newPrice <= 0) { showToast('올바른 단가를 입력해주세요'); return; }
+  await rememberPrice(customer, item, color, newPrice);
+  render();
+  showToast(`다음부터 ${newPrice.toLocaleString()}원/y으로 적용돼요`);
+}
+function renderCustomerPriceListView() {
+  const list = document.getElementById('list');
+  list.innerHTML = '';
+
+  const backBtn = document.createElement('button');
+  backBtn.textContent = '← 돌아가기';
+  backBtn.style.cssText = 'border:none;background:#eee;color:#555;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;margin-bottom:10px;';
+  backBtn.onclick = exitCustomerPriceList;
+  list.appendChild(backBtn);
+
+  const inputWrap = document.createElement('div');
+  inputWrap.style.cssText = 'margin-bottom:10px; position:relative; display:flex; gap:8px;';
+  inputWrap.innerHTML = `
+    <input id="price-list-customer-input" type="text" placeholder="예: 클래식" autocomplete="off" value="${escAttr(priceListCustomer)}" oninput="showCustomerSuggestions(this)" onfocus="showCustomerSuggestions(this)" onblur="hideItemSuggestionsDelayed()" style="flex:1; padding:10px 12px; border:1px solid var(--border); border-radius:8px; font-size:14px;">
+    <button onclick="priceListCustomer=document.getElementById('price-list-customer-input').value.trim(); priceListYear=null; render();" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:8px;padding:10px 16px;font-size:13px;font-weight:600;">조회</button>
+  `;
+  list.appendChild(inputWrap);
+
+  if (!priceListCustomer) {
+    const empty = document.createElement('div');
+    empty.className = 'empty';
+    empty.textContent = '거래처를 입력해주세요';
+    list.appendChild(empty);
+    return;
+  }
+  const t_c = priceListCustomer.trim();
+
+  const header = document.createElement('div');
+  header.style.cssText = 'background:var(--primary-dark); border-radius:10px; padding:12px 14px; margin-bottom:10px; color:#fff;';
+  header.innerHTML = `<div style="font-size:11px; color:#c9d8e0;">거래처 단가표</div><div style="font-size:17px; font-weight:700; margin-top:2px;">${esc(t_c)}</div>`;
+  list.appendChild(header);
+
+  // 이 거래처의 연도 목록(실제 거래가 있었던 연도들)을 뽑아서 네비게이션용으로 씀
+  const years = Array.from(new Set(
+    shipmentLog.filter(e => String(e.customer || '').trim() === t_c && e.saleAmount != null && !e.isSample && e.item !== '이월 미수금').map(e => String(e.date).slice(0, 2))
+  )).sort((a, b) => b.localeCompare(a));
+
+  const navBar = document.createElement('div');
+  navBar.style.cssText = 'display:flex; gap:6px; margin-bottom:10px; overflow-x:auto; padding-bottom:2px;';
+  const allChip = document.createElement('div');
+  allChip.textContent = '전체';
+  allChip.style.cssText = `flex:none; padding:6px 14px; border-radius:20px; font-size:12px; font-weight:600; cursor:pointer; background:${priceListYear === null ? 'var(--primary-dark)' : '#fff'}; color:${priceListYear === null ? '#fff' : '#5f5e5a'}; border:1px solid ${priceListYear === null ? 'var(--primary-dark)' : 'var(--border)'};`;
+  allChip.onclick = () => { priceListYear = null; render(); };
+  navBar.appendChild(allChip);
+  for (const y of years) {
+    const yChip = document.createElement('div');
+    yChip.textContent = `20${y}`;
+    yChip.style.cssText = `flex:none; padding:6px 14px; border-radius:20px; font-size:12px; font-weight:600; cursor:pointer; background:${priceListYear === y ? 'var(--primary-dark)' : '#fff'}; color:${priceListYear === y ? '#fff' : '#5f5e5a'}; border:1px solid ${priceListYear === y ? 'var(--primary-dark)' : 'var(--border)'};`;
+    yChip.onclick = () => { priceListYear = y; render(); };
+    navBar.appendChild(yChip);
+  }
+  list.appendChild(navBar);
+
+  // 이 거래처의 매출 기록을 품목→컬러로 묶고, 연도 필터가 있으면 그 연도 것만 남김
+  const filtered = shipmentLog.filter(e =>
+    String(e.customer || '').trim() === t_c && e.saleAmount != null && !e.isReturn && !e.isDefect && !e.isSample && e.item !== '이월 미수금' && e.unitPrice != null
+    && (priceListYear === null || String(e.date).slice(0, 2) === priceListYear)
+  );
+  const byItem = new Map(); // item -> Map(color -> 가장 최근 항목 {id,date,unitPrice})
+  for (const e of filtered) {
+    if (!byItem.has(e.item)) byItem.set(e.item, new Map());
+    const colorMap = byItem.get(e.item);
+    const c = e.color || '';
+    const cur = colorMap.get(c);
+    if (!cur || String(e.date) > String(cur.date)) colorMap.set(c, { id: e.id, date: e.date, unitPrice: e.unitPrice });
+  }
+  const itemList = Array.from(byItem.keys()).sort((a, b) => String(a).localeCompare(String(b), 'ko', { numeric: true }));
+
+  if (itemList.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'empty';
+    empty.textContent = '이 기간에 단가가 기록된 매출이 없어요';
+    list.appendChild(empty);
+    return;
+  }
+
+  const wrap = document.createElement('div');
+  wrap.style.cssText = 'display:grid; grid-template-columns:repeat(auto-fill, minmax(220px, 1fr)); gap:8px;';
+  wrap.innerHTML = itemList.map(item => {
+    const colorMap = byItem.get(item);
+    const colors = Array.from(colorMap.keys()).sort((a, b) => a.localeCompare(b, 'ko'));
+    const prices = Array.from(new Set(colors.map(c => colorMap.get(c).unitPrice)));
+    if (prices.length === 1) {
+      // 이 품목의 컬러들이 전부 단가가 같으면, 한 줄로 합쳐서 보여줌 (제일 흔한 경우라서 이렇게 단순화함)
+      return `
+        <div style="background:#fff; border-radius:10px; border:1px solid var(--border); overflow:hidden;">
+          <div onclick="editStandingPriceForAllColors('${escAttr(t_c)}','${escAttr(item)}',${JSON.stringify(colors).replace(/"/g, '&quot;')},${prices[0]})" style="display:flex; justify-content:space-between; align-items:center; padding:11px 14px; cursor:pointer;">
+            <span style="font-size:14px; font-weight:600;">${esc(item)}</span>
+            <span style="font-size:14px; font-weight:700; color:#8a5a1e;">${prices[0].toLocaleString()}원<span style="font-size:11px; font-weight:400; color:var(--muted);">/y</span></span>
+          </div>
+        </div>
+      `;
+    }
+    // 컬러마다 단가가 다르면(예외적인 경우), 컬러별로 풀어서 보여줌
+    return `
+      <div style="background:#fff; border-radius:10px; border:1px solid var(--border); overflow:hidden;">
+        <div style="padding:9px 14px 4px; font-size:12px; font-weight:600; color:var(--muted);">${esc(item)} · 컬러마다 달라요</div>
+        ${colors.map(c => {
+    const info = colorMap.get(c);
+    return `
+            <div onclick="editStandingPrice('${escAttr(t_c)}','${escAttr(item)}','${escAttr(c)}',${info.unitPrice})" style="display:flex; justify-content:space-between; align-items:center; padding:9px 14px; border-top:1px solid #f1eee7; font-size:13px; cursor:pointer;">
+              <span>${esc(c) || '(컬러 없음)'}</span>
+              <span style="font-weight:700; color:#8a5a1e;">${info.unitPrice.toLocaleString()}원/y</span>
+            </div>
+          `;
+  }).join('')}
+      </div>
+    `;
+  }).join('');
+  list.appendChild(wrap);
+  const noteP = document.createElement('p');
+  noteP.style.cssText = 'font-size:11px; color:var(--muted); margin-top:8px; text-align:center;';
+  noteP.textContent = '단가를 눌러서 고치면, 과거 거래 기록은 그대로 두고 "다음부터 쓸 기준 단가"만 바뀌어요';
+  list.appendChild(noteP);
+}
 function renderItemMonthlyStatsView() {
   const list = document.getElementById('list');
   list.innerHTML = '';
@@ -6429,6 +6578,11 @@ function renderSales() {
   if (salesSpecialView === 'duplicateCheck') {
     document.getElementById('stats').innerHTML = '';
     renderDuplicateCheckView();
+    return;
+  }
+  if (salesSpecialView === 'priceList') {
+    document.getElementById('stats').innerHTML = '';
+    renderCustomerPriceListView();
     return;
   }
 
