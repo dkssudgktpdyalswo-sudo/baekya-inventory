@@ -884,7 +884,7 @@
 const PASSWORD = "3059";
 const ADMIN_PASSWORD = "9503"; // 매출/미수금 탭 전용 - 필요하면 이 값만 바꿔서 변경 가능
 const DATA_VERSION = "2026-08-03-v4"; // 재고/이월장부 씨앗 데이터를 바꿀 때마다 이 값을 새로 바꿔주세요
-const APP_CODE_VERSION = "2026-09-07-e"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
+const APP_CODE_VERSION = "2026-09-07-i"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
 const SCHEMA_STAMP = 2; // 서버 저장규칙이 확인하는 "최신 앱 도장" - 절대 자주 바꾸지 않음(이 값을 아는 코드만 저장 가능하게 서버에서 막을 때 씀)
 
 const firebaseConfig = {
@@ -2947,9 +2947,25 @@ function printOrderLedger() {
         const q = o.orderQty || 0;
         return s + (o.unit === '절' ? q * 55 : q);
       }, 0);
-      const custNames = Array.from(groups.keys()).sort((a, b) => custYardTotal(b) - custYardTotal(a) || a.localeCompare(b, 'ko'));
+      // 품목별로 전체(모든 거래처 합친) 물량을 구해서, 물량 많은 품목을 가진 거래처들끼리 먼저 모이게 함
+      const itemTotalVolume = new Map();
+      for (const o of bucket) {
+        const y = o.unit === '절' ? (o.orderQty || 0) * 55 : (o.orderQty || 0);
+        itemTotalVolume.set(o.item, (itemTotalVolume.get(o.item) || 0) + y);
+      }
+      const custClusterVolume = (cust) => {
+        // 이 거래처가 가진 품목들 중, 전체 물량이 제일 큰 품목의 그 "전체 물량"을 이 거래처의 정렬 기준으로 씀
+        let maxVol = 0;
+        for (const o of groups.get(cust)) {
+          const v = itemTotalVolume.get(o.item) || 0;
+          if (v > maxVol) maxVol = v;
+        }
+        return maxVol;
+      };
+      const custNames = Array.from(groups.keys()).sort((a, b) => custClusterVolume(b) - custClusterVolume(a) || custYardTotal(b) - custYardTotal(a) || a.localeCompare(b, 'ko'));
       for (const cust of custNames) {
-        const items = sortOrdersForDisplay(groups.get(cust));
+        // 인쇄물에서는 거래처 안에서도 물량 큰 품목이 먼저 나오게 정리함 (다음날 출고 준비할 때 편하게)
+        const items = groups.get(cust).slice().sort((a, b) => (itemTotalVolume.get(b.item) || 0) - (itemTotalVolume.get(a.item) || 0) || String(a.item || '').localeCompare(String(b.item || ''), 'ko', { numeric: true }));
         for (const o of items) {
           const remain = (o.orderQty && o.orderQty > o.received) ? Math.round((o.orderQty - o.received) * 100) / 100 : 0;
           rawRows.push({
