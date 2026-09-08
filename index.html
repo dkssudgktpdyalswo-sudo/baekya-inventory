@@ -885,7 +885,7 @@
 const PASSWORD = "3059";
 const ADMIN_PASSWORD = "9503"; // 매출/미수금 탭 전용 - 필요하면 이 값만 바꿔서 변경 가능
 const DATA_VERSION = "2026-08-03-v4"; // 재고/이월장부 씨앗 데이터를 바꿀 때마다 이 값을 새로 바꿔주세요
-const APP_CODE_VERSION = "2026-09-08-b"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
+const APP_CODE_VERSION = "2026-09-08-e"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
 const SCHEMA_STAMP = 2; // 서버 저장규칙이 확인하는 "최신 앱 도장" - 절대 자주 바꾸지 않음(이 값을 아는 코드만 저장 가능하게 서버에서 막을 때 씀)
 
 const firebaseConfig = {
@@ -1602,6 +1602,7 @@ function renderCustomerPickerList() {
   listEl.innerHTML = matches.map(n => `
     <div style="display:flex; align-items:center; justify-content:space-between; padding:10px 12px; border-bottom:1px solid var(--border);">
       <span onclick="selectCustomerFromPicker('${escAttr(n)}')" style="flex:1; font-size:15px; cursor:pointer;">${esc(n)}</span>
+      <button onclick="event.stopPropagation(); renameCustomer('${escAttr(n)}').then(() => renderCustomerPickerList())" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:6px;padding:5px 9px;font-size:11px;flex:none;margin-right:6px;">이름변경</button>
       ${registered.has(n) ? `<button onclick="event.stopPropagation(); deleteRegisteredCustomer('${escAttr(n)}')" style="border:none;background:#fdecea;color:var(--danger);border-radius:6px;padding:5px 9px;font-size:11px;flex:none;">삭제</button>` : ''}
     </div>
   `).join('');
@@ -1858,6 +1859,13 @@ async function dismissLowStockAlert(key) {
   settings = { ...settings, dismissedLowStock: Array.from(dismissed) };
   await persistSettings();
   render();
+}
+async function dismissInactiveCustomer(customer) {
+  const dismissed = new Set(settings.dismissedInactiveCustomer || []);
+  dismissed.add(customer);
+  settings = { ...settings, dismissedInactiveCustomer: Array.from(dismissed) };
+  await persistSettings();
+  renderUnpaidSummaryList();
 }
 function renderInv() {
   document.getElementById('rateBar').classList.add('hidden');
@@ -2551,6 +2559,7 @@ function renderCost() {
         ${overridesForItem.length > 0 ? `<div class="sub" style="color:#a15c1e;">가공비 추가된 컬러 ${overridesForItem.length}개</div>` : ''}
         <div class="btns">
           <button class="btn-out" onclick="event.stopPropagation(); openCostEditModal(${c.id})">수정</button>
+          <button class="btn-out" onclick="event.stopPropagation(); renameInventoryItem('${escAttr(c.item)}')">이름변경</button>
           <button class="btn-del" onclick="event.stopPropagation(); deleteCost(${c.id})">삭제</button>
         </div>
       </div>
@@ -2711,6 +2720,7 @@ function openProcessingTypeModal() {
       <div style="font-size:13px;">${esc(pt.keyword)}</div>
       <div style="display:flex; align-items:center; gap:8px;">
         <span style="font-weight:600;">+${pt.fee.toLocaleString()}원/y</span>
+        <button onclick="editProcessingType(${i})" style="border:none;background:none;color:var(--primary-dark);font-size:11px;text-decoration:underline;">수정</button>
         <button onclick="deleteProcessingType(${i})" style="border:none;background:none;color:var(--muted);font-size:11px;">삭제</button>
       </div>
     </div>
@@ -2728,6 +2738,23 @@ async function addProcessingType() {
   const types = settings.processingTypes || [];
   types.push({ keyword, fee });
   settings = { ...settings, processingTypes: types };
+  await persistSettings();
+  openProcessingTypeModal();
+}
+async function editProcessingType(idx) {
+  const types = settings.processingTypes || [];
+  const cur = types[idx];
+  if (!cur) return;
+  const newKeyword = prompt('키워드', cur.keyword);
+  if (newKeyword === null) return;
+  const newFeeRaw = prompt('추가비용(원/y)', cur.fee);
+  if (newFeeRaw === null) return;
+  const newFee = parseFloat(newFeeRaw);
+  if (!newKeyword.trim()) { showToast('키워드를 적어주세요'); return; }
+  if (!newFee || newFee <= 0) { showToast('금액을 확인해주세요'); return; }
+  const updated = types.slice();
+  updated[idx] = { keyword: newKeyword.trim(), fee: newFee };
+  settings = { ...settings, processingTypes: updated };
   await persistSettings();
   openProcessingTypeModal();
 }
@@ -5370,7 +5397,7 @@ function renderCustomerLedgerTable() {
         ${custMemos.length === 0 ? '<div style="font-size:12px;color:var(--muted);margin-top:4px;">메모 없음</div>' : custMemos.slice().reverse().map(m => `
           <div style="display:flex; justify-content:space-between; align-items:center; padding:4px 0; font-size:12px;">
             <div>${esc(m.date)} · ${esc(m.text)}</div>
-            <button onclick="deleteDepositMemo(${m.id})" style="border:none;background:none;color:var(--muted);font-size:11px;">삭제</button>
+            <button onclick="editDepositMemo(${m.id})" style="border:none;background:none;color:var(--primary-dark);font-size:11px;text-decoration:underline;margin-right:6px;">수정</button><button onclick="deleteDepositMemo(${m.id})" style="border:none;background:none;color:var(--muted);font-size:11px;">삭제</button>
           </div>
         `).join('')}
       </div>
@@ -5756,6 +5783,26 @@ async function addExpense() {
   renderExpenseList();
   showToast(type === 'income' ? '입금 등록했습니다' : '지출 등록했습니다');
 }
+async function editExpense(id) {
+  const e = expenses.find(x => x.id === id);
+  if (!e) return;
+  const newTitle = prompt('항목', e.title);
+  if (newTitle === null) return;
+  const newAmountRaw = prompt('금액(원)', e.amount);
+  if (newAmountRaw === null) return;
+  const newAmount = parseFloat(newAmountRaw);
+  const newNote = prompt('메모 (없으면 비워두세요)', e.note || '');
+  if (newNote === null) return;
+  if (!newTitle.trim()) { showToast('항목을 적어주세요'); return; }
+  if (!newAmount || newAmount <= 0) { showToast('금액을 확인해주세요'); return; }
+  e.title = newTitle.trim();
+  e.amount = newAmount;
+  e.note = newNote.trim();
+  await persistExpenses();
+  renderExpenseCalendar();
+  renderExpenseList();
+  showToast('수정했습니다');
+}
 async function deleteExpense(id) {
   if (!confirm('이 항목을 삭제할까요?')) return;
   expenses = expenses.filter(e => e.id !== id);
@@ -5856,6 +5903,7 @@ function renderExpenseList() {
         <div style="font-size:13px;">${expenseFilterMethod === 'all' ? `<span style="font-size:10px; color:var(--muted); margin-right:4px;">${methodTag[e.method || 'cash']}</span>` : ''}${esc(e.title)}${e.note ? ` <span style="color:var(--muted); font-size:11px;">(${esc(e.note)})</span>` : ''}</div>
         <div style="display:flex; align-items:center; gap:8px;">
           <span style="font-weight:600; color:${e.type === 'income' ? '#2f6b46' : 'var(--danger)'};">${e.type === 'income' ? '+' : '-'}${e.amount.toLocaleString()}원</span>
+          <button onclick="editExpense(${e.id})" style="border:none;background:none;color:var(--primary-dark);font-size:11px;text-decoration:underline;">수정</button>
           <button onclick="deleteExpense(${e.id})" style="border:none;background:none;color:var(--muted);font-size:11px;">삭제</button>
         </div>
       </div>
@@ -5883,7 +5931,7 @@ function shiftMonthlyReport(delta) {
 }
 function unlockFixedCosts() {
   if (!fixedCostUnlocked) {
-    const pw = prompt('사장님 전용 비밀번호를 입력해주세요');
+    const pw = prompt('비밀번호를 입력해주세요');
     if (pw === null) return;
     if (pw !== FIXED_COST_PASSWORD) { showToast('비밀번호가 틀렸어요'); return; }
     fixedCostUnlocked = true;
@@ -5898,6 +5946,7 @@ function openFixedCostModal() {
       <div style="font-size:13px;">${esc(c.label)}</div>
       <div style="display:flex; align-items:center; gap:8px;">
         <span style="font-weight:600;">${c.amount.toLocaleString()}원/월</span>
+        <button onclick="editFixedCost(${i})" style="border:none;background:none;color:var(--primary-dark);font-size:11px;text-decoration:underline;">수정</button>
         <button onclick="deleteFixedCost(${i})" style="border:none;background:none;color:var(--muted);font-size:11px;">삭제</button>
       </div>
     </div>
@@ -5918,6 +5967,23 @@ async function addFixedCost() {
   const items = settings.fixedCosts || [];
   items.push({ label, amount });
   settings = { ...settings, fixedCosts: items };
+  await persistSettings();
+  openFixedCostModal();
+}
+async function editFixedCost(idx) {
+  const items = settings.fixedCosts || [];
+  const cur = items[idx];
+  if (!cur) return;
+  const newLabel = prompt('항목 이름', cur.label);
+  if (newLabel === null) return;
+  const newAmountRaw = prompt('월 금액(원)', cur.amount);
+  if (newAmountRaw === null) return;
+  const newAmount = parseFloat(newAmountRaw);
+  if (!newLabel.trim()) { showToast('항목을 적어주세요'); return; }
+  if (!newAmount || newAmount <= 0) { showToast('금액을 확인해주세요'); return; }
+  const updated = items.slice();
+  updated[idx] = { label: newLabel.trim(), amount: newAmount };
+  settings = { ...settings, fixedCosts: updated };
   await persistSettings();
   openFixedCostModal();
 }
@@ -6060,7 +6126,7 @@ function buildMonthlyReportHTML(monthKey, prevMonthKey, year, monthNum) {
       </table>
       ${fixedCostUnlocked ? `
         <div style="border-top:1px dashed var(--border); margin:10px 0;"></div>
-        <div style="font-weight:600; font-size:13px; margin-bottom:6px; color:#a15c1e;">🔒 고정비 (사장님 전용)</div>
+        <div style="font-weight:600; font-size:13px; margin-bottom:6px; color:#a15c1e;">🔒 고정비</div>
         <table style="width:100%; font-size:13px; border-collapse:collapse;">
           ${fixedCostItems.map(c => `<tr><td style="padding:3px 0;">${esc(c.label)}</td><td style="text-align:right; color:var(--danger);">-${c.amount.toLocaleString()}원</td></tr>`).join('')}
           <tr><td style="padding:6px 0; font-weight:700;">진짜 순이익 (고정비 반영)</td><td style="text-align:right; font-weight:700; color:${trueNetProfit >= 0 ? '#1a7a4a' : 'var(--danger)'};">${Math.round(trueNetProfit).toLocaleString()}원</td></tr>
@@ -6271,6 +6337,25 @@ function renderUnpaidSummaryList() {
     .filter(r => r.unpaid > 0)
     .sort((a, b) => b.unpaid - a.unpaid);
 
+  // 미수금이 있는데 최근(60일 넘게) 거래 자체가 없는 거래처를 따로 찾아서 알림으로 보여줌
+  const INACTIVE_DAYS = 60;
+  const lastActivityByCustomer = new Map();
+  for (const e of shipmentLog) {
+    if (!e.customer || e.saleAmount == null || e.isSample || e.item === '이월 미수금') continue;
+    const k = String(e.customer).trim();
+    const cur = lastActivityByCustomer.get(k);
+    if (!cur || String(e.date) > cur) lastActivityByCustomer.set(k, e.date);
+  }
+  const dismissedInactive = new Set(settings.dismissedInactiveCustomer || []);
+  const todayD = parseKDate(todayStr());
+  const inactiveRows = rows.filter(r => {
+    if (dismissedInactive.has(r.customer)) return false;
+    const last = lastActivityByCustomer.get(r.customer);
+    if (!last) return false;
+    const days = Math.round((todayD - parseKDate(last)) / 86400000);
+    return days >= INACTIVE_DAYS;
+  }).map(r => ({ ...r, lastDate: lastActivityByCustomer.get(r.customer), days: Math.round((todayD - parseKDate(lastActivityByCustomer.get(r.customer))) / 86400000) }));
+
   const searchTerm2 = searchTerm.trim().toLowerCase();
   if (searchTerm2) rows = rows.filter(r => r.customer.toLowerCase().includes(searchTerm2));
 
@@ -6285,16 +6370,28 @@ function renderUnpaidSummaryList() {
       ${depositMemos.length === 0 ? '<div style="font-size:12px;color:var(--muted);">아직 메모가 없어요</div>' : depositMemos.slice().reverse().map(m => `
         <div style="display:flex; justify-content:space-between; align-items:center; padding:4px 0; font-size:12px;">
           <div><b style="cursor:pointer; " onclick="showCustomerLedger('${escAttr(m.customer)}')">${esc(m.customer)}</b> · ${esc(m.date)} · ${esc(m.text)}</div>
-          <button onclick="deleteDepositMemo(${m.id})" style="border:none;background:none;color:var(--muted);font-size:11px;">삭제</button>
+          <button onclick="editDepositMemo(${m.id})" style="border:none;background:none;color:var(--primary-dark);font-size:11px;text-decoration:underline;margin-right:6px;">수정</button><button onclick="deleteDepositMemo(${m.id})" style="border:none;background:none;color:var(--muted);font-size:11px;">삭제</button>
         </div>
       `).join('')}
     </div>
   `;
+  const inactiveBanner = inactiveRows.length === 0 ? '' : `
+    <div style="background:#fdf0e0; border:1px solid #e8c98a; border-radius:10px; padding:10px 12px; margin-bottom:10px;">
+      <div style="font-weight:700; font-size:13px; color:#a15c1e; margin-bottom:6px;">🕐 미수금 있는데 최근 거래가 뜸한 거래처 (${inactiveRows.length}건)</div>
+      ${inactiveRows.map(r => `
+        <div style="display:flex; justify-content:space-between; align-items:center; padding:5px 0; font-size:12px;">
+          <div style="cursor:pointer;" onclick="showCustomerLedger('${escAttr(r.customer)}')">${esc(r.customer)} <span style="color:var(--muted);">· 마지막 거래 ${esc(r.lastDate)} (${r.days}일 전)</span></div>
+          <button onclick="event.stopPropagation(); dismissInactiveCustomer('${escAttr(r.customer)}')" style="border:none;background:#fff;color:var(--muted);border-radius:6px;padding:3px 8px;font-size:11px;">무시</button>
+        </div>
+      `).join('')}
+    </div>
+  `;
+
   if (rows.length === 0) {
     listEl.innerHTML = memoSection + '<div class="empty">해당하는 거래처가 없습니다</div>';
   } else {
     const total = rows.reduce((s, r) => s + r.unpaid, 0);
-    listEl.innerHTML = memoSection + `
+    listEl.innerHTML = memoSection + inactiveBanner + `
       <div style="padding:8px 4px; font-weight:700; font-size:14px; border-bottom:1px solid var(--border); margin-bottom:4px;">총 미수금 ${total.toLocaleString()}원 (${rows.length}개 거래처)</div>
       ${rows.map(r => `
         <div style="display:flex; justify-content:space-between; align-items:center; padding:12px 6px; border-bottom:1px dashed var(--border);">
@@ -6348,6 +6445,18 @@ async function addDepositMemo(customer) {
   render();
   if (salesSpecialView === 'unpaidSummary') renderUnpaidSummaryList();
   showToast('메모를 남겼습니다');
+}
+async function editDepositMemo(id) {
+  const m = depositMemos.find(x => x.id === id);
+  if (!m) return;
+  const raw = prompt('메모 내용을 고쳐주세요', m.text);
+  if (raw === null || !raw.trim()) return;
+  m.text = raw.trim();
+  await persistDepositMemos();
+  render();
+  if (salesSpecialView === 'unpaidSummary') renderUnpaidSummaryList();
+  if (salesSpecialView === 'customerLedger') renderCustomerLedgerTable();
+  showToast('메모를 수정했습니다');
 }
 async function deleteDepositMemo(id) {
   if (!confirm('이 메모를 삭제할까요?')) return;
