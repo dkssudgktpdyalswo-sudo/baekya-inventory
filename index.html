@@ -129,6 +129,7 @@
   .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.4); display: none; align-items: flex-end; justify-content: center; z-index: 30; }
   .modal-overlay.open { display: flex; }
   #orderReceiveModal.open { z-index: 40; }
+  #similarCustomerModal.open { z-index: 50; } /* 다른 화면(매출수정 등) 위에 열려있어도, 이 확인창이 가려지지 않고 항상 최상단에 뜨게 함 */
   .modal { background: white; width: 100%; max-width: 420px; border-radius: 16px 16px 0 0; padding: 20px; max-height: 85vh; overflow-y: auto; min-height: 0; }
   .modal h3 { margin: 0 0 14px; font-size: 16px; }
   .modal label { font-size: 12px; color: var(--muted); display: block; margin: 10px 0 4px; }
@@ -892,7 +893,7 @@
 const PASSWORD = "3059";
 const ADMIN_PASSWORD = "9503"; // 매출/미수금 탭 전용 - 필요하면 이 값만 바꿔서 변경 가능
 const DATA_VERSION = "2026-08-03-v4"; // 재고/이월장부 씨앗 데이터를 바꿀 때마다 이 값을 새로 바꿔주세요
-const APP_CODE_VERSION = "2026-09-08-h"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
+const APP_CODE_VERSION = "2026-09-08-j"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
 const SCHEMA_STAMP = 2; // 서버 저장규칙이 확인하는 "최신 앱 도장" - 절대 자주 바꾸지 않음(이 값을 아는 코드만 저장 가능하게 서버에서 막을 때 씀)
 
 const firebaseConfig = {
@@ -4467,7 +4468,7 @@ function buildStatementHTML(customerName, startDate, endDate, entryIdFilter, inc
           }
           return `<table style="font-size:${sizes.totalsFont}; margin-top:${sizes.totalsGap}; width:100%; border-collapse:collapse;">
             ${rowsOut}
-            <tr><td style="color:#1a5f8a;font-weight:800;padding:2px 4px;border:1.5px solid #1a5f8a;">총 미수금액(전체)</td><td colspan="3" style="text-align:right;font-weight:800;padding:2px 4px;border:1.5px solid #1a5f8a;">${balance.toLocaleString()}원</td></tr>
+            <tr><td style="color:#1a5f8a;font-weight:800;padding:3px 4px;border:1px solid #ccc;border-top:2px solid #1a5f8a;">총 미수금액(전체)</td><td colspan="3" style="text-align:right;font-weight:800;padding:3px 4px;border:1px solid #ccc;border-top:2px solid #1a5f8a;">${balance.toLocaleString()}원</td></tr>
           </table>`;
         })()}
         ${b.bankInfo ? `<div style="margin-top:${sizes.bankGap}; font-size:${sizes.bankSize}; color:#333;">입금계좌: ${esc(b.bankInfo)}</div>` : ''}
