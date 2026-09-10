@@ -334,6 +334,24 @@
   </div>
 </div>
 
+<div class="modal-overlay" id="quickCostModal">
+  <div class="modal">
+    <h3>원가 입력</h3>
+    <p id="quick-cost-desc" style="font-size:13px;color:var(--muted);margin-top:-6px;"></p>
+    <div class="row2">
+      <div><label style="display:flex;align-items:center;gap:6px;font-size:14px;color:var(--text);"><input type="radio" name="qc-type" value="import" checked style="width:auto;" onchange="onQuickCostTypeChange()"> 중국산(위안화)</label></div>
+      <div><label style="display:flex;align-items:center;gap:6px;font-size:14px;color:var(--text);"><input type="radio" name="qc-type" value="domestic" style="width:auto;" onchange="onQuickCostTypeChange()"> 국내산(직접입력)</label></div>
+    </div>
+    <label id="qc-price-label">중국단가 (위안/미터)</label>
+    <input id="qc-price" type="number" step="0.1" placeholder="예: 12.5">
+    <p id="qc-price-hint" style="font-size:12px;color:var(--muted);">최종원가 = 중국단가 × 환율 × 야드환산 + 운임비 (자동 계산됩니다)</p>
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="closeQuickCostModal(null)">취소</button>
+      <button class="btn-save" onclick="confirmQuickCostModal()">확인</button>
+    </div>
+  </div>
+</div>
+
 <!-- 스왓치/중국품번 수정 모달 -->
 <div class="modal-overlay" id="swatchEditModal">
   <div class="modal">
@@ -845,7 +863,10 @@
     <input id="roll-edit-qty" type="number" step="0.1">
     <p style="font-size:12px;color:var(--muted);margin-top:-6px;">0으로 저장하면 "재고 없음"으로 처리돼요.</p>
     <label>이 탕만의 원가(원/y, 선택 - 컷팅 원단처럼 이 탕만 다를 때)</label>
-    <input id="roll-edit-cost" type="number" step="1" placeholder="비워두면 원가표 기본값 사용">
+    <div style="display:flex; gap:6px; align-items:center;">
+      <input id="roll-edit-cost" type="number" step="1" placeholder="비워두면 원가표 기본값 사용" style="flex:1;">
+      <button type="button" onclick="calcCnyForInputId('roll-edit-cost')" style="border:none;background:#eee;color:#555;border-radius:8px;padding:8px 10px;font-size:12px;flex:none;">위안화로 계산</button>
+    </div>
     <div class="modal-actions">
       <button class="btn-cancel" onclick="closeRollEditModal()">취소</button>
       <button class="btn-save" onclick="saveRollEdit()">저장</button>
@@ -918,7 +939,7 @@
 const PASSWORD = "3059";
 const ADMIN_PASSWORD = "9503"; // 매출/미수금 탭 전용 - 필요하면 이 값만 바꿔서 변경 가능
 const DATA_VERSION = "2026-08-03-v4"; // 재고/이월장부 씨앗 데이터를 바꿀 때마다 이 값을 새로 바꿔주세요
-const APP_CODE_VERSION = "2026-09-08-z"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
+const APP_CODE_VERSION = "2026-09-09-d"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
 const SCHEMA_STAMP = 2; // 서버 저장규칙이 확인하는 "최신 앱 도장" - 절대 자주 바꾸지 않음(이 값을 아는 코드만 저장 가능하게 서버에서 막을 때 씀)
 
 const firebaseConfig = {
@@ -2279,6 +2300,25 @@ function updateBlockStockInfo(colorInputEl) {
   infoEl.classList.remove('hidden');
 }
 function closeAddModal() { document.getElementById('addModal').classList.remove('open'); }
+function calcCnyForInputId(inputId) {
+  const cnyRaw = prompt('중국단가 (위안/미터)를 입력해주세요');
+  if (cnyRaw === null) return;
+  const cny = parseFloat(cnyRaw);
+  if (!cny || cny <= 0) { showToast('단가를 확인해주세요'); return; }
+  const costPerY = Math.round(cny * settings.rate * settings.yard + settings.ship);
+  document.getElementById(inputId).value = costPerY;
+  showToast(`${costPerY.toLocaleString()}원/y으로 계산해서 채웠어요 (환율 ${settings.rate}원 · 야드환산 ${settings.yard} · 운임 ${settings.ship}원)`);
+}
+function calcCnyForRollCost(btn) {
+  const cnyRaw = prompt('중국단가 (위안/미터)를 입력해주세요');
+  if (cnyRaw === null) return;
+  const cny = parseFloat(cnyRaw);
+  if (!cny || cny <= 0) { showToast('단가를 확인해주세요'); return; }
+  const costPerY = Math.round(cny * settings.rate * settings.yard + settings.ship);
+  const input = btn.closest('div').querySelector('.f-roll-cost');
+  input.value = costPerY;
+  showToast(`${costPerY.toLocaleString()}원/y으로 계산해서 채웠어요 (환율 ${settings.rate}원 · 야드환산 ${settings.yard} · 운임 ${settings.ship}원)`);
+}
 function addRollRowToBlock(elInBlock) {
   const listEl = elInBlock.classList && elInBlock.classList.contains('f-block-rolls') ? elInBlock : elInBlock.closest('.f-color-block').querySelector('.f-block-rolls');
   const existingRows = listEl.querySelectorAll('.f-roll-tang');
@@ -2296,7 +2336,10 @@ function addRollRowToBlock(elInBlock) {
       <input type="number" step="0.1" placeholder="마수(y)" class="f-roll-qty" style="flex:1;">
       <button onclick="this.closest('.f-roll-row').remove()" style="border:none;background:#fdecea;color:var(--danger);border-radius:8px;padding:0 10px;font-size:12px;flex:none;height:38px;">삭제</button>
     </div>
-    <input type="number" step="1" placeholder="이 탕만 원가가 다르면 원가(원/y) 입력 (선택 - 컷팅 원단 등)" class="f-roll-cost" style="width:100%; margin-top:6px; padding:8px; border:1px solid var(--border); border-radius:8px; font-size:13px;">
+    <div style="display:flex; gap:6px; align-items:center; margin-top:6px;">
+      <input type="number" step="1" placeholder="이 탕만 원가가 다르면 원가(원/y) 입력 (선택 - 컷팅 원단 등)" class="f-roll-cost" style="flex:1; padding:8px; border:1px solid var(--border); border-radius:8px; font-size:13px;">
+      <button type="button" onclick="calcCnyForRollCost(this)" style="border:none;background:#eee;color:#555;border-radius:8px;padding:8px 10px;font-size:12px;flex:none;">위안화로 계산</button>
+    </div>
     <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:var(--text);margin:6px 0 0;">
       <input type="checkbox" class="f-roll-defective" style="width:auto;" onchange="this.closest('.f-roll-row').querySelector('.f-roll-reason-wrap').classList.toggle('hidden', !this.checked)"> 이 롤은 불량이에요
     </label>
@@ -5247,6 +5290,40 @@ async function editDiscountEntry(id) {
   render();
   if (salesSpecialView === 'customerLedger') renderCustomerLedgerTable();
   showToast(e.discount === 0 ? '공제를 삭제했습니다' : `공제를 ${e.discount.toLocaleString()}원으로 수정했습니다`);
+}
+let _quickCostResolve = null;
+function openQuickCostModal(descText) {
+  document.getElementById('quick-cost-desc').textContent = descText || '';
+  document.querySelector('input[name="qc-type"][value="import"]').checked = true;
+  document.getElementById('qc-price').value = '';
+  onQuickCostTypeChange();
+  document.getElementById('quickCostModal').classList.add('open');
+  return new Promise(resolve => { _quickCostResolve = resolve; });
+}
+function onQuickCostTypeChange() {
+  const type = document.querySelector('input[name="qc-type"]:checked').value;
+  const label = document.getElementById('qc-price-label');
+  const hint = document.getElementById('qc-price-hint');
+  if (type === 'domestic') {
+    label.textContent = '원가 (원/y)';
+    hint.textContent = '환율 계산 없이, 여기 적은 금액을 그대로 원가로 씁니다.';
+    document.getElementById('qc-price').placeholder = '예: 3700';
+  } else {
+    label.textContent = '중국단가 (위안/미터)';
+    hint.textContent = '최종원가 = 중국단가 × 환율 × 야드환산 + 운임비 (자동 계산됩니다)';
+    document.getElementById('qc-price').placeholder = '예: 12.5';
+  }
+}
+function closeQuickCostModal(result) {
+  document.getElementById('quickCostModal').classList.remove('open');
+  if (_quickCostResolve) { _quickCostResolve(result); _quickCostResolve = null; }
+}
+function confirmQuickCostModal() {
+  const type = document.querySelector('input[name="qc-type"]:checked').value;
+  const price = parseFloat(document.getElementById('qc-price').value);
+  if (!price || price <= 0) { showToast('단가를 확인해주세요'); return; }
+  const costPerY = type === 'domestic' ? Math.round(price) : Math.round(price * settings.rate * settings.yard + settings.ship);
+  closeQuickCostModal(costPerY);
 }
 let _returnDefectEditId = null;
 function openReturnDefectEditModal(id) {
@@ -8208,12 +8285,21 @@ async function confirmOrderReceiveInner(o) {
   const shipNote = document.getElementById('or-note').value.trim();
   const resolvedColorForLog = resolveInventoryColor(o.item, o.color);
   if (saleAmount == null) { saleAmount = 0; supplyAmount = supplyAmount || 0; } // 단가를 실수로 안 넣고 출고해도, 매출 목록에서 아예 안 보이지 않고 0원으로라도 남게 함 (샘플만 isSample로 따로 안 보이게 처리됨)
+
+  // 일반 매출인데 원가표에 원가가 등록 안 돼있으면, 나중에 순이익/마진 계산이 가능하도록 지금 원가를 받아둠 (샘플용 원가는 아래에서 별도로 처리함)
+  let manualCostPerYForEntry = null;
+  if (!isSampleMode && yardsShipped > 0 && getCostPerYard(o.item, resolvedColorForLog) == null) {
+    const calculated = await openQuickCostModal(`"${o.item} ${resolvedColorForLog}"은 원가표에 등록 안 돼있어요.\n순이익 계산에 쓸 원가를 입력해주세요.\n("취소"하면 원가 없이 진행돼요)`);
+    if (calculated != null) manualCostPerYForEntry = calculated;
+  }
+
   const newEntry = {
     id: genUniqueId(), date: todayStr(), orderId: o.id,
     customer: o.customer, factory: o.factory, item: o.item, color: resolvedColorForLog,
     amount: raw, unit: o.unit || 'y', yardsShipped, remainAfter: remain, isFullCompletion: remain <= 0,
     unitPrice, supplyAmount, taxAmount, saleAmount, paidAmount: 0, yardsEstimated, taxIncluded: !!(supplyAmount && taxIncluded), isFlatTotal: priceMode === 'total',
     note: shipNote, invDeductedAmount: inv.deducted, deductBreakdown: inv.breakdown || null, isSample: isSampleMode || undefined,
+    manualCostPerY: manualCostPerYForEntry,
     rateSnapshot: { rate: settings.rate, yard: settings.yard, ship: settings.ship } // 나중에 환율 바뀌어도 이 매출의 원가는 이때 환율 그대로 고정되게
   };
   shipmentLog.push(newEntry);
@@ -8224,11 +8310,8 @@ async function confirmOrderReceiveInner(o) {
   if (isSampleMode) {
     let costPerY = getCostPerYard(o.item, resolvedColorForLog);
     if (costPerY == null && yardsShipped > 0) {
-      const manualRaw = prompt(`"${o.item} ${resolvedColorForLog}"은 원가가 등록 안 돼있어요.\n지출로 기록할 원가(원/y)를 입력해주세요 (취소하면 지출로 안 잡혀요)`);
-      if (manualRaw !== null) {
-        const manualCost = parseFloat(manualRaw);
-        if (manualCost > 0) costPerY = manualCost;
-      }
+      const calculated = await openQuickCostModal(`"${o.item} ${resolvedColorForLog}"은 원가표에 등록 안 돼있어요.\n지출로 기록할 원가를 입력해주세요.`);
+      if (calculated != null) costPerY = calculated;
     }
     if (costPerY != null && yardsShipped > 0) {
       const sampleCost = Math.round(costPerY * yardsShipped);
