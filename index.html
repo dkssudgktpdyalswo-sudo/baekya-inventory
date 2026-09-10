@@ -394,7 +394,6 @@
         <label>이미 처리(출고)된 양 — 이게 잘못됐으면 여기서 고치세요</label>
         <input id="o-received" type="number" step="0.1" placeholder="예: 20" oninput="updateOrderEditRemainHint('received')">
       </div>
-      </div>
       <button onclick="openReturnFromOrderForm()" style="border:none;background:#fce8d6;color:#a15c1e;border-radius:8px;padding:9px 12px;font-size:13px;font-weight:600;margin-top:10px;width:100%;">추가금 등록</button>
       <label>비고</label>
       <input id="o-note" placeholder="선택사항">
@@ -854,6 +853,27 @@
   </div>
 </div>
 
+<div class="modal-overlay" id="returnDefectEditModal">
+  <div class="modal">
+    <h3 id="return-defect-edit-title">반품 수정</h3>
+    <p id="return-defect-edit-desc" style="font-size:13px;color:var(--muted);margin-top:-6px;"></p>
+    <label>품번</label>
+    <input id="rde-item" placeholder="예: 350" autocomplete="off" oninput="showItemSuggestions(this)" onfocus="showItemSuggestions(this)" onblur="hideItemSuggestionsDelayed()">
+    <label>컬러</label>
+    <input id="rde-color" placeholder="예: 검정" autocomplete="off" oninput="showColorSuggestions(this, 'rde-item')" onfocus="showColorSuggestions(this, 'rde-item')" onblur="hideItemSuggestionsDelayed()">
+    <label>수량(y)</label>
+    <input id="rde-yards" type="number" step="0.1">
+    <label>단가(원/y)</label>
+    <input id="rde-price" type="number" step="1">
+    <label>사유/메모</label>
+    <input id="rde-note" placeholder="예: 색상 불일치">
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="closeReturnDefectEditModal()">취소</button>
+      <button class="btn-save" onclick="confirmReturnDefectEdit()">저장</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-overlay" id="logEditModal">
   <div class="modal">
     <h3>출고 내역 수정</h3>
@@ -898,7 +918,7 @@
 const PASSWORD = "3059";
 const ADMIN_PASSWORD = "9503"; // 매출/미수금 탭 전용 - 필요하면 이 값만 바꿔서 변경 가능
 const DATA_VERSION = "2026-08-03-v4"; // 재고/이월장부 씨앗 데이터를 바꿀 때마다 이 값을 새로 바꿔주세요
-const APP_CODE_VERSION = "2026-09-08-p"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
+const APP_CODE_VERSION = "2026-09-08-z"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
 const SCHEMA_STAMP = 2; // 서버 저장규칙이 확인하는 "최신 앱 도장" - 절대 자주 바꾸지 않음(이 값을 아는 코드만 저장 가능하게 서버에서 막을 때 씀)
 
 const firebaseConfig = {
@@ -2380,12 +2400,14 @@ async function confirmOut() {
   if (!amt || amt <= 0) { showToast('출고 마수를 입력해주세요'); return; }
   const r = rolls.find(x => x.id === pendingOut);
   if (!r) return;
+  const item = r.item, color = r.color;
   if (amt >= r.qty) {
     r.qty = 0;
     cleanupDepletedRolls(r.item, r.color, [r.id]);
     showToast('전체 출고 처리됐어요');
   }
   else { r.qty = Math.round((r.qty - amt) * 100) / 100; showToast(`${amt}y 출고, 남은 마수 ${r.qty}y`); }
+  compactTangsForItemColor(item, color);
   await persistRolls(); closeOutModal(); render();
 }
 let _rollEditId = null;
@@ -3546,7 +3568,7 @@ function populateSaleEditBreakdown(entry) {
   const wrap = document.getElementById('sale-edit-breakdown-wrap');
   const listEl = document.getElementById('sale-edit-breakdown-list');
   document.getElementById('sale-edit-new-tang-list').innerHTML = '';
-  const canBreakdown = !(entry.isReturn || entry.isDefect || entry.isFee || entry.manualClose) && hasKnownItem(entry.item);
+  const canBreakdown = !(entry.isReturn || entry.isDefect || entry.isFee || entry.manualClose) && (hasKnownItem(entry.item) || (entry.deductBreakdown && entry.deductBreakdown.length > 0));
   if (!canBreakdown) {
     wrap.classList.add('hidden');
     listEl.innerHTML = '';
@@ -3940,12 +3962,18 @@ async function confirmPaymentModal(mode) {
   const method = document.querySelector('input[name="payment-method"]:checked').value;
   const payDate = fromDateInputValue(document.getElementById('payment-date').value) || todayStr();
   if (mode === 'full') {
-    let totalRemainingNow = entries.reduce((s, e) => s + getRemaining(e), 0);
-    totalRemainingNow = Math.max(0, Math.round((totalRemainingNow - (pendingPaymentExtraDeduction || 0)) * 100) / 100);
-    document.getElementById('payment-amount').value = totalRemainingNow;
+    const currentVal = document.getElementById('payment-amount').value;
+    if (currentVal === '' || currentVal == null) {
+      // 입력칸이 비어있을 때만 자동으로 "남은 전액"을 채워줌 - 사용자가 이미 뭔가 입력했으면(0 포함) 그 값을 그대로 존중함
+      let totalRemainingNow = entries.reduce((s, e) => s + getRemaining(e), 0);
+      totalRemainingNow = Math.max(0, Math.round((totalRemainingNow - (pendingPaymentExtraDeduction || 0)) * 100) / 100);
+      document.getElementById('payment-amount').value = totalRemainingNow;
+    }
   }
   let amt = parseFloat(document.getElementById('payment-amount').value);
-  if (!amt || amt <= 0 || isNaN(amt)) { showToast('금액을 확인해주세요'); return; }
+  if (isNaN(amt) || amt < 0) { showToast('금액을 확인해주세요'); return; }
+  // "완불로 처리"에서 0원을 입력하면, 실제 입금은 없이 남은 금액 전부를 공제(할인/탕감) 처리하겠다는 뜻으로 봄
+  if (amt === 0 && mode !== 'full') { showToast('금액을 확인해주세요'); return; }
 
   if (entries.length === 1) {
     const entry = entries[0];
@@ -3953,14 +3981,18 @@ async function confirmPaymentModal(mode) {
     let shortfall = Math.round((remaining - amt) * 100) / 100;
     let discountApplied = 0;
     if (shortfall > 0 && mode !== 'partial') {
-      if (confirm(`입력하신 금액이 ${shortfall.toLocaleString()}원 부족해요.\n이 차액을 공제(불량/네고 등)로 처리하고 완불로 마감할까요?\n("취소"를 누르면 부족한 만큼 미수금으로 남아요)`)) {
+      const confirmMsg = amt === 0
+        ? `실제 입금 없이, 남은 ${shortfall.toLocaleString()}원 전부를 공제(할인/탕감)로 처리하고 완불로 마감할까요?\n(입금 통계에는 안 잡히고, 미수금만 0원으로 정리돼요)`
+        : `입력하신 금액이 ${shortfall.toLocaleString()}원 부족해요.\n이 차액을 공제(불량/네고 등)로 처리하고 완불로 마감할까요?\n("취소"를 누르면 부족한 만큼 미수금으로 남아요)`;
+      if (confirm(confirmMsg)) {
         entry.discount = Math.round(((entry.discount || 0) + shortfall) * 100) / 100;
+        entry.discountDate = payDate; // 공제를 실제로 결정한 날짜(오늘) - 매출이 있었던 예전 날짜가 아니라 이 날짜로 원장에 찍히게 함
         discountApplied = shortfall;
       }
     }
     let applyToThis = Math.min(amt, remaining);
     let overpaid = Math.round((amt - remaining) * 100) / 100; // 이 건보다 더 들어온 금액
-    addPaymentEvent(entry, applyToThis, method, payDate);
+    if (applyToThis > 0) addPaymentEvent(entry, applyToThis, method, payDate); // 0원이면 실제 입금이 없었던 거니 입금기록 자체를 안 남김
     delete entry.paidAmount; delete entry.paid;
 
     let extraMsg = '';
@@ -3989,8 +4021,8 @@ async function confirmPaymentModal(mode) {
     await persistShipmentLog();
     closePaymentModal(); render();
     const newRemaining = getRemaining(entry);
-    let msg = `${amt.toLocaleString()}원 입금 처리(${method === 'cash' ? '현금' : '온라인'})`;
-    if (discountApplied > 0) msg += `, 차액 ${discountApplied.toLocaleString()}원 공제 처리하고 완불 마감`;
+    let msg = amt === 0 ? '' : `${amt.toLocaleString()}원 입금 처리(${method === 'cash' ? '현금' : '온라인'})`;
+    if (discountApplied > 0) msg += `${msg ? ', ' : ''}${discountApplied.toLocaleString()}원 공제 처리하고 완불 마감`;
     else if (overpaid > 0 || applyToThis < amt) msg += extraMsg;
     else msg += newRemaining > 0 ? `, 미수금 ${newRemaining.toLocaleString()}원 남음` : `, 전액 완료`;
     showToast(msg);
@@ -3999,25 +4031,40 @@ async function confirmPaymentModal(mode) {
 
   const sorted = entries.slice().sort((a, b) => String(a.date).localeCompare(String(b.date)));
   const totalRemainingNow2 = entries.reduce((s, e) => s + getRemaining(e), 0);
+  const originalAmt = amt; // 루프 안에서 amt가 계속 깎여나가니, 사용자가 원래 입력한 금액을 따로 기억해둠
   let shortfall = Math.round((totalRemainingNow2 - amt) * 100) / 100;
   let discountApplied = 0;
-  if (shortfall > 0 && mode !== 'partial') {
-    if (confirm(`입력하신 금액이 ${shortfall.toLocaleString()}원 부족해요.\n이 차액을 공제(불량/네고 등)로 처리하고 전부 완불로 마감할까요?\n("취소"를 누르면 부족한 만큼 미수금으로 남아요, 오래된 것부터 채워져요)`)) {
-      // 가장 최근 건에 부족분을 몰아서 공제 처리 (전체가 완불로 마감되게)
-      const mostRecent = sorted[sorted.length - 1];
-      mostRecent.discount = Math.round(((mostRecent.discount || 0) + shortfall) * 100) / 100;
-      discountApplied = shortfall;
-      amt = Math.round((amt + shortfall) * 100) / 100; // 공제분만큼 입력금액에 얹어서, 아래 루프에서 전부 소진되게 함
-    }
-  }
+
+  // 1) 먼저 실제 입금액(amt)을 오래된 건부터 정확히 분배함
   for (const e of sorted) {
     if (amt <= 0) break;
     const remain = getRemaining(e);
     if (remain <= 0) continue;
     const take = Math.min(remain, amt);
-    addPaymentEvent(e, take, method, payDate);
+    if (take > 0) addPaymentEvent(e, take, method, payDate);
     delete e.paidAmount; delete e.paid;
     amt = Math.round((amt - take) * 100) / 100;
+  }
+
+  // 2) 그러고도 부족하면, 남은 부족분을 각 건에 "실제 남은 만큼씩" 정확히 나눠서 공제 처리함
+  // (한 건에만 몰아서 처리하면 그 건의 원래 매출액보다 공제액이 더 커지는 이상한 데이터가 생기고, 다른 건은 전혀 안 줄어드는 문제가 있었음)
+  if (shortfall > 0 && mode !== 'partial') {
+    const confirmMsg = originalAmt === 0
+      ? `실제 입금 없이, 남은 ${shortfall.toLocaleString()}원 전부를 공제(할인/탕감)로 처리하고 전부 완불로 마감할까요?\n(입금 통계에는 안 잡히고, 미수금만 0원으로 정리돼요)`
+      : `입력하신 금액이 ${shortfall.toLocaleString()}원 부족해요.\n이 차액을 공제(불량/네고 등)로 처리하고 전부 완불로 마감할까요?\n("취소"를 누르면 부족한 만큼 미수금으로 남아요, 오래된 것부터 채워져요)`;
+    if (confirm(confirmMsg)) {
+      let remainToDiscount = shortfall;
+      for (const e of sorted) {
+        if (remainToDiscount <= 0) break;
+        const remain = getRemaining(e);
+        if (remain <= 0) continue;
+        const take = Math.min(remain, remainToDiscount);
+        e.discount = Math.round(((e.discount || 0) + take) * 100) / 100;
+        e.discountDate = payDate; // 공제를 실제로 결정한 날짜(오늘) - 매출이 있었던 예전 날짜가 아니라 이 날짜로 원장에 찍히게 함
+        remainToDiscount = Math.round((remainToDiscount - take) * 100) / 100;
+      }
+      discountApplied = Math.round((shortfall - remainToDiscount) * 100) / 100;
+    }
   }
   let extraMsg2 = '';
   if (amt > 0) {
@@ -4047,7 +4094,12 @@ async function confirmPaymentModal(mode) {
   }
   await persistShipmentLog();
   closePaymentModal(); render();
-  let msg = discountApplied > 0 ? `입금 처리했습니다 (차액 ${discountApplied.toLocaleString()}원 공제 처리하고 전부 완불 마감)` : `입금 처리했습니다${extraMsg2}`;
+  let msg;
+  if (discountApplied > 0) {
+    msg = amt > 0 ? `입금 처리했습니다 (차액 ${discountApplied.toLocaleString()}원 공제 처리하고 전부 완불 마감)` : `실제 입금 없이 ${discountApplied.toLocaleString()}원 전부 공제 처리하고 완불 마감했습니다`;
+  } else {
+    msg = `입금 처리했습니다${extraMsg2}`;
+  }
   showToast(msg);
 }
 
@@ -4075,6 +4127,7 @@ async function resetGroupPayment(entryIds) {
   for (const e of entries) {
     e.payments = [];
     e.discount = 0;
+    delete e.discountDate; delete e.discountReason;
     delete e.paidAmount; delete e.paid;
   }
   await persistShipmentLog();
@@ -4088,6 +4141,7 @@ async function resetPayment(logId) {
   if (!confirm('입금(및 공제) 기록을 취소하고 다시 미수금 상태로 되돌릴까요?')) return;
   entry.payments = [];
   entry.discount = 0;
+  delete entry.discountDate; delete entry.discountReason;
   delete entry.paidAmount; delete entry.paid;
   await persistShipmentLog();
   render();
@@ -4356,7 +4410,7 @@ function buildStatementHTML(customerName, startDate, endDate, entryIdFilter, inc
       saleRows.push({ date: e.date, desc: `추가 - ${e.item} ${e.color || ''}`, note: e.extraReason || '', qty: '', unitPrice: '', supply: extraAmt, tax: 0, amount: extraAmt, color: 'black' });
     }
     if (e.discount > 0) {
-      saleRows.push({ date: e.date, desc: `공제 - ${e.item} ${e.color || ''}`, note: e.discountReason || '', qty: '', unitPrice: '', supply: -e.discount, tax: 0, amount: -e.discount, color: 'red' });
+      saleRows.push({ date: e.discountDate || e.date, desc: '공제', note: e.discountReason || '', qty: '', unitPrice: '', supply: -e.discount, tax: 0, amount: -e.discount, color: 'red' });
     }
     totalDiscount += (e.discount || 0);
 
@@ -5175,16 +5229,95 @@ async function deleteReturnDefectEntry(id) {
   render();
   showToast('삭제했어요');
 }
-async function quickEditReturnDefect(id) {
+async function editDiscountEntry(id) {
   const e = shipmentLog.find(x => x.id === id);
   if (!e) return;
-  const raw = prompt(`${e.item} ${e.color || ''} (${e.isDefect ? '불량' : '반품'}) 판매단가(원/y)를 수정합니다`, e.unitPrice != null ? String(e.unitPrice) : '');
+  const raw = prompt(`공제 금액을 얼마로 고칠까요? (0을 입력하면 공제를 삭제해요)`, String(e.discount || 0));
   if (raw === null) return;
-  const price = parseFloat(raw);
-  if (isNaN(price) || price <= 0) { showToast('단가를 확인해주세요'); return; }
-  e.unitPrice = price;
-  e.deductAmount = Math.round(price * Math.abs(e.amount));
+  const newDiscount = parseFloat(raw);
+  if (isNaN(newDiscount) || newDiscount < 0) { showToast('금액을 확인해주세요'); return; }
+  e.discount = Math.round(newDiscount * 100) / 100;
+  if (e.discount === 0) {
+    delete e.discountDate;
+    delete e.discountReason;
+  } else {
+    e.discountDate = todayStr(); // 지금 다시 고친 시점으로 갱신 - 예전 날짜로 소급되어 과거 잔액이 바뀌어보이는 일 없게
+  }
   await persistShipmentLog();
+  render();
+  if (salesSpecialView === 'customerLedger') renderCustomerLedgerTable();
+  showToast(e.discount === 0 ? '공제를 삭제했습니다' : `공제를 ${e.discount.toLocaleString()}원으로 수정했습니다`);
+}
+let _returnDefectEditId = null;
+function openReturnDefectEditModal(id) {
+  const e = shipmentLog.find(x => x.id === id);
+  if (!e) return;
+  _returnDefectEditId = id;
+  document.getElementById('return-defect-edit-title').textContent = e.isDefect ? '불량 수정' : '반품 수정';
+  document.getElementById('return-defect-edit-desc').textContent = `${e.customer || ''} (${e.date})`;
+  document.getElementById('rde-item').value = e.item || '';
+  document.getElementById('rde-color').value = e.color || '';
+  document.getElementById('rde-yards').value = Math.abs(e.yardsShipped || e.amount || 0);
+  document.getElementById('rde-price').value = e.unitPrice || '';
+  document.getElementById('rde-note').value = e.note || '';
+  document.getElementById('returnDefectEditModal').classList.add('open');
+}
+function closeReturnDefectEditModal() {
+  document.getElementById('returnDefectEditModal').classList.remove('open');
+  _returnDefectEditId = null;
+}
+async function confirmReturnDefectEdit() {
+  const e = shipmentLog.find(x => x.id === _returnDefectEditId);
+  if (!e) return;
+  const newItem = document.getElementById('rde-item').value.trim();
+  const newColor = document.getElementById('rde-color').value.trim();
+  const newYards = parseFloat(document.getElementById('rde-yards').value);
+  const newPrice = parseFloat(document.getElementById('rde-price').value);
+  const newNote = document.getElementById('rde-note').value.trim();
+  if (!newItem) { showToast('품번을 입력해주세요'); return; }
+  if (!newColor) { showToast('컬러를 입력해주세요'); return; }
+  if (!newYards || newYards <= 0) { showToast('수량을 확인해주세요'); return; }
+  if (!newPrice || newPrice <= 0) { showToast('단가를 확인해주세요'); return; }
+
+  if (e.isReturn) {
+    const oldItem = e.item, oldColor = e.color;
+    // 반품은 등록할 때 재고에 새 롤로 다시 채워넣었으니, 그 롤을 새 값으로 그대로 갱신함 (탕번호는 그대로 두고 품목·컬러·수량만 새 값으로)
+    if (e.returnRollId != null) {
+      const roll = rolls.find(r => r.id === e.returnRollId);
+      if (roll) {
+        roll.item = newItem;
+        roll.color = resolveInventoryColor(newItem, newColor);
+        roll.qty = Math.round(newYards * 100) / 100;
+      }
+    } else {
+      // 예전 기록이라 롤 정보가 없으면, 기존 방식대로 예전 수량만큼 재고에서 빼고 새 수량만큼 새 롤로 추가함
+      const oldQty = Math.abs(e.yardsShipped || e.amount || 0);
+      const oldResolvedColor = resolveInventoryColor(e.item, e.color);
+      deductFromInventory(e.item, oldResolvedColor, oldQty, 1);
+      const newResolvedColor = resolveInventoryColor(newItem, newColor);
+      const existingCat = (rolls.find(r => String(r.item).trim() === newItem) || {}).cat || '';
+      const chosenTang = (rolls.filter(r => String(r.item).trim() === newItem && String(r.color).trim() === newResolvedColor).reduce((max, r) => Math.max(max, r.tang), 0)) + 1;
+      const newRoll = { id: nextId++, cat: existingCat, item: newItem, color: newResolvedColor, tang: chosenTang, qty: Math.round(newYards * 100) / 100 };
+      rolls.push(newRoll);
+      e.returnRollId = newRoll.id;
+    }
+    // 품목·컬러가 바뀌었으면, 원래 있던 쪽과 새로 옮겨간 쪽 둘 다 탕번호를 다시 정리해줘야 함
+    compactTangsForItemColor(newItem, resolveInventoryColor(newItem, newColor));
+    if (String(oldItem).trim() !== newItem || String(oldColor).trim() !== newColor) {
+      compactTangsForItemColor(oldItem, oldColor);
+    }
+    await persistRolls();
+  }
+
+  e.item = newItem;
+  e.color = newColor;
+  e.amount = -newYards;
+  e.yardsShipped = -newYards;
+  e.unitPrice = newPrice;
+  e.deductAmount = Math.round(newPrice * newYards);
+  e.note = newNote;
+  await persistShipmentLog();
+  closeReturnDefectEditModal();
   render();
   if (salesSpecialView === 'customerLedger') renderCustomerLedgerTable();
   showToast('수정했습니다');
@@ -5251,7 +5384,7 @@ function printLedgerPeriod() {
     const running = ev._runningSnapshot;
     const dateHeader = (ev.date !== lastDate) ? `<tr style="background:#f3f1ea;"><td colspan="6" style="padding:4px 6px; font-weight:700; font-size:12px;">${esc(ev.date)}</td></tr>` : '';
     lastDate = ev.date;
-    const color = ev.type === '입금' ? 'color:#1a56db;' : (ev.type === '불량' || ev.type === '반품') ? 'color:#c0392b;' : '';
+    const color = ev.type === '입금' ? 'color:#1a56db;' : (ev.type === '불량' || ev.type === '반품' || ev.type === '공제') ? 'color:#c0392b;' : '';
     return `${dateHeader}<tr style="${color}">
       <td>${esc(ev.date)}</td>
       <td>${esc(ev.type)}</td>
@@ -5293,13 +5426,17 @@ function buildCustomerLedgerEvents(t_c) {
       continue;
     }
     if (e.saleAmount != null) {
-      const net = Math.round((e.saleAmount - (e.discount || 0)) * 100) / 100;
       const isCarry = e.item === '이월 미수금';
       const isJeolUnit = (e.unit || 'y') === '절';
       const breakdownText = (e.deductBreakdown && e.deductBreakdown.length > 1) ? ` (${e.deductBreakdown.map(b => `${b.qty}y`).join(', ')})` : '';
       const qtyLabel = isJeolUnit ? `${e.amount}절 (${e.yardsShipped}y)` : `${e.yardsShipped || e.amount}${e.unit || 'y'}`;
       const detail = (isCarry || e.isFee) ? '' : `${qtyLabel}${breakdownText}${e.unitPrice ? ` × ${e.unitPrice.toLocaleString()}원/y` : ' (단가 미입력)'}`;
-      events.push({ id: e.id, date: e.date, type: '매출', desc: isCarry ? '이월 미수금' : (e.isFee ? `추가금${e.note ? ` - ${e.note}` : ''}` : `${e.item} ${e.color || ''}`), detail, amount: net, isCarry, note: isCarry || e.isFee ? '' : (e.note || '') });
+      // 원래 매출액은 절대 줄이지 않고 그대로 한 줄로 보여주고, 공제가 있으면 "공제" 라는 별도의 마이너스 줄을 따로 추가함
+      // (예전엔 매출액에서 공제를 미리 뺀 값 하나만 보여줘서, 마치 원래 매출액 자체가 줄어든 것처럼 헷갈리게 보였음)
+      events.push({ id: e.id, date: e.date, type: '매출', desc: isCarry ? '이월 미수금' : (e.isFee ? `추가금${e.note ? ` - ${e.note}` : ''}` : `${e.item} ${e.color || ''}`), detail, amount: e.saleAmount, isCarry, note: isCarry || e.isFee ? '' : (e.note || '') });
+      if (e.discount > 0) {
+        events.push({ id: e.id, date: e.discountDate || e.date, type: '공제', desc: '공제처리', detail: '', amount: -e.discount, note: e.discountReason || '' });
+      }
     }
     (e.payments || []).forEach((p, idx) => {
       events.push({ id: null, entryId: e.id, paymentIdx: idx, date: p.date, type: '입금', desc: (p.method || 'cash') === 'cash' ? '입금(현금)' : '입금(온라인)', detail: '', amount: -p.amount, method: p.method || 'cash' });
@@ -5463,12 +5600,13 @@ function renderCustomerLedgerTable() {
 
   const rowsHtml = rowsInRange.map(ev => {
     const running = ev._balance; // 화면에 보여줄 줄만 골랐을 뿐, 잔액 자체는 전체 흐름 기준 그대로 씀
-    const color = ev.type === '매출' ? '#c0392b' : (ev.type === '입금' ? '#1a56db' : '#a15c1e');
+    const color = (ev.type === '매출' || ev.type === '공제') ? '#c0392b' : (ev.type === '입금' ? '#1a56db' : '#a15c1e');
     const clickable = ev.id != null || (ev.refs && ev.refs.length > 0);
     let clickHandler = '';
-    if (ev.type === '매출') clickHandler = `openSaleEditModal(${ev.id})`;
+    if (ev.type === '매출') clickHandler = ev.isCarry ? `editCarryoverBalance('${escAttr(customer)}', ${ev.id})` : `openSaleEditModal(${ev.id})`;
     else if (ev.type === '입금') clickHandler = `editMergedPaymentGroup('${escJsonAttr(ev.refs)}')`;
-    else clickHandler = `quickEditReturnDefect(${ev.id})`;
+    else if (ev.type === '공제') clickHandler = `editDiscountEntry(${ev.id})`;
+    else clickHandler = `openReturnDefectEditModal(${ev.id})`;
     const clickAttr = clickable ? `onclick="${clickHandler}" style="cursor:pointer;"` : '';
     const printable = ev.id != null || (ev.type === '입금' && ev.refs && ev.refs.length > 0); // 매출/반품/불량/입금 모두 체크로 인쇄 포함 여부 선택
     const checkboxHtml = ev.id != null
@@ -6938,7 +7076,7 @@ function renderSales() {
             </div>
             <div class="order-progress" style="color:var(--danger);font-weight:700;">${e.deductAmount != null ? `-${e.deductAmount.toLocaleString()}원` : '금액 미확인'}</div>
             <div class="order-btns">
-              <button onclick="quickEditReturnDefect(${e.id})" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:6px;padding:4px 8px;font-size:11px;">수정</button>
+              <button onclick="openReturnDefectEditModal(${e.id})" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:6px;padding:4px 8px;font-size:11px;">수정</button>
               <button onclick="deleteReturnDefectEntry(${e.id})" style="border:none;background:#f1eee7;color:var(--muted);border-radius:6px;padding:4px 8px;font-size:11px;">삭제</button>
             </div>
           `;
@@ -6985,7 +7123,7 @@ function renderSales() {
           <div class="order-btns">
             ${remaining > 0 ? `<button onclick="recordPayment(${e.id})" style="border:none;background:#eaf3ec;color:#2f6b46;border-radius:6px;padding:4px 8px;font-size:11px;">입금 처리</button>` : ''}
             ${paidAmt > 0 ? `<button onclick="resetPayment(${e.id})" style="border:none;background:#f1eee7;color:var(--muted);border-radius:6px;padding:4px 8px;font-size:11px;">입금 취소</button>` : ''}
-            <button onclick="openSaleEditModal(${e.id})" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:6px;padding:4px 8px;font-size:11px;">매출 수정</button>
+            <button onclick="${e.item === '이월 미수금' ? `editCarryoverBalance('${escAttr(e.customer || '')}', ${e.id})` : `openSaleEditModal(${e.id})`}" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:6px;padding:4px 8px;font-size:11px;">${e.item === '이월 미수금' ? '이월 미수금 수정' : '매출 수정'}</button>
           </div>
         `;
         inner.appendChild(row);
@@ -7946,6 +8084,7 @@ async function confirmOrderReceiveInner(o) {
         if (take > 0) jeolBreakdown.push({ tang: roll.tang, qty: Math.round(take * 100) / 100, rollId: roll.id });
       }
       cleanupDepletedRolls(o.item, resolveInventoryColor(o.item, o.color), allocations.map(a => a.rollId));
+      compactTangsForItemColor(o.item, resolveInventoryColor(o.item, o.color));
       await persistRolls();
       const deductedFromStock = Math.round(allocations.reduce((s, a) => s + a.amt, 0) * 100) / 100;
       inv = { ok: true, deducted: deductedFromStock, shortBy: 0, breakdown: [...jeolBreakdown, ...newTangEntries] };
@@ -8017,6 +8156,7 @@ async function confirmOrderReceiveInner(o) {
       yardsShipped = Math.round((yardsShipped + newTangTotal) * 100) / 100; // 새 탕 물량은 기존 재고 차감 없이 그대로 출고량에 포함
       deductedFromStock = Math.round(deductedFromStock * 100) / 100; // 새 탕분은 여기 안 들어감 - 취소해도 복원 안 되게
       cleanupDepletedRolls(o.item, resolveInventoryColor(o.item, o.color), allocations.map(a => a.rollId));
+      compactTangsForItemColor(o.item, resolveInventoryColor(o.item, o.color));
       await persistRolls();
       inv = { ok: true, deducted: deductedFromStock, shortBy: 0, breakdown };
       raw = yardsShipped;
