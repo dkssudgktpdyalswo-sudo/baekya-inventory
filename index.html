@@ -835,6 +835,11 @@
   <div class="modal">
     <h3>재고 수정</h3>
     <p id="roll-edit-desc" style="font-size:13px;color:var(--muted);margin-top:-6px;"></p>
+    <label>품번</label>
+    <input id="roll-edit-item" placeholder="예: 350" autocomplete="off" oninput="showItemSuggestions(this)" onfocus="showItemSuggestions(this)" onblur="hideItemSuggestionsDelayed()">
+    <label>컬러</label>
+    <input id="roll-edit-color" placeholder="예: 검정" autocomplete="off" oninput="showColorSuggestions(this, 'roll-edit-item')" onfocus="showColorSuggestions(this, 'roll-edit-item')" onblur="hideItemSuggestionsDelayed()">
+    <p style="font-size:12px;color:var(--muted);margin-top:-6px;">품번·컬러를 잘못 입력하셨으면 여기서 바로 고치실 수 있어요 (지우고 다시 만들 필요 없어요)</p>
     <label>탕 번호</label>
     <input id="roll-edit-tang" type="number" min="1" step="1">
     <label>마수(y)</label>
@@ -893,7 +898,7 @@
 const PASSWORD = "3059";
 const ADMIN_PASSWORD = "9503"; // 매출/미수금 탭 전용 - 필요하면 이 값만 바꿔서 변경 가능
 const DATA_VERSION = "2026-08-03-v4"; // 재고/이월장부 씨앗 데이터를 바꿀 때마다 이 값을 새로 바꿔주세요
-const APP_CODE_VERSION = "2026-09-08-n"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
+const APP_CODE_VERSION = "2026-09-08-p"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
 const SCHEMA_STAMP = 2; // 서버 저장규칙이 확인하는 "최신 앱 도장" - 절대 자주 바꾸지 않음(이 값을 아는 코드만 저장 가능하게 서버에서 막을 때 씀)
 
 const firebaseConfig = {
@@ -2389,6 +2394,8 @@ function openRollEditModal(id) {
   if (!r) return;
   _rollEditId = id;
   document.getElementById('roll-edit-desc').textContent = `${r.item} · ${r.color}`;
+  document.getElementById('roll-edit-item').value = r.item;
+  document.getElementById('roll-edit-color').value = r.color;
   document.getElementById('roll-edit-tang').value = r.tang;
   document.getElementById('roll-edit-qty').value = r.qty;
   document.getElementById('roll-edit-cost').value = r.costPerY != null ? r.costPerY : '';
@@ -2399,12 +2406,21 @@ async function saveRollEdit() {
   const r = rolls.find(x => x.id === _rollEditId);
   if (!r) { closeRollEditModal(); return; }
 
+  const newItem = document.getElementById('roll-edit-item').value.trim();
+  const newColor = document.getElementById('roll-edit-color').value.trim();
   const newTang = parseInt(document.getElementById('roll-edit-tang').value);
   const newQty = parseFloat(document.getElementById('roll-edit-qty').value);
   const costRaw = document.getElementById('roll-edit-cost').value;
+  if (!newItem) { showToast('품번을 입력해주세요'); return; }
+  if (!newColor) { showToast('컬러를 입력해주세요'); return; }
   if (isNaN(newTang) || newTang < 1) { showToast('탕 번호를 확인해주세요'); return; }
   if (isNaN(newQty) || newQty < 0) { showToast('마수를 확인해주세요'); return; }
 
+  const oldItem = r.item, oldColor = r.color;
+  const movedToOtherGroup = String(oldItem).trim() !== newItem || String(oldColor).trim() !== newColor;
+
+  r.item = newItem;
+  r.color = newColor;
   // 탕 번호가 겹쳐도 합치지 않음 (입고/반품이랑 똑같은 원칙 - 같은 탕 번호여도 물리적으로 다른 조각이니 개별로 유지)
   r.tang = newTang;
 
@@ -2415,10 +2431,14 @@ async function saveRollEdit() {
     cleanupDepletedRolls(r.item, r.color, [r.id]);
   }
   compactTangsForItemColor(r.item, r.color);
+  if (movedToOtherGroup) {
+    // 품번·컬러 자체를 바꾸면, 원래 있던 품번·컬러 쪽에서 이 롤이 빠지는 셈이니 그쪽 탕번호도 재정렬해줌
+    compactTangsForItemColor(oldItem, oldColor);
+  }
   await persistRolls();
   closeRollEditModal();
   render();
-  showToast(r.qty === 0 ? '재고 없음으로 처리했습니다' : `마수를 ${r.qty}y로 수정했습니다`);
+  showToast(r.qty === 0 ? '재고 없음으로 처리했습니다' : `${movedToOtherGroup ? `${newItem} ${newColor}(으)로 수정하고, ` : ''}마수를 ${r.qty}y로 수정했습니다`);
 }
 async function markRollDefective(id) {
   const r = rolls.find(x => x.id === id);
@@ -5246,9 +5266,9 @@ function printLedgerPeriod() {
     <div class="ledger-print" style="padding:14mm 12mm; font-family:-apple-system,'Malgun Gothic',sans-serif;">
       <h2 style="margin:0 0 4px;">거래처원장 - ${esc(customer)}</h2>
       <div style="color:#555; margin-bottom:10px; font-size:13px;">기간: ${esc(startDate || '')} ~ ${esc(endDate || '')} · 발행일: ${todayStr()}</div>
-      <table style="width:100%; border-collapse:collapse;">
+      <table style="width:100%; border-collapse:collapse; table-layout:fixed;">
         <thead>
-          <tr><th>날짜</th><th>구분</th><th>내용</th><th>비고</th><th>금액</th><th>잔액</th></tr>
+          <tr><th style="width:9%;">날짜</th><th style="width:8%;">구분</th><th style="width:28%;">내용</th><th style="width:25%;">비고</th><th style="width:15%;">금액</th><th style="width:15%;">잔액</th></tr>
         </thead>
         <tbody>
           <tr><td colspan="5"><b>[이월]</b></td><td style="text-align:right;"><b>${openingBalance.toLocaleString()}</b></td></tr>
