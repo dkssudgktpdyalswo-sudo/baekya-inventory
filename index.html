@@ -939,7 +939,7 @@
 const PASSWORD = "3059";
 const ADMIN_PASSWORD = "9503"; // 매출/미수금 탭 전용 - 필요하면 이 값만 바꿔서 변경 가능
 const DATA_VERSION = "2026-08-03-v4"; // 재고/이월장부 씨앗 데이터를 바꿀 때마다 이 값을 새로 바꿔주세요
-const APP_CODE_VERSION = "2026-09-09-d"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
+const APP_CODE_VERSION = "2026-09-09-e"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
 const SCHEMA_STAMP = 2; // 서버 저장규칙이 확인하는 "최신 앱 도장" - 절대 자주 바꾸지 않음(이 값을 아는 코드만 저장 가능하게 서버에서 막을 때 씀)
 
 const firebaseConfig = {
@@ -4768,13 +4768,22 @@ function renderCustomerPriceListView() {
     String(e.customer || '').trim() === t_c && e.saleAmount != null && !e.isReturn && !e.isDefect && !e.isSample && e.item !== '이월 미수금' && e.unitPrice != null
     && (priceListYear === null || String(e.date).slice(0, 2) === priceListYear)
   );
-  const byItem = new Map(); // item -> Map(color -> 가장 최근 항목 {id,date,unitPrice})
+  const byItem = new Map(); // item -> Map(color -> {id,date,unitPrice})
   for (const e of filtered) {
     if (!byItem.has(e.item)) byItem.set(e.item, new Map());
     const colorMap = byItem.get(e.item);
     const c = e.color || '';
     const cur = colorMap.get(c);
     if (!cur || String(e.date) > String(cur.date)) colorMap.set(c, { id: e.id, date: e.date, unitPrice: e.unitPrice });
+  }
+  // "전체 기간"으로 볼 때는, 과거 거래 기록보다 "다음부터 쓸 기준 단가(방금 여기서 고친 값)"가 있으면 그걸 우선해서 보여줌
+  // (특정 연도를 골라서 볼 때는 그 당시 실제 거래 단가를 그대로 보여주는 게 맞아서 이 로직을 안 탐)
+  if (priceListYear === null) {
+    for (const p of priceBook) {
+      if (String(p.customer).trim() !== t_c) continue;
+      if (!byItem.has(p.item)) byItem.set(p.item, new Map());
+      byItem.get(p.item).set(p.color || '', { id: null, date: null, unitPrice: p.unitPrice, fromPriceBook: true });
+    }
   }
   const itemList = Array.from(byItem.keys()).sort((a, b) => String(a).localeCompare(String(b), 'ko', { numeric: true }));
 
