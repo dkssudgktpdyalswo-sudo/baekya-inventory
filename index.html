@@ -983,7 +983,7 @@
 const PASSWORD = "3059";
 const ADMIN_PASSWORD = "9503"; // 매출/미수금 탭 전용 - 필요하면 이 값만 바꿔서 변경 가능
 const DATA_VERSION = "2026-08-03-v4"; // 재고/이월장부 씨앗 데이터를 바꿀 때마다 이 값을 새로 바꿔주세요
-const APP_CODE_VERSION = "2026-09-09-y"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
+const APP_CODE_VERSION = "2026-09-09-z"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
 const SCHEMA_STAMP = 2; // 서버 저장규칙이 확인하는 "최신 앱 도장" - 절대 자주 바꾸지 않음(이 값을 아는 코드만 저장 가능하게 서버에서 막을 때 씀)
 
 const firebaseConfig = {
@@ -5261,9 +5261,9 @@ function renderPaymentLedgerView() {
   backBtn.onclick = exitPaymentLedger;
   list.appendChild(backBtn);
 
-  // 모든 입금 기록을 하나로 모음
+  // 모든 입금 기록을 하나로 모음 (날짜필터가 과거로 걸려있으면 보관함 캐시도 같이 봄 - 매출탭과 같은 캐시 공유)
   let payments = [];
-  for (const e of shipmentLog) {
+  for (const e of shipmentLog.concat(salesDayFilter ? salesDayArchivedCache : [])) {
     (e.payments || []).forEach((p, idx) => {
       payments.push({
         date: p.date, amount: p.amount, method: p.method || 'cash',
@@ -9711,20 +9711,27 @@ async function archiveOldSalesLog() {
   if (!range) return;
   const { startDate, endDate } = range;
 
+  const isExactlySettled = (e) => {
+    // getRemaining은 0 밑으로 안 내려가게 막혀있어서(클램핑), 이걸로만 확인하면
+    // "초과입금(선수금)까지 있는 건"도 "완전히 정산된 건"이랑 똑같이 0으로 보여서 정리 대상에 섞여버림
+    // 그러면 나중에 진짜 미수금 계산(전체 흐름 누적)에서 그 초과분 정보가 통째로 사라지니, 여기선 클램핑 전 원본값으로 "정확히 0에 가까운지"까지 확인함
+    const raw = e.saleAmount - (e.discount || 0) - getPaidAmount(e);
+    return Math.abs(raw) < 0.01; // 초과입금(마이너스)이든 미수금(양수)이든 남아있으면 정리 대상 아님
+  };
   const toArchive = shipmentLog.filter(e => {
     if (e.date < startDate || e.date > endDate) return false;
-    // 아직 돈을 다 못 받은 건(미수금 남은 매출)은 절대 정리 대상에서 제외
-    if (e.saleAmount != null && getRemaining(e) > 0) return false;
+    // 아직 돈을 다 못 받은 건(미수금 남은 매출) 또는 초과입금(선수금)이 있는 건은 절대 정리 대상에서 제외
+    if (e.saleAmount != null && !isExactlySettled(e)) return false;
     return true;
   });
   if (toArchive.length === 0) {
-    const stillUnpaidCount = shipmentLog.filter(e => e.date >= startDate && e.date <= endDate && e.saleAmount != null && getRemaining(e) > 0).length;
+    const stillUnpaidCount = shipmentLog.filter(e => e.date >= startDate && e.date <= endDate && e.saleAmount != null && !isExactlySettled(e)).length;
     showToast(stillUnpaidCount > 0
-      ? `정리할 게 없어요 - 이 기간에 미수금 남은 건이 ${stillUnpaidCount}건 있어서 자동으로 제외됐어요 (입금 처리 후 다시 시도해주세요)`
+      ? `정리할 게 없어요 - 이 기간에 미수금(또는 초과입금) 남은 건이 ${stillUnpaidCount}건 있어서 자동으로 제외됐어요`
       : '이 기간에 정리할 매출 기록이 없습니다');
     return;
   }
-  if (!confirm(`${startDate}~${endDate} 기간의 미수금 없는 매출 ${toArchive.length}건을 엑셀로 내보내고 사이트에서 삭제합니다.\n미수금이 남아있는 건은 아무리 오래됐어도 자동으로 제외돼요.\n계속할까요?`)) return;
+  if (!confirm(`${startDate}~${endDate} 기간의 완전히 정산된 매출 ${toArchive.length}건을 엑셀로 내보내고 사이트에서 삭제합니다.\n미수금이나 초과입금이 남아있는 건은 아무리 오래됐어도 자동으로 제외돼요.\n계속할까요?`)) return;
 
   const headers = ['날짜', '거래처', '공장', '품목', '칼라', '수량', '단위', '단가', '공급가액', '세액', '매출액', '입금액', '반품/불량', '비고'];
   const rows = toArchive.map(e => [
