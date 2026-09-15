@@ -968,7 +968,7 @@
 const PASSWORD = "3059";
 const ADMIN_PASSWORD = "9503"; // 매출/미수금 탭 전용 - 필요하면 이 값만 바꿔서 변경 가능
 const DATA_VERSION = "2026-08-03-v4"; // 재고/이월장부 씨앗 데이터를 바꿀 때마다 이 값을 새로 바꿔주세요
-const APP_CODE_VERSION = "2026-09-09-j"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
+const APP_CODE_VERSION = "2026-09-09-k"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
 const SCHEMA_STAMP = 2; // 서버 저장규칙이 확인하는 "최신 앱 도장" - 절대 자주 바꾸지 않음(이 값을 아는 코드만 저장 가능하게 서버에서 막을 때 씀)
 
 const firebaseConfig = {
@@ -9325,7 +9325,7 @@ function parseKDate(s) {
   return new Date(2000 + yy, mm - 1, dd);
 }
 async function archiveOldSalesLog() {
-  const daysStr = prompt('완전히 정산(미수금 0원) 끝난 지 며칠 지난 매출 건부터 내보내고 정리할까요? (예: 180)', '180');
+  const daysStr = prompt('완전히 정산(미수금 0원) 끝난 지 며칠 지난 매출 건부터 내보내고 정리할까요?\n(사업 초기라 오래된 게 적다면 30 정도로 짧게 잡아보세요)', '30');
   if (daysStr === null) return;
   const days = parseInt(daysStr);
   if (!days || days <= 0) { showToast('숫자를 확인해주세요'); return; }
@@ -9339,7 +9339,13 @@ async function archiveOldSalesLog() {
     if (e.saleAmount != null && getRemaining(e) > 0) return false;
     return true;
   });
-  if (toArchive.length === 0) { showToast('정리할 매출 기록이 없습니다 (미수금 남은 건은 자동으로 제외돼요)'); return; }
+  if (toArchive.length === 0) {
+    const stillUnpaidCount = shipmentLog.filter(e => e.saleAmount != null && getRemaining(e) > 0).length;
+    showToast(stillUnpaidCount > 0
+      ? `정리할 게 없어요 - 아직 미수금 남은 건이 ${stillUnpaidCount}건 있어서 자동으로 제외됐어요 (입금 처리 후 다시 시도해주세요)`
+      : '정리할 매출 기록이 없습니다');
+    return;
+  }
   if (!confirm(`${days}일 지났고 미수금 없는 매출 ${toArchive.length}건을 엑셀로 내보내고 사이트에서 삭제합니다.\n미수금이 남아있는 건은 아무리 오래됐어도 자동으로 제외돼요.\n계속할까요?`)) return;
 
   const headers = ['날짜', '거래처', '공장', '품목', '칼라', '수량', '단위', '단가', '공급가액', '세액', '매출액', '입금액', '반품/불량', '비고'];
