@@ -983,7 +983,7 @@
 const PASSWORD = "3059";
 const ADMIN_PASSWORD = "9503"; // 매출/미수금 탭 전용 - 필요하면 이 값만 바꿔서 변경 가능
 const DATA_VERSION = "2026-08-03-v4"; // 재고/이월장부 씨앗 데이터를 바꿀 때마다 이 값을 새로 바꿔주세요
-const APP_CODE_VERSION = "2026-09-09-v"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
+const APP_CODE_VERSION = "2026-09-09-w"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
 const SCHEMA_STAMP = 2; // 서버 저장규칙이 확인하는 "최신 앱 도장" - 절대 자주 바꾸지 않음(이 값을 아는 코드만 저장 가능하게 서버에서 막을 때 씀)
 
 const firebaseConfig = {
@@ -1086,6 +1086,7 @@ let priceListArchivedCache = []; // 특정 연도를 선택했을때, 그 연도
 let itemMonthlyArchivedCache = []; // 품목출고량 월별보기에서 쓰는 보관함 전체 캐시
 let salesDayArchivedCache = []; // 매출탭 날짜필터가 과거로 잡혔을 때, 그 기간의 보관함을 담아두는 캐시
 let salesDayArchivedCacheKey = ''; // 캐시가 어느 날짜범위 기준으로 채워졌는지 기억 (범위 안 바뀌었으면 다시 안 가져오게)
+let shipmentLogArchivedCache = []; // 이월장부의 "완료" 탭(실제로는 매출이력을 보여줌)에서 쓰는 보관함 전체 캐시
 async function refreshSalesDayArchivedCache() {
   const key = `${salesDayFilter || ''}~${salesDayFilterEnd || ''}`;
   if (key === salesDayArchivedCacheKey) return; // 이미 이 범위로 캐시돼있으면 다시 안 가져옴
@@ -3074,7 +3075,11 @@ function renderOrderChips() {
     const chip = document.createElement('div');
     chip.className = 'chip' + (orderStatusFilter === val ? ' active' : '');
     chip.textContent = label;
-    chip.onclick = () => { orderStatusFilter = val; render(); };
+    chip.onclick = async () => {
+      orderStatusFilter = val;
+      if (val === 'done') shipmentLogArchivedCache = await fetchAllArchivedEntries();
+      render();
+    };
     row.appendChild(chip);
   }
 }
@@ -7751,7 +7756,7 @@ function renderSales() {
 }
 
 function renderShipmentLog() {
-  let log = shipmentLog.slice();
+  let log = shipmentLog.concat(shipmentLogArchivedCache).slice();
   if (searchTerm.trim()) {
     const t = searchTerm.trim().toLowerCase();
     log = log.filter(e => String(e.customer).toLowerCase().includes(t) || String(e.item).toLowerCase().includes(t));
