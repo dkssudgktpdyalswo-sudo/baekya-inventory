@@ -364,6 +364,23 @@
   </div>
 </div>
 
+<div class="modal-overlay" id="newPriceModal">
+  <div class="modal">
+    <h3>새 품목 단가 등록</h3>
+    <p id="np-desc" style="font-size:12px;color:var(--muted);margin-top:-6px;"></p>
+    <label>품번</label>
+    <input id="np-item" placeholder="예: 머플러" autocomplete="off" oninput="showItemSuggestions(this)" onfocus="showItemSuggestions(this)" onblur="hideItemSuggestionsDelayed()">
+    <label>컬러 (비워두면 이 품목 전체 컬러에 같은 단가로 등록돼요)</label>
+    <input id="np-color" placeholder="예: 검정 (비워도 됨)" autocomplete="off" oninput="showColorSuggestions(this,'np-item')" onfocus="showColorSuggestions(this,'np-item')" onblur="hideItemSuggestionsDelayed()">
+    <label>단가 (원/y)</label>
+    <input id="np-price" type="number" step="1" placeholder="예: 5500">
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="closeNewPriceModal()">취소</button>
+      <button class="btn-save" onclick="confirmNewPriceModal()">등록</button>
+    </div>
+  </div>
+</div>
+
 <!-- 스왓치/중국품번 수정 모달 -->
 <div class="modal-overlay" id="swatchEditModal">
   <div class="modal">
@@ -951,7 +968,7 @@
 const PASSWORD = "3059";
 const ADMIN_PASSWORD = "9503"; // 매출/미수금 탭 전용 - 필요하면 이 값만 바꿔서 변경 가능
 const DATA_VERSION = "2026-08-03-v4"; // 재고/이월장부 씨앗 데이터를 바꿀 때마다 이 값을 새로 바꿔주세요
-const APP_CODE_VERSION = "2026-09-09-g"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
+const APP_CODE_VERSION = "2026-09-09-j"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
 const SCHEMA_STAMP = 2; // 서버 저장규칙이 확인하는 "최신 앱 도장" - 절대 자주 바꾸지 않음(이 값을 아는 코드만 저장 가능하게 서버에서 막을 때 씀)
 
 const firebaseConfig = {
@@ -2110,7 +2127,10 @@ function renderInv() {
                 </div>`;
             } else {
               rr.innerHTML = `
-                <div>롤 <span class="yd">${r.qty}y</span>${r.inDate ? `<span style="font-size:11px;color:var(--muted);margin-left:6px;">${esc(r.inDate)} 입고</span>` : ''}</div>
+                <div style="display:flex; align-items:center; gap:8px;">
+                  <input type="checkbox" class="roll-bulk-checkbox" data-roll-id="${r.id}" style="width:auto; margin:0;" onclick="event.stopPropagation();">
+                  <div>롤 <span class="yd">${r.qty}y</span>${r.inDate ? `<span style="font-size:11px;color:var(--muted);margin-left:6px;">${esc(r.inDate)} 입고</span>` : ''}</div>
+                </div>
                 <div class="btns">
                   <button class="btn-out" style="background:#eaf3ec;color:#2f6b46;" onclick="event.stopPropagation(); openRollAddModalFor('${escAttr(r.item)}', '${escAttr(r.color)}')">입고</button>
                   <button class="btn-out" onclick="event.stopPropagation(); openOutModal(${r.id})">출고</button>
@@ -2121,6 +2141,13 @@ function renderInv() {
             }
             rollsDiv.appendChild(rr);
           }
+        }
+        if (normalRolls.length >= 2) {
+          const bulkBtn = document.createElement('button');
+          bulkBtn.textContent = '선택한 롤 삭제';
+          bulkBtn.style.cssText = 'border:none;background:#fdecea;color:var(--danger);border-radius:8px;padding:8px 12px;font-size:12px;font-weight:600;width:calc(100% - 24px);margin:8px 12px;';
+          bulkBtn.onclick = (ev) => { ev.stopPropagation(); bulkDeleteSelectedRolls(rollsDiv); };
+          rollsDiv.appendChild(bulkBtn);
         }
       }
     }
@@ -2554,6 +2581,28 @@ async function unmarkRollDefective(id) {
   await persistRolls();
   render();
   showToast('정상 재고로 되돌렸습니다');
+}
+async function bulkDeleteSelectedRolls(rollsDiv) {
+  const checkboxes = rollsDiv.querySelectorAll('.roll-bulk-checkbox:checked');
+  if (checkboxes.length === 0) { showToast('삭제할 롤을 먼저 선택해주세요'); return; }
+  const ids = Array.from(checkboxes).map(cb => parseInt(cb.dataset.rollId));
+  const targets = rolls.filter(r => ids.includes(r.id));
+  if (targets.length === 0) return;
+  const totalQty = targets.reduce((s, r) => s + r.qty, 0);
+  if (!confirm(`선택한 ${targets.length}개 롤(총 ${totalQty.toLocaleString()}y)을 삭제할까요?\n(이 컬러 자체는 그대로 남고, 선택한 롤만 지워져요)`)) return;
+  const { item, color } = targets[0];
+  rolls = rolls.filter(r => !ids.includes(r.id));
+  compactTangsForItemColor(item, color);
+  // 선택한 걸 다 지워서 이 컬러의 마지막 재고까지 없어진 경우에도, 컬러 자체는 스왓치정보로 계속 남게 함 (재고소진 자동정리와 똑같은 안전장치)
+  if (!colorExistsForItem(String(item).trim(), String(color).trim())) {
+    const t_item = String(item).trim();
+    const maxOrder = swatchInfo.filter(s => String(s.item).trim() === t_item).reduce((m, s) => Math.max(m, s.order || 0), 0);
+    swatchInfo.push({ id: nextSwatchId++, cat: targets[0].cat || '', item: t_item, color: String(color).trim(), order: maxOrder + 1, chinaCode: null });
+    await persistSwatchInfo();
+  }
+  await persistRolls();
+  render();
+  showToast(`${targets.length}개 롤을 삭제했습니다`);
 }
 async function deleteRoll(id) {
   if (!confirm('이 롤을 삭제하시겠습니까?')) return;
@@ -4738,6 +4787,46 @@ async function editStandingPrice(customer, item, color, currentPrice) {
   render();
   showToast(`다음부터 ${newPrice.toLocaleString()}원/y으로 적용돼요`);
 }
+let _newPriceCustomer = null;
+function openNewPriceModal(customer) {
+  _newPriceCustomer = customer;
+  document.getElementById('np-desc').textContent = `${customer}에 등록할 단가예요`;
+  document.getElementById('np-item').value = '';
+  document.getElementById('np-color').value = '';
+  document.getElementById('np-price').value = '';
+  document.getElementById('newPriceModal').classList.add('open');
+}
+function closeNewPriceModal() {
+  document.getElementById('newPriceModal').classList.remove('open');
+  _newPriceCustomer = null;
+}
+async function confirmNewPriceModal() {
+  const customer = _newPriceCustomer;
+  if (!customer) return;
+  const item = document.getElementById('np-item').value.trim();
+  const colorRaw = document.getElementById('np-color').value.trim();
+  const price = parseFloat(document.getElementById('np-price').value);
+  if (!item) { showToast('품번을 입력해주세요'); return; }
+  if (!price || price <= 0) { showToast('단가를 확인해주세요'); return; }
+
+  if (colorRaw) {
+    await rememberPrice(customer, item, colorRaw, price);
+  } else {
+    // 컬러를 안 적으면, 이 품목에 등록된(재고+스왓치) 컬러 전체에 같은 단가로 등록함. 등록된 컬러가 하나도 없으면(완전 신규 품목) 컬러 없이 하나만 등록
+    const colorsFromRolls = rolls.filter(r => String(r.item).trim() === item && !r.defective).map(r => String(r.color).trim());
+    const colorsFromSwatch = swatchInfo.filter(s => String(s.item).trim() === item && s.color != null).map(s => String(s.color).trim());
+    const colors = Array.from(new Set([...colorsFromRolls, ...colorsFromSwatch]));
+    if (colors.length > 0) {
+      for (const c of colors) await rememberPrice(customer, item, c, price);
+    } else {
+      await rememberPrice(customer, item, '', price);
+    }
+  }
+  closeNewPriceModal();
+  priceListYear = null; // 방금 등록한 게 확실히 보이도록 전체보기로 전환 (특정 연도만 보고 있었으면 새 품목이 안 보일 수 있어서)
+  renderCustomerPriceListView();
+  showToast(`"${item}" 단가를 등록했어요 - 다음부터 이 거래처 출고할 때 자동으로 채워져요`);
+}
 function renderCustomerPriceListView() {
   const list = document.getElementById('list');
   list.innerHTML = '';
@@ -4766,8 +4855,11 @@ function renderCustomerPriceListView() {
   const t_c = priceListCustomer.trim();
 
   const header = document.createElement('div');
-  header.style.cssText = 'background:var(--primary-dark); border-radius:10px; padding:12px 14px; margin-bottom:10px; color:#fff;';
-  header.innerHTML = `<div style="font-size:11px; color:#c9d8e0;">거래처 단가표</div><div style="font-size:17px; font-weight:700; margin-top:2px;">${esc(t_c)}</div>`;
+  header.style.cssText = 'background:var(--primary-dark); border-radius:10px; padding:12px 14px; margin-bottom:10px; color:#fff; display:flex; justify-content:space-between; align-items:center;';
+  header.innerHTML = `
+    <div><div style="font-size:11px; color:#c9d8e0;">거래처 단가표</div><div style="font-size:17px; font-weight:700; margin-top:2px;">${esc(t_c)}</div></div>
+    <button onclick="openNewPriceModal('${escAttr(t_c)}')" style="border:none;background:rgba(255,255,255,0.15);color:#fff;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;flex:none;">+ 새 품목 단가</button>
+  `;
   list.appendChild(header);
 
   // 이 거래처의 연도 목록(실제 거래가 있었던 연도들)을 뽑아서 네비게이션용으로 씀
@@ -8123,6 +8215,18 @@ function cleanupDepletedRolls(item, color, touchedRollIds) {
   if (zeroed.length === 0) return;
   const removeIds = new Set(zeroed.map(r => r.id));
   rolls = rolls.filter(r => !removeIds.has(r.id));
+  // 롤을 먼저 지운 "다음에" 스왓치정보 등록 여부를 확인해야 정확함 (지우기 전에 확인하면, 지금 지우려는 그 롤 자신 때문에 "이미 존재하는 컬러"로 잘못 판단해버림)
+  // 이 품목·컬러가 스왓치정보에 "존재하는 컬러"로 등록 안 돼있으면 지금 자동으로 등록해서, 재고가 완전히 빠져도 컬러 자체는 절대 사라지지 않게 함 (오직 "이 컬러 전체 삭제"로만 지워지게)
+  let swatchChanged = false;
+  for (const r of zeroed) {
+    const t_item = String(r.item).trim(), t_color = String(r.color).trim();
+    if (!colorExistsForItem(t_item, t_color)) {
+      const maxOrder = swatchInfo.filter(s => String(s.item).trim() === t_item).reduce((m, s) => Math.max(m, s.order || 0), 0);
+      swatchInfo.push({ id: nextSwatchId++, cat: r.cat || '', item: t_item, color: t_color, order: maxOrder + 1, chinaCode: null });
+      swatchChanged = true;
+    }
+  }
+  if (swatchChanged) persistSwatchInfo();
 }
 
 function compactTangsForItemColor(item, color) {
