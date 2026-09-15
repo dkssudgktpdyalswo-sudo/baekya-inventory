@@ -221,10 +221,10 @@
   </div>
   <div id="salesTools" class="hidden" style="display:flex; gap:6px; margin-top:6px; flex-wrap:wrap; align-items:center;">
     <button onclick="shiftSalesDayFilter(-1)" style="border:none;background:#eee;color:#555;border-radius:8px;padding:7px 10px;font-size:12px;">◀</button>
-    <input id="sales-day-picker" type="date" onchange="salesDayFilter=fromDateInputValue(this.value); salesDayFilterEnd=null; render();" style="padding:6px 8px; border:1px solid var(--border); border-radius:8px; font-size:12px; width:auto;">
+    <input id="sales-day-picker" type="date" onchange="salesDayFilter=fromDateInputValue(this.value); salesDayFilterEnd=null; refreshSalesDayArchivedCache(); render();" style="padding:6px 8px; border:1px solid var(--border); border-radius:8px; font-size:12px; width:auto;">
     <button onclick="shiftSalesDayFilter(1)" style="border:none;background:#eee;color:#555;border-radius:8px;padding:7px 10px;font-size:12px;">▶</button>
     <span style="font-size:12px; color:var(--muted);">~</span>
-    <input id="sales-day-picker-end" type="date" onchange="salesDayFilterEnd=fromDateInputValue(this.value); render();" style="padding:6px 8px; border:1px solid var(--border); border-radius:8px; font-size:12px; width:auto;">
+    <input id="sales-day-picker-end" type="date" onchange="salesDayFilterEnd=fromDateInputValue(this.value); refreshSalesDayArchivedCache(); render();" style="padding:6px 8px; border:1px solid var(--border); border-radius:8px; font-size:12px; width:auto;">
     <button onclick="toggleAllMainFlags(true)" style="border:none;background:#eee;color:#555;border-radius:8px;padding:7px 12px;font-size:12px;">전체 선택</button>
     <button onclick="toggleAllMainFlags(false)" style="border:none;background:#eee;color:#555;border-radius:8px;padding:7px 12px;font-size:12px;">전체 해제</button>
     <button onclick="printSelectedMainStatements()" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">🖨 선택 인쇄 (메인 체크)</button>
@@ -377,6 +377,21 @@
     <div class="modal-actions">
       <button class="btn-cancel" onclick="closeNewPriceModal()">취소</button>
       <button class="btn-save" onclick="confirmNewPriceModal()">등록</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="dateRangeArchiveModal">
+  <div class="modal">
+    <h3 id="dra-title">기간 선택</h3>
+    <p id="dra-desc" style="font-size:12px;color:var(--muted);margin-top:-6px;"></p>
+    <label>시작일</label>
+    <input id="dra-start" type="date">
+    <label>종료일</label>
+    <input id="dra-end" type="date">
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="closeDateRangeArchiveModal(null)">취소</button>
+      <button class="btn-save" onclick="confirmDateRangeArchiveModal()">확인</button>
     </div>
   </div>
 </div>
@@ -968,7 +983,7 @@
 const PASSWORD = "3059";
 const ADMIN_PASSWORD = "9503"; // 매출/미수금 탭 전용 - 필요하면 이 값만 바꿔서 변경 가능
 const DATA_VERSION = "2026-08-03-v4"; // 재고/이월장부 씨앗 데이터를 바꿀 때마다 이 값을 새로 바꿔주세요
-const APP_CODE_VERSION = "2026-09-09-p"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
+const APP_CODE_VERSION = "2026-09-09-v"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
 const SCHEMA_STAMP = 2; // 서버 저장규칙이 확인하는 "최신 앱 도장" - 절대 자주 바꾸지 않음(이 값을 아는 코드만 저장 가능하게 서버에서 막을 때 씀)
 
 const firebaseConfig = {
@@ -1069,6 +1084,21 @@ let priceListCustomer = ''; // 거래처 단가표에서 지금 보고 있는 �
 let priceListYear = null; // 거래처 단가표에서 지금 보고 있는 연도 (null이면 전체기간)
 let priceListArchivedCache = []; // 특정 연도를 선택했을때, 그 연도의 보관함 데이터를 미리 가져와서 담아두는 캐시
 let itemMonthlyArchivedCache = []; // 품목출고량 월별보기에서 쓰는 보관함 전체 캐시
+let salesDayArchivedCache = []; // 매출탭 날짜필터가 과거로 잡혔을 때, 그 기간의 보관함을 담아두는 캐시
+let salesDayArchivedCacheKey = ''; // 캐시가 어느 날짜범위 기준으로 채워졌는지 기억 (범위 안 바뀌었으면 다시 안 가져오게)
+async function refreshSalesDayArchivedCache() {
+  const key = `${salesDayFilter || ''}~${salesDayFilterEnd || ''}`;
+  if (key === salesDayArchivedCacheKey) return; // 이미 이 범위로 캐시돼있으면 다시 안 가져옴
+  salesDayArchivedCacheKey = key;
+  if (!salesDayFilter) { salesDayArchivedCache = []; return; }
+  const end = salesDayFilterEnd || salesDayFilter;
+  const months = getMonthsInRange(salesDayFilter, end);
+  let merged = [];
+  for (const mk of months) merged = merged.concat(await fetchArchivedEntriesForMonth(mk));
+  computeProfitFieldsForEntries(merged);
+  salesDayArchivedCache = merged;
+  render();
+}
 let salesSpecialView = null; // null | 'itemMonthly' | 'customerLedger'
 let ledgerCustomer = null;
 let ledgerStartDate = null;
@@ -2640,6 +2670,55 @@ async function deleteRoll(id) {
   compactTangsForItemColor(target.item, target.color);
   await persistRolls(); render(); showToast('삭제되었습니다');
 }
+async function renameFieldInArchive(fieldName, oldValue, newValue) {
+  // 보관함(과거로 정리된 매출기록)에도 이 이름이 남아있으면 똑같이 고쳐서 다시 저장함. 이 달엔 해당 이름이 없으면 아예 안 건드림
+  if (!useFirebase) return { changed: 0, failedMonths: [] };
+  const t_old = String(oldValue).trim();
+  const CHUNK_SIZE = 600000;
+  let changedCount = 0;
+  const failedMonths = [];
+  try {
+    const snap = await db.collection('inventory_archive').get();
+    const docsByMonth = new Map();
+    snap.forEach(doc => {
+      const m = doc.id.match(/^shipmentLog_(\d{4}-\d{2})(?:_chunk\d+)?$/);
+      if (!m) return;
+      const mk = m[1];
+      if (!docsByMonth.has(mk)) docsByMonth.set(mk, []);
+      docsByMonth.get(mk).push(doc.id);
+    });
+    for (const [monthKey, docIds] of docsByMonth) {
+      try {
+        const joined = await fetchAndJoinBackupChunks_ForArchive(docIds);
+        if (joined == null) continue;
+        const entries = JSON.parse(joined);
+        let monthChanged = 0;
+        for (const e of entries) {
+          if (e[fieldName] != null && String(e[fieldName]).trim() === t_old) {
+            e[fieldName] = newValue;
+            monthChanged++;
+          }
+        }
+        if (monthChanged === 0) continue; // 이 달엔 해당 이름이 없으니 그대로 둠(불필요한 재저장 안 함)
+        const json = JSON.stringify(entries);
+        for (const docId of docIds) await db.collection('inventory_archive').doc(docId).delete();
+        if (json.length <= CHUNK_SIZE) {
+          await db.collection('inventory_archive').doc(`shipmentLog_${monthKey}`).set({ data: json, archivedAt: new Date().toISOString() });
+        } else {
+          const totalChunks = Math.ceil(json.length / CHUNK_SIZE);
+          for (let i = 0; i < totalChunks; i++) {
+            const chunkData = json.slice(i * CHUNK_SIZE, (i + 1) * CHUNK_SIZE);
+            await db.collection('inventory_archive').doc(`shipmentLog_${monthKey}_chunk${i}`).set({ data: chunkData, chunkIndex: i, totalChunks, archivedAt: new Date().toISOString() });
+          }
+        }
+        changedCount += monthChanged;
+      } catch (e) {
+        failedMonths.push(monthKey);
+      }
+    }
+  } catch (e) { /* 보관함 자체를 못 읽으면 그냥 넘어감 - 라이브 변경은 이미 됐으니 */ }
+  return { changed: changedCount, failedMonths };
+}
 async function renameInventoryItem(oldName) {
   const raw = prompt(`"${oldName}"을(를) 무엇으로 이름 바꿀까요?\n(재고·원가표·이월장부·매출장부에 있는 이 품목 전부 다 같이 바뀌어요)`, oldName);
   if (raw === null) return;
@@ -2660,7 +2739,14 @@ async function renameInventoryItem(oldName) {
   await persistOrders();
   await persistShipmentLog();
   render();
-  showToast(`"${oldName}" → "${newName}"(으)로 이름을 바꿨습니다`);
+  const archiveResult = await renameFieldInArchive('item', t_old, newName);
+  if (archiveResult.failedMonths.length > 0) {
+    alert(`"${oldName}" → "${newName}"(으)로 바꿨어요.\n\n⚠️ 다만 보관함 중 일부(${archiveResult.failedMonths.join(', ')})는 이름 변경에 실패했어요. 그 달의 예전 내역서를 뽑으면 예전 이름으로 나올 수 있어요. 다시 시도해주세요.`);
+  } else if (archiveResult.changed > 0) {
+    showToast(`"${oldName}" → "${newName}"(으)로 이름을 바꿨습니다 (보관함 ${archiveResult.changed}건 포함)`);
+  } else {
+    showToast(`"${oldName}" → "${newName}"(으)로 이름을 바꿨습니다`);
+  }
 }
 async function deleteAllRollsForColor(item, color) {
   const t_item = String(item).trim();
@@ -5471,6 +5557,28 @@ async function editDiscountEntry(id) {
   if (salesSpecialView === 'customerLedger') renderCustomerLedgerTable();
   showToast(e.discount === 0 ? '공제를 삭제했습니다' : `공제를 ${e.discount.toLocaleString()}원으로 수정했습니다`);
 }
+let _dateRangeArchiveResolve = null;
+function openDateRangeArchiveModal(title, desc, defaultStart, defaultEnd) {
+  document.getElementById('dra-title').textContent = title;
+  document.getElementById('dra-desc').textContent = desc || '';
+  document.getElementById('dra-start').value = defaultStart ? toDateInputValue(defaultStart) : '';
+  document.getElementById('dra-end').value = defaultEnd ? toDateInputValue(defaultEnd) : '';
+  document.getElementById('dateRangeArchiveModal').classList.add('open');
+  return new Promise(resolve => { _dateRangeArchiveResolve = resolve; });
+}
+function closeDateRangeArchiveModal(result) {
+  document.getElementById('dateRangeArchiveModal').classList.remove('open');
+  if (_dateRangeArchiveResolve) { _dateRangeArchiveResolve(result); _dateRangeArchiveResolve = null; }
+}
+function confirmDateRangeArchiveModal() {
+  const startV = document.getElementById('dra-start').value;
+  const endV = document.getElementById('dra-end').value;
+  if (!startV || !endV) { showToast('시작일과 종료일을 모두 선택해주세요'); return; }
+  const startDate = fromDateInputValue(startV);
+  const endDate = fromDateInputValue(endV);
+  if (startDate > endDate) { showToast('시작일이 종료일보다 늦어요'); return; }
+  closeDateRangeArchiveModal({ startDate, endDate });
+}
 let _quickCostResolve = null;
 function openQuickCostModal(descText) {
   document.getElementById('quick-cost-desc').textContent = descText || '';
@@ -6629,7 +6737,24 @@ async function deleteFixedCost(idx) {
   await persistSettings();
   openFixedCostModal();
 }
-function renderMonthlyReportView() {
+function computeProfitFieldsForEntries(entries) {
+  // renderSales가 라이브 항목에 하는 원가/순이익/마진율 계산과 완전히 똑같은 로직 - 보관함에서 가져온 항목에도 똑같이 적용하기 위한 함수
+  for (const e of entries) {
+    if (e.isReturn || e.isDefect) { e._cost = null; e._profit = null; e._margin = null; continue; }
+    const costPerY = getCostPerYardForEntry(e);
+    const effectiveRevenue = (e.supplyAmount != null ? e.supplyAmount : e.saleAmount) - (e.discount || 0) + (e.extraAmount || 0);
+    if (costPerY != null && effectiveRevenue > 0) {
+      e._cost = Math.round(costPerY * e.yardsShipped);
+      e._profit = effectiveRevenue - e._cost;
+      e._margin = Math.round((e._profit / effectiveRevenue) * 1000) / 10;
+    } else if (costPerY == null && !hasKnownItem(e.item) && effectiveRevenue > 0) {
+      e._cost = 0; e._profit = effectiveRevenue; e._margin = 100;
+    } else {
+      e._cost = null; e._profit = null; e._margin = null;
+    }
+  }
+}
+async function renderMonthlyReportView() {
   const list = document.getElementById('list');
   list.innerHTML = '';
 
@@ -6669,7 +6794,20 @@ function renderMonthlyReportView() {
   const prevTarget = new Date(target.getFullYear(), target.getMonth() - 1, 1);
   const prevMonthKey = `${String(prevTarget.getFullYear()).slice(2)}.${String(prevTarget.getMonth() + 1).padStart(2, '0')}`;
 
-  const html = buildMonthlyReportHTML(monthKey, prevMonthKey, target.getFullYear(), target.getMonth() + 1);
+  const html = await (async () => {
+    // 이번달/전달 보관함을 가져와서 잠깐 합치고, 라이브가 하던 것과 똑같이 순이익 계산까지 해준 다음 되돌림
+    const mkArchiveKey = k => `20${k.split('.')[0]}-${k.split('.')[1]}`; // 'YY.MM' -> 'YYYY-MM'
+    const archived = (await fetchArchivedEntriesForMonth(mkArchiveKey(monthKey))).concat(await fetchArchivedEntriesForMonth(mkArchiveKey(prevMonthKey)));
+    if (archived.length === 0) return buildMonthlyReportHTML(monthKey, prevMonthKey, target.getFullYear(), target.getMonth() + 1);
+    computeProfitFieldsForEntries(archived);
+    const originalShipmentLog = shipmentLog;
+    shipmentLog = shipmentLog.concat(archived);
+    try {
+      return buildMonthlyReportHTML(monthKey, prevMonthKey, target.getFullYear(), target.getMonth() + 1);
+    } finally {
+      shipmentLog = originalShipmentLog;
+    }
+  })();
   const wrap = document.createElement('div');
   wrap.id = 'monthly-report-content';
   wrap.innerHTML = html;
@@ -6811,7 +6949,7 @@ function exitCustomerRanking() {
   openGroups = new Set(); // 다른 화면으로 넘어갈 때 열려있던 카드들 접힌 상태로 초기화
   render();
 }
-function renderCustomerRankingView() {
+async function renderCustomerRankingView() {
   const list = document.getElementById('list');
   list.innerHTML = '';
 
@@ -6842,23 +6980,31 @@ function renderCustomerRankingView() {
   const prevMonthKey = `${String(prevDate.getFullYear()).slice(2)}.${String(prevDate.getMonth() + 1).padStart(2, '0')}`;
 
   // 거래처별 이번달/지난달 매출 합계 (반품/불량은 차감, 이월미수금은 제외)
+  // "몇 달째 거래했는지"·"마지막 주문일"은 이번달/지난달만으론 안 되고 전체 과거가 필요하니, 보관함 전체를 잠깐 합쳐서 계산한 뒤 되돌림
+  const archivedAll = await fetchAllArchivedEntries();
+  const originalShipmentLog = shipmentLog;
+  if (archivedAll.length > 0) shipmentLog = shipmentLog.concat(archivedAll);
   const curSales = new Map(), prevSales = new Map(), lastOrderDate = new Map(), monthsWithOrders = new Map();
-  for (const e of shipmentLog) {
-    if (!e.customer || e.item === '이월 미수금') continue;
-    const cust = String(e.customer).trim();
-    let amt = 0;
-    if (e.saleAmount != null) amt = e.saleAmount - (e.discount || 0);
-    else if ((e.isReturn || e.isDefect) && e.deductAmount != null) amt = -e.deductAmount;
-    else continue;
-    const monthKey = String(e.date).slice(0, 5);
-    if (monthKey === curMonthKey) curSales.set(cust, (curSales.get(cust) || 0) + amt);
-    if (monthKey === prevMonthKey) prevSales.set(cust, (prevSales.get(cust) || 0) + amt);
-    if (!e.isReturn && !e.isDefect) {
-      if (!monthsWithOrders.has(cust)) monthsWithOrders.set(cust, new Set());
-      monthsWithOrders.get(cust).add(monthKey);
-      const cur = lastOrderDate.get(cust);
-      if (!cur || e.date > cur) lastOrderDate.set(cust, e.date);
+  try {
+    for (const e of shipmentLog) {
+      if (!e.customer || e.item === '이월 미수금') continue;
+      const cust = String(e.customer).trim();
+      let amt = 0;
+      if (e.saleAmount != null) amt = e.saleAmount - (e.discount || 0);
+      else if ((e.isReturn || e.isDefect) && e.deductAmount != null) amt = -e.deductAmount;
+      else continue;
+      const monthKey = String(e.date).slice(0, 5);
+      if (monthKey === curMonthKey) curSales.set(cust, (curSales.get(cust) || 0) + amt);
+      if (monthKey === prevMonthKey) prevSales.set(cust, (prevSales.get(cust) || 0) + amt);
+      if (!e.isReturn && !e.isDefect) {
+        if (!monthsWithOrders.has(cust)) monthsWithOrders.set(cust, new Set());
+        monthsWithOrders.get(cust).add(monthKey);
+        const cur = lastOrderDate.get(cust);
+        if (!cur || e.date > cur) lastOrderDate.set(cust, e.date);
+      }
     }
+  } finally {
+    shipmentLog = originalShipmentLog;
   }
 
   const allCustomers = new Set([...curSales.keys(), ...prevSales.keys()]);
@@ -7194,7 +7340,14 @@ async function renameCustomer(oldName) {
   await persistCustomerNotes();
   await persistCustomerList();
   render();
-  showToast(`"${oldName}" → "${newName}"(으)로 이름을 바꿨습니다`);
+  const archiveResult = await renameFieldInArchive('customer', t_old, newName);
+  if (archiveResult.failedMonths.length > 0) {
+    alert(`"${oldName}" → "${newName}"(으)로 바꿨어요.\n\n⚠️ 다만 보관함 중 일부(${archiveResult.failedMonths.join(', ')})는 이름 변경에 실패했어요. 그 시절 원장/내역서를 뽑으면 예전 이름으로 나올 수 있어요. 다시 시도해주세요.`);
+  } else if (archiveResult.changed > 0) {
+    showToast(`"${oldName}" → "${newName}"(으)로 이름을 바꿨습니다 (보관함 ${archiveResult.changed}건 포함)`);
+  } else {
+    showToast(`"${oldName}" → "${newName}"(으)로 이름을 바꿨습니다`);
+  }
 }
 function getCustomerTrueUnpaid(customer, asOfDate) {
   // 이 거래처의 총 미수금 - 건별로 끊어서 0 밑으로 안 내려가게 막지 않고, 전체를 하나의 흐름으로 누적계산함
@@ -7288,6 +7441,7 @@ function shiftSalesDayFilter(delta) {
   const dd = String(base.getDate()).padStart(2, '0');
   salesDayFilter = `${yy}.${mm}.${dd}`;
   salesDayFilterEnd = null;
+  refreshSalesDayArchivedCache();
   render();
 }
 function renderSales() {
@@ -7344,7 +7498,7 @@ function renderSales() {
     return;
   }
 
-  let sales = shipmentLog.filter(e => (e.saleAmount != null || e.isReturn || e.isDefect) && e.item !== '이월 미수금');
+  let sales = shipmentLog.concat(salesDayFilter ? salesDayArchivedCache : []).filter(e => (e.saleAmount != null || e.isReturn || e.isDefect) && e.item !== '이월 미수금');
   if (searchTerm.trim()) {
     const t = searchTerm.trim().toLowerCase();
     sales = sales.filter(e => String(e.customer).toLowerCase().includes(t) || String(e.item).toLowerCase().includes(t));
@@ -9543,28 +9697,29 @@ function parseKDate(s) {
   return new Date(2000 + yy, mm - 1, dd);
 }
 async function archiveOldSalesLog() {
-  const daysStr = prompt('완전히 정산(미수금 0원) 끝난 지 며칠 지난 매출 건부터 내보내고 정리할까요?\n(사업 초기라 오래된 게 적다면 30 정도로 짧게 잡아보세요)', '30');
-  if (daysStr === null) return;
-  const days = parseInt(daysStr);
-  if (!days || days <= 0) { showToast('숫자를 확인해주세요'); return; }
-  const cutoff = new Date();
-  cutoff.setDate(cutoff.getDate() - days);
+  const dateToKFormat = (d) => `${String(d.getFullYear()).slice(2)}.${String(d.getMonth() + 1).padStart(2, '0')}.${String(d.getDate()).padStart(2, '0')}`;
+  const defaultEndDate = new Date();
+  defaultEndDate.setDate(defaultEndDate.getDate() - 30);
+  const defaultStartDate = new Date();
+  defaultStartDate.setFullYear(defaultStartDate.getFullYear() - 1);
+  const range = await openDateRangeArchiveModal('매출장부 정리', '완전히 정산(미수금 0원)된 건 중, 이 기간에 있는 것만 보관함으로 옮기고 정리해요', dateToKFormat(defaultStartDate), dateToKFormat(defaultEndDate));
+  if (!range) return;
+  const { startDate, endDate } = range;
 
   const toArchive = shipmentLog.filter(e => {
-    const d = parseKDate(e.date);
-    if (!d || d >= cutoff) return false;
+    if (e.date < startDate || e.date > endDate) return false;
     // 아직 돈을 다 못 받은 건(미수금 남은 매출)은 절대 정리 대상에서 제외
     if (e.saleAmount != null && getRemaining(e) > 0) return false;
     return true;
   });
   if (toArchive.length === 0) {
-    const stillUnpaidCount = shipmentLog.filter(e => e.saleAmount != null && getRemaining(e) > 0).length;
+    const stillUnpaidCount = shipmentLog.filter(e => e.date >= startDate && e.date <= endDate && e.saleAmount != null && getRemaining(e) > 0).length;
     showToast(stillUnpaidCount > 0
-      ? `정리할 게 없어요 - 아직 미수금 남은 건이 ${stillUnpaidCount}건 있어서 자동으로 제외됐어요 (입금 처리 후 다시 시도해주세요)`
-      : '정리할 매출 기록이 없습니다');
+      ? `정리할 게 없어요 - 이 기간에 미수금 남은 건이 ${stillUnpaidCount}건 있어서 자동으로 제외됐어요 (입금 처리 후 다시 시도해주세요)`
+      : '이 기간에 정리할 매출 기록이 없습니다');
     return;
   }
-  if (!confirm(`${days}일 지났고 미수금 없는 매출 ${toArchive.length}건을 엑셀로 내보내고 사이트에서 삭제합니다.\n미수금이 남아있는 건은 아무리 오래됐어도 자동으로 제외돼요.\n계속할까요?`)) return;
+  if (!confirm(`${startDate}~${endDate} 기간의 미수금 없는 매출 ${toArchive.length}건을 엑셀로 내보내고 사이트에서 삭제합니다.\n미수금이 남아있는 건은 아무리 오래됐어도 자동으로 제외돼요.\n계속할까요?`)) return;
 
   const headers = ['날짜', '거래처', '공장', '품목', '칼라', '수량', '단위', '단가', '공급가액', '세액', '매출액', '입금액', '반품/불량', '비고'];
   const rows = toArchive.map(e => [
@@ -9636,19 +9791,16 @@ async function archiveOldSalesLog() {
     showToast(`${idsToRemove.size}건을 보관함으로 안전하게 옮기고 정리했어요 (필요하면 언제든 다시 불러올 수 있어요)`);
   }
 }
-function exportSalesLog() {
-  const daysStr = prompt('며칠 이내 매출까지 내보낼까요? (예: 90 = 최근 90일치, 전체 다 내보내려면 0)', '90');
-  if (daysStr === null) return;
-  const days = parseInt(daysStr);
-  if (isNaN(days) || days < 0) { showToast('숫자를 확인해주세요'); return; }
+async function exportSalesLog() {
+  const dateToKFormat = (d) => `${String(d.getFullYear()).slice(2)}.${String(d.getMonth() + 1).padStart(2, '0')}.${String(d.getDate()).padStart(2, '0')}`;
+  const defaultStartDate = new Date();
+  defaultStartDate.setFullYear(defaultStartDate.getFullYear() - 1);
+  const range = await openDateRangeArchiveModal('매출장부 내보내기', '이 기간의 매출 기록을 엑셀(CSV)로 내보내요. 사이트 데이터는 그대로 있어요', dateToKFormat(defaultStartDate), todayStr());
+  if (!range) return;
+  const { startDate, endDate } = range;
 
-  let target = shipmentLog;
-  if (days > 0) {
-    const cutoff = new Date();
-    cutoff.setDate(cutoff.getDate() - days);
-    target = shipmentLog.filter(e => { const d = parseKDate(e.date); return d && d >= cutoff; });
-  }
-  if (target.length === 0) { showToast('내보낼 매출 기록이 없습니다'); return; }
+  const target = shipmentLog.filter(e => e.date >= startDate && e.date <= endDate);
+  if (target.length === 0) { showToast('이 기간에 내보낼 매출 기록이 없습니다'); return; }
 
   const headers = ['날짜', '거래처', '공장', '품목', '칼라', '수량', '단위', '단가', '공급가액', '세액', '매출액', '입금액', '미수금', '반품/불량', '비고'];
   const rows = target.map(e => [
@@ -9744,16 +9896,18 @@ async function repairOrdersFromShipmentLog() {
   alert(`${fixedCount}건 복구했어요:\n\n${fixedList.slice(0, 30).join('\n')}${fixedList.length > 30 ? `\n...외 ${fixedList.length - 30}건` : ''}`);
 }
 async function archiveOldCompleted() {
-  const daysStr = prompt('완료된 지 며칠 지난 것부터 내보내고 정리할까요? (예: 30)', '30');
-  if (daysStr === null) return;
-  const days = parseInt(daysStr);
-  if (!days || days <= 0) { showToast('숫자를 확인해주세요'); return; }
-  const cutoff = new Date();
-  cutoff.setDate(cutoff.getDate() - days);
+  const dateToKFormat = (d) => `${String(d.getFullYear()).slice(2)}.${String(d.getMonth() + 1).padStart(2, '0')}.${String(d.getDate()).padStart(2, '0')}`;
+  const defaultEndDate = new Date();
+  defaultEndDate.setDate(defaultEndDate.getDate() - 30);
+  const defaultStartDate = new Date();
+  defaultStartDate.setFullYear(defaultStartDate.getFullYear() - 1);
+  const range = await openDateRangeArchiveModal('이월장부 정리', '완료 처리된 발주 중, 이 기간에 완료된 것만 내보내고 목록에서 정리해요', dateToKFormat(defaultStartDate), dateToKFormat(defaultEndDate));
+  if (!range) return;
+  const { startDate, endDate } = range;
 
-  const toArchive = orders.filter(o => o.done && o.doneDate && parseKDate(o.doneDate) && parseKDate(o.doneDate) < cutoff);
-  if (toArchive.length === 0) { showToast('내보낼 완료 건이 없습니다'); return; }
-  if (!confirm(`완료 처리된 지 ${days}일 넘은 ${toArchive.length}건을 엑셀(CSV)로 내보내고 목록에서 삭제합니다.\n계속할까요?`)) return;
+  const toArchive = orders.filter(o => o.done && o.doneDate && o.doneDate >= startDate && o.doneDate <= endDate);
+  if (toArchive.length === 0) { showToast('이 기간에 내보낼 완료 건이 없습니다'); return; }
+  if (!confirm(`${startDate}~${endDate}에 완료 처리된 ${toArchive.length}건을 엑셀(CSV)로 내보내고 목록에서 삭제합니다.\n계속할까요?`)) return;
 
   const headers = ['발주날짜', '거래처', '공장', '품목', '칼라', '발주수량', '단위', '처리수량', '비고', '완료날짜'];
   const rows = toArchive.map(o => [o.date, o.customer, o.factory, o.item, o.color, o.orderQty, o.unit || 'y', o.received, o.note, o.doneDate]);
@@ -9839,9 +9993,10 @@ async function applyCarryoverUnpaidIfNeeded() {
     return;
   }
   // 설정값(carryoverUnpaidApplied)이 어떤 이유로 리셋되더라도 절대 중복 생성되지 않도록,
-  // shipmentLog 자체에 이미 그 거래처의 "이월 미수금" 항목이 있는지 직접 한 번 더 확인함
+  // shipmentLog뿐 아니라 보관함(정리된 오래된 건들)까지 다 확인해서, 이미 있으면 절대 다시 안 만듦
+  const archivedForCheck = await fetchAllArchivedEntries();
   const alreadyHave = new Set(
-    shipmentLog.filter(e => e.item === '이월 미수금').map(e => String(e.customer || '').trim())
+    shipmentLog.concat(archivedForCheck).filter(e => e.item === '이월 미수금').map(e => String(e.customer || '').trim())
   );
   let addedCount = 0;
   for (const [customer, amount] of CARRYOVER_UNPAID) {
