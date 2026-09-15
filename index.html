@@ -968,7 +968,7 @@
 const PASSWORD = "3059";
 const ADMIN_PASSWORD = "9503"; // 매출/미수금 탭 전용 - 필요하면 이 값만 바꿔서 변경 가능
 const DATA_VERSION = "2026-08-03-v4"; // 재고/이월장부 씨앗 데이터를 바꿀 때마다 이 값을 새로 바꿔주세요
-const APP_CODE_VERSION = "2026-09-09-k"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
+const APP_CODE_VERSION = "2026-09-09-p"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
 const SCHEMA_STAMP = 2; // 서버 저장규칙이 확인하는 "최신 앱 도장" - 절대 자주 바꾸지 않음(이 값을 아는 코드만 저장 가능하게 서버에서 막을 때 씀)
 
 const firebaseConfig = {
@@ -1067,6 +1067,8 @@ let itemStatsViewMode = 'month'; // day | month
 let itemStatsPeriodIndex = 0; // 지금 보고 있는 기간(월/일)이 periods 배열에서 몇 번째인지 - 최신이 0번
 let priceListCustomer = ''; // 거래처 단가표에서 지금 보고 있는 거래처
 let priceListYear = null; // 거래처 단가표에서 지금 보고 있는 연도 (null이면 전체기간)
+let priceListArchivedCache = []; // 특정 연도를 선택했을때, 그 연도의 보관함 데이터를 미리 가져와서 담아두는 캐시
+let itemMonthlyArchivedCache = []; // 품목출고량 월별보기에서 쓰는 보관함 전체 캐시
 let salesSpecialView = null; // null | 'itemMonthly' | 'customerLedger'
 let ledgerCustomer = null;
 let ledgerStartDate = null;
@@ -1348,6 +1350,7 @@ async function manualBackupNow() {
   if (!useFirebase) { showToast('이 화면에서는 백업 기능을 쓸 수 없어요'); return; }
   const now = new Date();
   const stamp = `${todayStr()}_${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}`;
+  const CHUNK_SIZE = 600000;
   const items = [
     ['rolls', rolls, '재고'], ['orders', orders, '이월장부'], ['shipmentLog', shipmentLog, '매출장부'],
     ['swatchInfo', swatchInfo, '스왓치정보'], ['settings', settings, '사업자정보/설정'], ['costs', costs, '원가표'],
@@ -1357,11 +1360,16 @@ async function manualBackupNow() {
   for (const [key, data, label] of items) {
     try {
       const json = JSON.stringify(data);
-      if (json.length > 900000) {
-        failed.push(`${label} (용량이 너무 커서 저장 못 함 - "매출장부 내보내기+정리"로 줄여주세요)`);
-        continue;
+      if (json.length <= CHUNK_SIZE) {
+        await db.collection('inventory_backups').doc(`${key}_manual_${stamp}`).set({ data: json, savedAt: now.toISOString() });
+      } else {
+        // 데이터가 커서 문서 하나(최대 1MB)에 안 들어가면, 여러 조각으로 나눠서 각각 저장함
+        const totalChunks = Math.ceil(json.length / CHUNK_SIZE);
+        for (let i = 0; i < totalChunks; i++) {
+          const chunkData = json.slice(i * CHUNK_SIZE, (i + 1) * CHUNK_SIZE);
+          await db.collection('inventory_backups').doc(`${key}_manual_${stamp}_chunk${i}`).set({ data: chunkData, chunkIndex: i, totalChunks, savedAt: now.toISOString() });
+        }
       }
-      await db.collection('inventory_backups').doc(`${key}_manual_${stamp}`).set({ data: json, savedAt: now.toISOString() });
       ok.push(label);
     } catch (e) {
       failed.push(label);
@@ -1373,12 +1381,31 @@ async function manualBackupNow() {
 }
 async function backupIfNeededInTx(tx, key, currentJSON) {
   // 하루에 한 번, 저장 직전의(=아직 안전했던) 상태를 백업용으로 남겨둠. 실패해도 본 저장은 막지 않음
+  // 데이터가 크면(매출장부 등) Firestore 문서 하나(최대 1MB)에 다 안 들어가니, 여러 조각으로 나눠서 저장함
   if (currentJSON == null) return;
+  const CHUNK_SIZE = 600000;
   try {
-    const backupRef = db.collection('inventory_backups').doc(`${key}_${todayStr()}`);
-    const backupSnap = await tx.get(backupRef);
-    if (!backupSnap.exists) {
-      tx.set(backupRef, { data: currentJSON, savedAt: new Date().toISOString() });
+    const label = todayStr();
+    if (currentJSON.length <= CHUNK_SIZE) {
+      // 작은 데이터는 기존 방식 그대로(조각 안 냄) - 하위호환
+      const backupRef = db.collection('inventory_backups').doc(`${key}_${label}`);
+      const backupSnap = await tx.get(backupRef);
+      if (!backupSnap.exists) {
+        tx.set(backupRef, { data: currentJSON, savedAt: new Date().toISOString() });
+      }
+    } else {
+      // 큰 데이터는 여러 조각으로 나눠서 각각 별도 문서에 저장함
+      const firstRef = db.collection('inventory_backups').doc(`${key}_${label}_chunk0`);
+      const firstSnap = await tx.get(firstRef);
+      if (!firstSnap.exists) {
+        const totalChunks = Math.ceil(currentJSON.length / CHUNK_SIZE);
+        const nowISO = new Date().toISOString();
+        for (let i = 0; i < totalChunks; i++) {
+          const chunkData = currentJSON.slice(i * CHUNK_SIZE, (i + 1) * CHUNK_SIZE);
+          const chunkRef = db.collection('inventory_backups').doc(`${key}_${label}_chunk${i}`);
+          tx.set(chunkRef, { data: chunkData, chunkIndex: i, totalChunks, savedAt: nowISO });
+        }
+      }
     }
   } catch (e) { /* 백업 실패는 무시하고 진행 */ }
 }
@@ -4294,7 +4321,7 @@ function setStatementPreset(preset) {
   document.getElementById('stmt-end').value = fmt(endD);
 }
 
-function generateStatementFromModal() {
+async function generateStatementFromModal() {
   const customer = document.getElementById('stmt-customer').value.trim();
   const startV = document.getElementById('stmt-start').value;
   const endV = document.getElementById('stmt-end').value;
@@ -4303,9 +4330,9 @@ function generateStatementFromModal() {
   const endDate = fromDateInputValue(endV);
   closeStatementModal();
   if (customer) {
-    printStatementForRange(customer, startDate, endDate);
+    await printStatementForRange(customer, startDate, endDate);
   } else {
-    printAllCustomersStatement(startDate, endDate);
+    await printAllCustomersStatement(startDate, endDate);
   }
 }
 
@@ -4417,7 +4444,7 @@ function updatePreShipTotals() {
   document.getElementById('pre-ship-grand-total').textContent = grandTotal.toLocaleString();
 }
 
-function printPreShipmentFromModal() {
+async function printPreShipmentFromModal() {
   const customerName = pendingPreShipCustomer;
   const rowEls = document.querySelectorAll('.pre-ship-row');
   const extraRows = [];
@@ -4453,14 +4480,27 @@ function printPreShipmentFromModal() {
   }
   const taxOverrideIds = taxIncluded ? new Set(pastEntryIds) : null; // 체크리스트에서 고른 기존 항목들도, 실제 기록은 안 건드리고 이 인쇄물에서만 부가세 얹어서 보여줌
 
-  const html = buildStatementHTML(customerName, null, null, pastEntryIds.length > 0 ? pastEntryIds : null, true, extraRows, {}, taxOverrideIds);
+  const html = await buildStatementHTML(customerName, null, null, pastEntryIds.length > 0 ? pastEntryIds : null, true, extraRows, {}, taxOverrideIds);
   if (html == null) { showToast('인쇄할 내역이 없습니다'); return; }
   document.getElementById('printArea').innerHTML = html;
   closePreShipmentModal();
   setTimeout(() => window.print(), 100);
 }
 
-function buildStatementHTML(customerName, startDate, endDate, entryIdFilter, includePayments, extraRows, options, taxOverrideIds) {
+async function buildStatementHTML(customerName, startDate, endDate, entryIdFilter, includePayments, extraRows, options, taxOverrideIds) {
+  // 명세서는 "총 미수금액(전체)"도 같이 보여주는데, 이게 정확하려면 이 거래처의 전체 과거 흐름이 필요하니
+  // 보관함 전체를 가져와서 잠깐 합친 상태로 기존 로직(buildStatementHTMLInner)을 그대로 실행한 뒤 되돌림
+  const t_c = String(customerName).trim();
+  const archivedForCustomer = await fetchAllArchivedEntriesForCustomer(t_c);
+  const originalShipmentLog = shipmentLog;
+  if (archivedForCustomer.length > 0) shipmentLog = shipmentLog.concat(archivedForCustomer);
+  try {
+    return buildStatementHTMLInner(customerName, startDate, endDate, entryIdFilter, includePayments, extraRows, options, taxOverrideIds);
+  } finally {
+    shipmentLog = originalShipmentLog;
+  }
+}
+function buildStatementHTMLInner(customerName, startDate, endDate, entryIdFilter, includePayments, extraRows, options, taxOverrideIds) {
   if (includePayments === undefined) includePayments = true;
   extraRows = extraRows || [];
   options = options || {};
@@ -4688,48 +4728,48 @@ function buildStatementHTML(customerName, startDate, endDate, entryIdFilter, inc
   }).join('');
 }
 
-function printStatementForRange(customerName, startDate, endDate) {
-  const html = buildStatementHTML(customerName, startDate, endDate);
+async function printStatementForRange(customerName, startDate, endDate) {
+  const html = await buildStatementHTML(customerName, startDate, endDate);
   if (html == null) { showToast('해당 기간에 인쇄할 내역이 없습니다'); return; }
   document.getElementById('printArea').innerHTML = html;
   setTimeout(() => window.print(), 100);
 }
-function printStatementForEntries(customerName, entryIds, includePayments, taxOverrideIds) {
-  const html = buildStatementHTML(customerName, null, null, entryIds, includePayments === undefined ? true : includePayments, null, null, taxOverrideIds);
+async function printStatementForEntries(customerName, entryIds, includePayments, taxOverrideIds) {
+  const html = await buildStatementHTML(customerName, null, null, entryIds, includePayments === undefined ? true : includePayments, null, null, taxOverrideIds);
   if (html == null) { showToast('선택한 내역이 없습니다'); return; }
   document.getElementById('printArea').innerHTML = html;
   setTimeout(() => window.print(), 100);
 }
 
-function printCustomersStatements(customers, startDate, endDate) {
+async function printCustomersStatements(customers, startDate, endDate) {
   if (customers.length === 0) { showToast('인쇄할 거래처가 없습니다'); return; }
-  const blocks = customers.map(c => buildStatementHTML(c, startDate, endDate)).filter(Boolean);
+  const blocks = (await Promise.all(customers.map(c => buildStatementHTML(c, startDate, endDate)))).filter(Boolean);
   const wrapped = blocks.map((b, i) => i < blocks.length - 1 ? `<div style="page-break-after: always;">${b}</div>` : b);
   document.getElementById('printArea').innerHTML = wrapped.join('');
   setTimeout(() => window.print(), 100);
   showToast(`${blocks.length}개 거래처 명세서를 인쇄합니다`);
 }
 
-function printAllCustomersStatement(startDate, endDate) {
+async function printAllCustomersStatement(startDate, endDate) {
   const inRange = (d) => d && d >= startDate && d <= endDate;
   const customers = Array.from(new Set(
     shipmentLog.filter(e => e.customer && inRange(e.date)).map(e => String(e.customer).trim())
   )).sort((a, b) => a.localeCompare(b, 'ko'));
-  printCustomersStatements(customers, startDate, endDate);
+  await printCustomersStatements(customers, startDate, endDate);
 }
 
-function printSelectedMainStatements() {
+async function printSelectedMainStatements() {
   const checked = document.querySelectorAll('.main-flag-checkbox:checked');
   if (checked.length === 0) { showToast('메인으로 체크된 거래처가 없습니다'); return; }
   const seen = new Set();
   const blocks = [];
-  checked.forEach(cb => {
+  for (const cb of checked) {
     const key = `${cb.dataset.customer}|${cb.dataset.start}|${cb.dataset.end}`;
-    if (seen.has(key)) return;
+    if (seen.has(key)) continue;
     seen.add(key);
-    const html = buildStatementHTML(cb.dataset.customer, cb.dataset.start, cb.dataset.end);
+    const html = await buildStatementHTML(cb.dataset.customer, cb.dataset.start, cb.dataset.end);
     if (html) blocks.push(html);
-  });
+  }
   if (blocks.length === 0) { showToast('인쇄할 내역이 없습니다'); return; }
   const wrapped = blocks.map((b, i) => i < blocks.length - 1 ? `<div style="page-break-after: always;">${b}</div>` : b);
   document.getElementById('printArea').innerHTML = wrapped.join('');
@@ -4737,18 +4777,19 @@ function printSelectedMainStatements() {
   showToast(`${blocks.length}건 인쇄합니다`);
 }
 
-function printCustomerStatement(customerName, entryIds, period) {
+async function printCustomerStatement(customerName, entryIds, period) {
   const dates = entryIds.map(id => shipmentLog.find(e => e.id === id)).filter(Boolean).map(e => e.date);
   if (dates.length === 0) { showToast('인쇄할 내역이 없습니다'); return; }
   const startDate = dates.reduce((a, b) => a < b ? a : b);
   const endDate = dates.reduce((a, b) => a > b ? a : b);
-  printStatementForRange(customerName, startDate, endDate);
+  await printStatementForRange(customerName, startDate, endDate);
 }
 
-function showItemMonthlyStats() {
+async function showItemMonthlyStats() {
   salesSpecialView = 'itemMonthly';
   itemStatsPeriodIndex = 0;
   openGroups = new Set(); // 다른 화면으로 넘어갈 때 열려있던 카드들 접힌 상태로 초기화
+  itemMonthlyArchivedCache = await fetchAllArchivedEntries();
   render();
 }
 function exitItemMonthlyStats() {
@@ -4759,6 +4800,7 @@ function exitItemMonthlyStats() {
 function showCustomerPriceList() {
   salesSpecialView = 'priceList';
   priceListYear = null;
+  priceListArchivedCache = [];
   openGroups = new Set();
   render();
 }
@@ -4824,6 +4866,7 @@ async function confirmNewPriceModal() {
   }
   closeNewPriceModal();
   priceListYear = null; // 방금 등록한 게 확실히 보이도록 전체보기로 전환 (특정 연도만 보고 있었으면 새 품목이 안 보일 수 있어서)
+  priceListArchivedCache = [];
   renderCustomerPriceListView();
   showToast(`"${item}" 단가를 등록했어요 - 다음부터 이 거래처 출고할 때 자동으로 채워져요`);
 }
@@ -4841,7 +4884,7 @@ function renderCustomerPriceListView() {
   inputWrap.style.cssText = 'margin-bottom:10px; position:relative; display:flex; gap:8px;';
   inputWrap.innerHTML = `
     <input id="price-list-customer-input" type="text" placeholder="예: 클래식" autocomplete="off" value="${escAttr(priceListCustomer)}" oninput="showCustomerSuggestions(this)" onfocus="showCustomerSuggestions(this)" onblur="hideItemSuggestionsDelayed()" style="flex:1; padding:10px 12px; border:1px solid var(--border); border-radius:8px; font-size:14px;">
-    <button onclick="priceListCustomer=document.getElementById('price-list-customer-input').value.trim(); priceListYear=null; render();" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:8px;padding:10px 16px;font-size:13px;font-weight:600;">조회</button>
+    <button onclick="priceListCustomer=document.getElementById('price-list-customer-input').value.trim(); priceListYear=null; priceListArchivedCache=[]; render();" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:8px;padding:10px 16px;font-size:13px;font-weight:600;">조회</button>
   `;
   list.appendChild(inputWrap);
 
@@ -4872,19 +4915,27 @@ function renderCustomerPriceListView() {
   const allChip = document.createElement('div');
   allChip.textContent = '전체';
   allChip.style.cssText = `flex:none; padding:6px 14px; border-radius:20px; font-size:12px; font-weight:600; cursor:pointer; background:${priceListYear === null ? 'var(--primary-dark)' : '#fff'}; color:${priceListYear === null ? '#fff' : '#5f5e5a'}; border:1px solid ${priceListYear === null ? 'var(--primary-dark)' : 'var(--border)'};`;
-  allChip.onclick = () => { priceListYear = null; render(); };
+  allChip.onclick = () => { priceListYear = null; priceListArchivedCache = []; render(); };
   navBar.appendChild(allChip);
   for (const y of years) {
     const yChip = document.createElement('div');
     yChip.textContent = `20${y}`;
     yChip.style.cssText = `flex:none; padding:6px 14px; border-radius:20px; font-size:12px; font-weight:600; cursor:pointer; background:${priceListYear === y ? 'var(--primary-dark)' : '#fff'}; color:${priceListYear === y ? '#fff' : '#5f5e5a'}; border:1px solid ${priceListYear === y ? 'var(--primary-dark)' : 'var(--border)'};`;
-    yChip.onclick = () => { priceListYear = y; render(); };
+    yChip.onclick = async () => {
+      priceListYear = y;
+      // 이 연도(1~12월)에 해당하는 보관함을 미리 다 가져와서 캐시에 담아둔 다음 화면을 다시 그림
+      const months = Array.from({ length: 12 }, (_, i) => `20${y}-${String(i + 1).padStart(2, '0')}`);
+      let merged = [];
+      for (const mk of months) merged = merged.concat(await fetchArchivedEntriesForMonth(mk));
+      priceListArchivedCache = merged;
+      render();
+    };
     navBar.appendChild(yChip);
   }
   list.appendChild(navBar);
 
-  // 이 거래처의 매출 기록을 품목→컬러로 묶고, 연도 필터가 있으면 그 연도 것만 남김
-  const filtered = shipmentLog.filter(e =>
+  // 이 거래처의 매출 기록을 품목→컬러로 묶고, 연도 필터가 있으면 그 연도 것만 남김 (보관함 캐시까지 합쳐서 찾음)
+  const filtered = shipmentLog.concat(priceListYear !== null ? priceListArchivedCache : []).filter(e =>
     String(e.customer || '').trim() === t_c && e.saleAmount != null && !e.isReturn && !e.isDefect && !e.isSample && e.item !== '이월 미수금' && e.unitPrice != null
     && (priceListYear === null || String(e.date).slice(0, 2) === priceListYear)
   );
@@ -4972,8 +5023,8 @@ function renderItemMonthlyStatsView() {
   topBar.appendChild(toggleBtn);
   list.appendChild(topBar);
 
-  // 실제 출고량 기준(가격 유무 상관없이) - 정상 출고만 집계, 반품/불량/수동종료/추가금 제외
-  const shipments = shipmentLog.filter(e => !e.isReturn && !e.isDefect && !e.manualClose && !e.isFee && e.yardsShipped > 0);
+  // 실제 출고량 기준(가격 유무 상관없이) - 정상 출고만 집계, 반품/불량/수동종료/추가금 제외 (보관함 캐시까지 합쳐서 찾음)
+  const shipments = shipmentLog.concat(itemMonthlyArchivedCache).filter(e => !e.isReturn && !e.isDefect && !e.manualClose && !e.isFee && e.yardsShipped > 0);
   let filtered = shipments;
   if (searchTerm.trim()) {
     const t = searchTerm.trim().toLowerCase();
@@ -5528,7 +5579,7 @@ async function confirmReturnDefectEdit() {
   if (salesSpecialView === 'customerLedger') renderCustomerLedgerTable();
   showToast('수정했습니다');
 }
-function printCurrentLedgerStatement() {
+async function printCurrentLedgerStatement() {
   const customer = (ledgerCustomer || document.getElementById('ledger-customer').value).trim();
   if (!customer) { showToast('거래처를 입력해주세요'); return; }
   const checkedSales = document.querySelectorAll('.ledger-print-check[data-entry-id]:checked');
@@ -5542,16 +5593,25 @@ function printCurrentLedgerStatement() {
       refs.forEach(r => paymentKeys.add(`${r.entryId}:${r.paymentIdx}`));
     } catch (e) {}
   });
-  printStatementForEntries(customer, entryIds, paymentKeys, document.getElementById('ledger-print-add-tax').checked ? new Set(entryIds) : null);
+  await printStatementForEntries(customer, entryIds, paymentKeys, document.getElementById('ledger-print-add-tax').checked ? new Set(entryIds) : null);
 }
-function printLedgerPeriod() {
+async function printLedgerPeriod() {
   const customer = (ledgerCustomer || document.getElementById('ledger-customer').value).trim();
   const startDate = fromDateInputValue(document.getElementById('ledger-start').value);
   const endDate = fromDateInputValue(document.getElementById('ledger-end').value);
   if (!customer) { showToast('거래처를 입력해주세요'); return; }
   const t_c = customer.trim();
 
-  const events = buildCustomerLedgerEvents(t_c);
+  // 원장 화면과 똑같이, "[이월]" 잔액 계산에 이 거래처의 전체 과거 흐름이 필요하니 보관함 전체를 잠깐 합쳤다가 되돌림
+  const archivedForCustomer = await fetchAllArchivedEntriesForCustomer(t_c);
+  const originalShipmentLog = shipmentLog;
+  if (archivedForCustomer.length > 0) shipmentLog = shipmentLog.concat(archivedForCustomer);
+  let events;
+  try {
+    events = buildCustomerLedgerEvents(t_c);
+  } finally {
+    shipmentLog = originalShipmentLog;
+  }
   if (events.length === 0) { showToast('인쇄할 내역이 없습니다'); return; }
 
   // 화면 표에서 체크 해제된(선택 안 된) 항목은 인쇄에서 뺌
@@ -5792,7 +5852,7 @@ function renderCustomerProfileSummary(t_c) {
     </div>
   `;
 }
-function renderCustomerLedgerTable() {
+async function renderCustomerLedgerTable() {
   const customer = (ledgerCustomer || document.getElementById('ledger-customer').value).trim();
   const startDate = fromDateInputValue(document.getElementById('ledger-start').value);
   const endDate = fromDateInputValue(document.getElementById('ledger-end').value);
@@ -5800,7 +5860,6 @@ function renderCustomerLedgerTable() {
   const memoWrap = document.getElementById('ledger-memo-wrap');
   if (!customer) { wrap.innerHTML = '<div class="empty">거래처를 입력해주세요</div>'; if (memoWrap) memoWrap.innerHTML = ''; return; }
   const t_c = customer.trim();
-  renderCustomerProfileSummary(t_c);
 
   if (memoWrap) {
     const custMemos = depositMemos.filter(m => String(m.customer).trim() === t_c);
@@ -5820,7 +5879,18 @@ function renderCustomerLedgerTable() {
     `;
   }
 
-  const events = buildCustomerLedgerEvents(t_c);
+  // 원장의 "[이월]" 잔액이나 프로필요약(누적매출 등)이나 둘 다 이 거래처의 전체 과거 흐름이 필요하니,
+  // 특정 기간이 아니라 보관함 전체를 가져와서 잠깐 합친 상태로 둘 다 계산한 뒤 되돌림
+  const archivedForCustomer = await fetchAllArchivedEntriesForCustomer(t_c);
+  const originalShipmentLog = shipmentLog;
+  if (archivedForCustomer.length > 0) shipmentLog = shipmentLog.concat(archivedForCustomer);
+  let events;
+  try {
+    renderCustomerProfileSummary(t_c);
+    events = buildCustomerLedgerEvents(t_c);
+  } finally {
+    shipmentLog = originalShipmentLog;
+  }
 
   if (events.length === 0) { wrap.innerHTML = '<div class="empty">거래 내역이 없습니다</div>'; return; }
 
@@ -6029,7 +6099,7 @@ async function renderBackupManagerList() {
   if (shipLogSize > 700000) {
     const warnBanner = document.createElement('div');
     warnBanner.style.cssText = 'background:#fdecea; border:1px solid #f0b8b8; border-radius:10px; padding:10px 12px; margin-bottom:10px; font-size:13px; color:var(--danger);';
-    warnBanner.innerHTML = `⚠️ 매출장부 용량이 커지고 있어요 (${Math.round(shipLogSize / 1024)}KB). 너무 커지면 백업이 조용히 실패해서 나중에 복구가 안 될 수 있어요. "관리" 메뉴의 "매출장부 내보내기+정리"로 오래되고 정산 끝난 건들을 정리해주시는 걸 추천드려요.`;
+    warnBanner.innerHTML = `⚠️ 매출장부 용량이 커지고 있어요 (${Math.round(shipLogSize / 1024)}KB). 지금은 자동으로 여러 조각으로 나눠서 안전하게 백업되고 있지만, 계속 커지면 화면 로딩이 느려질 수 있어요. "관리" 메뉴의 "매출장부 내보내기+정리"로 오래되고 정산 끝난 건들을 정리해주시는 걸 추천드려요.`;
     list.appendChild(warnBanner);
   }
 
@@ -6044,16 +6114,20 @@ async function renderBackupManagerList() {
   } catch (e) { loadingMsg.textContent = '백업 목록을 불러오는 중 오류가 났어요'; return; }
 
   const keyLabels = { rolls: '재고', orders: '이월장부', shipmentLog: '매출장부', swatchInfo: '스왓치정보', settings: '사업자정보/설정', costs: '원가표', priceBook: '단가장부', depositMemos: '선입금메모', customerList: '거래처목록', expenses: '지출내역', customerNotes: '거래처고정메모' };
-  // 문서id는 "rolls_2026-08-19" 또는 "rolls_manual_26.08.19_1704" 형태 - 시점(라벨) 기준으로 묶음
-  const byMoment = new Map(); // label -> { savedAt, items: { rolls: docId, orders: docId, shipmentLog: docId } }
+  // 문서id는 "rolls_2026-08-19" 또는 "rolls_manual_26.08.19_1704" 형태, 데이터가 커서 조각났으면 뒤에 "_chunk0","_chunk1"... 이 더 붙음 - 시점(라벨) 기준으로 묶음
+  const byMoment = new Map(); // label -> { savedAt, items: { rolls: [docId,...] (조각났으면 여러개), orders: [docId,...] } }
   snap.forEach(doc => {
     const id = doc.id;
     const keyMatch = Object.keys(keyLabels).find(k => id.startsWith(k + '_'));
     if (!keyMatch) return;
-    const label = id.slice(keyMatch.length + 1);
+    const rest = id.slice(keyMatch.length + 1); // 예: "2026-08-19" 또는 "2026-08-19_chunk0"
+    const chunkMatch = rest.match(/^(.*)_chunk\d+$/);
+    const label = chunkMatch ? chunkMatch[1] : rest; // 조각 표시(_chunk0 등)는 떼어내고 같은 시점끼리 묶음
     if (!byMoment.has(label)) byMoment.set(label, { savedAt: doc.data().savedAt || '', items: {} });
-    byMoment.get(label).items[keyMatch] = { docId: id, data: doc.data().data };
-    if (doc.data().savedAt) byMoment.get(label).savedAt = doc.data().savedAt;
+    const moment = byMoment.get(label);
+    if (!moment.items[keyMatch]) moment.items[keyMatch] = [];
+    moment.items[keyMatch].push(id);
+    if (doc.data().savedAt) moment.savedAt = doc.data().savedAt;
   });
 
   list.removeChild(loadingMsg);
@@ -6066,11 +6140,11 @@ async function renderBackupManagerList() {
     card.className = 'group';
     card.style.marginBottom = '8px';
     const itemsHtml = Object.keys(keyLabels).map(k => {
-      const item = info.items[k];
-      if (!item) return `<span style="display:inline-block; margin:2px 6px 2px 0; font-size:12px; color:var(--muted);">✕ ${keyLabels[k]}</span>`;
-      return `<span style="display:inline-flex; align-items:center; gap:4px; margin:2px 6px 2px 0; font-size:12px; color:var(--text); background:#f1eee7; border-radius:6px; padding:2px 6px;">✓ ${keyLabels[k]} <button onclick="restoreBackupSingleDoc('${escAttr(label)}','${escAttr(item.docId)}','${k}')" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:5px;padding:1px 6px;font-size:10px;">이것만 복구</button></span>`;
+      const docIdsForKey = info.items[k];
+      if (!docIdsForKey) return `<span style="display:inline-block; margin:2px 6px 2px 0; font-size:12px; color:var(--muted);">✕ ${keyLabels[k]}</span>`;
+      return `<span style="display:inline-flex; align-items:center; gap:4px; margin:2px 6px 2px 0; font-size:12px; color:var(--text); background:#f1eee7; border-radius:6px; padding:2px 6px;">✓ ${keyLabels[k]} <button onclick="restoreBackupSingleDoc('${escAttr(label)}','${escJsonAttr(docIdsForKey)}','${k}')" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:5px;padding:1px 6px;font-size:10px;">이것만 복구</button></span>`;
     }).join('');
-    const docIdsJson = escJsonAttr(Object.values(info.items).map(i => i.docId));
+    const docIdsJson = escJsonAttr(Object.values(info.items).flat());
     card.innerHTML = `
       <div style="padding:10px 12px;">
         <div style="display:flex; align-items:flex-start; gap:8px;">
@@ -6090,14 +6164,152 @@ async function renderBackupManagerList() {
     list.appendChild(card);
   }
 }
-async function restoreBackupSingleDoc(label, docId, key) {
+function getArchiveMonthKey(dateStr) {
+  // 'YY.MM.DD' 형식 날짜를 'YYYY-MM' 월 키로 바꿈 (보관함을 월별 파일로 나눠서 저장하는 기준)
+  const parts = String(dateStr).split('.');
+  if (parts.length < 2) return null;
+  const yy = parseInt(parts[0]), mm = parseInt(parts[1]);
+  if (isNaN(yy) || isNaN(mm)) return null;
+  return `${2000 + yy}-${String(mm).padStart(2, '0')}`;
+}
+function getMonthsInRange(startDate, endDate) {
+  // 시작일~종료일 사이에 걸쳐있는 모든 '연-월'을 구함 (그 구간에 필요한 보관함 파일들을 찾기 위해)
+  const start = parseKDate(startDate), end = parseKDate(endDate);
+  if (!start || !end) return [];
+  const months = [];
+  const cur = new Date(start.getFullYear(), start.getMonth(), 1);
+  const endMonth = new Date(end.getFullYear(), end.getMonth(), 1);
+  while (cur <= endMonth) {
+    months.push(`${cur.getFullYear()}-${String(cur.getMonth() + 1).padStart(2, '0')}`);
+    cur.setMonth(cur.getMonth() + 1);
+  }
+  return months;
+}
+async function fetchArchivedEntriesForMonth(monthKey) {
+  // 이 달의 보관함 파일을 가져옴 (데이터가 커서 조각나 있으면 조각들을 순서대로 합쳐서 복원). 없으면 빈 배열
+  if (!useFirebase) return [];
+  try {
+    const snap = await db.collection('inventory_archive').get();
+    const docIds = [];
+    snap.forEach(doc => { if (doc.id === `shipmentLog_${monthKey}` || doc.id.startsWith(`shipmentLog_${monthKey}_chunk`)) docIds.push(doc.id); });
+    if (docIds.length === 0) return [];
+    const joined = await fetchAndJoinBackupChunks_ForArchive(docIds);
+    if (joined == null) return [];
+    return JSON.parse(joined);
+  } catch (e) {
+    return [];
+  }
+}
+async function fetchAndJoinBackupChunks_ForArchive(docIds) {
+  // fetchAndJoinBackupChunks와 로직은 같으나, 보관함 컬렉션(inventory_archive)을 봄
+  const parts = [];
+  for (const docId of docIds) {
+    const snap = await db.collection('inventory_archive').doc(docId).get();
+    if (!snap.exists) return null;
+    const d = snap.data();
+    parts.push({ chunkIndex: d.chunkIndex != null ? d.chunkIndex : 0, data: d.data });
+  }
+  parts.sort((a, b) => a.chunkIndex - b.chunkIndex);
+  return parts.map(p => p.data).join('');
+}
+async function fetchArchivedEntriesForRange(startDate, endDate) {
+  // 이 기간에 걸친 모든 보관함 파일을 가져와서 하나로 합침 (날짜/거래처로 좁히는 건 호출한 쪽에서 함)
+  const months = getMonthsInRange(startDate, endDate);
+  let merged = [];
+  for (const mk of months) {
+    const entries = await fetchArchivedEntriesForMonth(mk);
+    merged = merged.concat(entries);
+  }
+  return merged;
+}
+async function fetchAllArchivedEntries() {
+  // 거래처 상관없이 보관함에 있는 모든 데이터를 다 가져옴 (품목출고량 월별보기처럼 특정 거래처로 안 좁혀지는 화면에서 씀)
+  if (!useFirebase) return [];
+  try {
+    const snap = await db.collection('inventory_archive').get();
+    const docsByMonth = new Map();
+    snap.forEach(doc => {
+      const m = doc.id.match(/^shipmentLog_(\d{4}-\d{2})(?:_chunk\d+)?$/);
+      if (!m) return;
+      const mk = m[1];
+      if (!docsByMonth.has(mk)) docsByMonth.set(mk, []);
+      docsByMonth.get(mk).push(doc.id);
+    });
+    let merged = [];
+    for (const [, docIds] of docsByMonth) {
+      const joined = await fetchAndJoinBackupChunks_ForArchive(docIds);
+      if (joined == null) continue;
+      try { merged = merged.concat(JSON.parse(joined)); } catch (e) { /* 이 달 파싱 실패시 건너뜀 */ }
+    }
+    return merged;
+  } catch (e) {
+    return [];
+  }
+}
+async function fetchAllArchivedEntriesForCustomer(customer) {
+  // 원장의 "이월" 잔액처럼, 특정 기간이 아니라 이 거래처의 전체 과거 흐름이 필요할 때 씀
+  if (!useFirebase) return [];
+  const t_c = String(customer || '').trim();
+  try {
+    const snap = await db.collection('inventory_archive').get();
+    const docsByMonth = new Map(); // monthKey -> [docId,...]
+    snap.forEach(doc => {
+      const m = doc.id.match(/^shipmentLog_(\d{4}-\d{2})(?:_chunk\d+)?$/);
+      if (!m) return;
+      const mk = m[1];
+      if (!docsByMonth.has(mk)) docsByMonth.set(mk, []);
+      docsByMonth.get(mk).push(doc.id);
+    });
+    let merged = [];
+    for (const [, docIds] of docsByMonth) {
+      const joined = await fetchAndJoinBackupChunks_ForArchive(docIds);
+      if (joined == null) continue;
+      try {
+        const entries = JSON.parse(joined);
+        merged = merged.concat(entries.filter(e => String(e.customer || '').trim() === t_c));
+      } catch (e) { /* 이 달 파싱 실패시 건너뜀 */ }
+    }
+    return merged;
+  } catch (e) {
+    return [];
+  }
+}
+async function withArchivedShipmentLog(startDate, endDate, callback) {
+  // 조회하는 그 순간에만 보관함 데이터를 라이브 매출장부에 잠깐 얹어서, 기존 조회 로직(원장/명세서 등)이 그대로 다 찾아지게 함
+  // 끝나면 무조건 원래 상태로 되돌림 - 매출장부 자체(shipmentLog)의 진짜 내용은 전혀 안 바뀜
+  const archived = await fetchArchivedEntriesForRange(startDate, endDate);
+  if (archived.length === 0) { callback(); return; } // 보관함에 해당사항 없으면 예전과 완전히 동일하게 그냥 실행
+  const original = shipmentLog;
+  shipmentLog = shipmentLog.concat(archived);
+  try {
+    callback();
+  } finally {
+    shipmentLog = original;
+  }
+}
+async function fetchAndJoinBackupChunks(docIds) {
+  // 이 key에 해당하는 문서id들(데이터가 작으면 1개, 조각났으면 여러개)을 다 조회해서
+  // chunkIndex 순서대로(Firestore가 순서를 보장 안 해주니 직접 정렬) 이어붙여서 원본 문자열을 복원함. 하나라도 없으면 null 반환
+  const parts = [];
+  for (const docId of docIds) {
+    const snap = await db.collection('inventory_backups').doc(docId).get();
+    if (!snap.exists) return null;
+    const d = snap.data();
+    parts.push({ chunkIndex: d.chunkIndex != null ? d.chunkIndex : 0, data: d.data });
+  }
+  parts.sort((a, b) => a.chunkIndex - b.chunkIndex);
+  return parts.map(p => p.data).join('');
+}
+async function restoreBackupSingleDoc(label, docIdsJson, key) {
+  let docIds;
+  try { docIds = JSON.parse(docIdsJson); } catch (e) { return; }
   const keyLabels = { rolls: '재고', orders: '이월장부', shipmentLog: '매출장부', swatchInfo: '스왓치정보', settings: '사업자정보/설정', costs: '원가표', priceBook: '단가장부', depositMemos: '선입금메모', customerList: '거래처목록', expenses: '지출내역', customerNotes: '거래처고정메모' };
   const keyLabel = keyLabels[key] || key;
   if (!confirm(`"${label}" 시점의 "${keyLabel}"만 복구할게요.\n다른 항목(재고, 매출 등)은 전혀 안 건드려요.\n\n⚠️ 지금 있는 "${keyLabel}"의 최신 내용은 덮어써져요. 계속할까요?`)) return;
   try {
-    const snap = await db.collection('inventory_backups').doc(docId).get();
-    if (!snap.exists) { showToast('이 백업을 찾을 수 없어요'); return; }
-    await db.collection('inventory').doc(key).set({ data: snap.data().data, stamp: SCHEMA_STAMP });
+    const joined = await fetchAndJoinBackupChunks(docIds);
+    if (joined == null) { showToast('이 백업을 찾을 수 없어요'); return; }
+    await db.collection('inventory').doc(key).set({ data: joined, stamp: SCHEMA_STAMP });
     alert(`"${keyLabel}"만 복구했어요. 화면을 새로고침할게요.`);
     location.reload();
   } catch (e) {
@@ -6112,15 +6324,21 @@ async function restoreBackupMoment(label, docIdsJson) {
   if (!confirm('정말요? 최근에 입력하신 게 있다면 사라져요. 그래도 진행할까요?')) return;
 
   const keyLabels = { rolls: '재고', orders: '이월장부', shipmentLog: '매출장부', swatchInfo: '스왓치정보', settings: '사업자정보/설정', costs: '원가표', priceBook: '단가장부', depositMemos: '선입금메모', customerList: '거래처목록', expenses: '지출내역', customerNotes: '거래처고정메모' };
+  // 같은 항목(key)의 조각(청크)들이 여러개 섞여있을 수 있으니, key별로 묶음
+  const docIdsByKey = new Map();
+  for (const docId of docIds) {
+    const key = docId.split('_')[0]; // "rolls_..." -> "rolls"
+    if (!docIdsByKey.has(key)) docIdsByKey.set(key, []);
+    docIdsByKey.get(key).push(docId);
+  }
   const restored = [];
   const missing = [];
   const failed = [];
-  for (const docId of docIds) {
-    const key = docId.split('_')[0]; // "rolls_..." -> "rolls"
+  for (const [key, idsForKey] of docIdsByKey) {
     try {
-      const snap = await db.collection('inventory_backups').doc(docId).get();
-      if (!snap.exists) { missing.push(keyLabels[key] || key); continue; }
-      await db.collection('inventory').doc(key).set({ data: snap.data().data, stamp: SCHEMA_STAMP });
+      const joined = await fetchAndJoinBackupChunks(idsForKey);
+      if (joined == null) { missing.push(keyLabels[key] || key); continue; }
+      await db.collection('inventory').doc(key).set({ data: joined, stamp: SCHEMA_STAMP });
       restored.push(keyLabels[key] || key);
     } catch (e) {
       failed.push(keyLabels[key] || key);
@@ -9364,11 +9582,59 @@ async function archiveOldSalesLog() {
   document.body.appendChild(a); a.click(); document.body.removeChild(a);
   URL.revokeObjectURL(url);
 
-  const idsToRemove = new Set(toArchive.map(e => e.id));
+  const idsToRemove = new Set();
+  // 월별로 묶어서, 기존 보관함 내용에 이어붙여 저장함. 저장이 확실히 성공한 달의 건들만 라이브에서 지움(실패하면 그 달 건들은 안전하게 그대로 남김)
+  const byMonth = new Map();
+  for (const e of toArchive) {
+    const mk = getArchiveMonthKey(e.date);
+    if (!mk) continue;
+    if (!byMonth.has(mk)) byMonth.set(mk, []);
+    byMonth.get(mk).push(e);
+  }
+  const CHUNK_SIZE = 600000;
+  const failedMonths = [];
+  for (const [monthKey, newEntries] of byMonth) {
+    try {
+      const existing = await fetchArchivedEntriesForMonth(monthKey);
+      const merged = existing.concat(newEntries);
+      const json = JSON.stringify(merged);
+      // 이 달에 이미 저장돼있던 예전 조각 문서들을 먼저 다 지우고(개수가 달라질 수 있으니), 새로 나눠서 저장함
+      const oldSnap = await db.collection('inventory_archive').get();
+      const oldDocIds = [];
+      oldSnap.forEach(doc => { if (doc.id === `shipmentLog_${monthKey}` || doc.id.startsWith(`shipmentLog_${monthKey}_chunk`)) oldDocIds.push(doc.id); });
+      for (const docId of oldDocIds) await db.collection('inventory_archive').doc(docId).delete();
+      if (json.length <= CHUNK_SIZE) {
+        await db.collection('inventory_archive').doc(`shipmentLog_${monthKey}`).set({ data: json, archivedAt: new Date().toISOString() });
+      } else {
+        const totalChunks = Math.ceil(json.length / CHUNK_SIZE);
+        for (let i = 0; i < totalChunks; i++) {
+          const chunkData = json.slice(i * CHUNK_SIZE, (i + 1) * CHUNK_SIZE);
+          await db.collection('inventory_archive').doc(`shipmentLog_${monthKey}_chunk${i}`).set({ data: chunkData, chunkIndex: i, totalChunks, archivedAt: new Date().toISOString() });
+        }
+      }
+      // 저장 성공 확인차 다시 읽어서 건수가 맞는지 검증한 다음에만 라이브 삭제 대상에 포함시킴
+      const verify = await fetchArchivedEntriesForMonth(monthKey);
+      if (verify.length === merged.length) {
+        for (const e of newEntries) idsToRemove.add(e.id);
+      } else {
+        failedMonths.push(monthKey);
+      }
+    } catch (e) {
+      failedMonths.push(monthKey);
+    }
+  }
+  if (idsToRemove.size === 0) {
+    alert('보관함 저장에 실패해서, 사이트에서는 아무것도 안 지웠어요. CSV 파일은 정상적으로 받아졌으니 안심하시고, 잠시 후 다시 시도해주세요.');
+    return;
+  }
   shipmentLog = shipmentLog.filter(e => !idsToRemove.has(e.id));
   await persistShipmentLog();
   render();
-  showToast(`${toArchive.length}건 내보내고 정리했습니다`);
+  if (failedMonths.length > 0) {
+    alert(`${idsToRemove.size}건은 보관함으로 안전하게 옮기고 정리했어요.\n\n⚠️ 다만 일부(${failedMonths.join(', ')})는 보관함 저장에 실패해서, 안전하게 그대로 남겨뒀어요. 잠시 후 다시 시도해주세요.`);
+  } else {
+    showToast(`${idsToRemove.size}건을 보관함으로 안전하게 옮기고 정리했어요 (필요하면 언제든 다시 불러올 수 있어요)`);
+  }
 }
 function exportSalesLog() {
   const daysStr = prompt('며칠 이내 매출까지 내보낼까요? (예: 90 = 최근 90일치, 전체 다 내보내려면 0)', '90');
