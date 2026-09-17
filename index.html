@@ -983,7 +983,7 @@
 const PASSWORD = "3059";
 const ADMIN_PASSWORD = "9503"; // 매출/미수금 탭 전용 - 필요하면 이 값만 바꿔서 변경 가능
 const DATA_VERSION = "2026-08-03-v4"; // 재고/이월장부 씨앗 데이터를 바꿀 때마다 이 값을 새로 바꿔주세요
-const APP_CODE_VERSION = "2026-09-09-z"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
+const APP_CODE_VERSION = "2026-09-17-d"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
 const SCHEMA_STAMP = 2; // 서버 저장규칙이 확인하는 "최신 앱 도장" - 절대 자주 바꾸지 않음(이 값을 아는 코드만 저장 가능하게 서버에서 막을 때 씀)
 
 const firebaseConfig = {
@@ -2559,7 +2559,7 @@ async function confirmOut() {
   const item = r.item, color = r.color;
   if (amt >= r.qty) {
     r.qty = 0;
-    cleanupDepletedRolls(r.item, r.color, [r.id]);
+    await cleanupDepletedRolls(r.item, r.color, [r.id]);
     showToast('전체 출고 처리됐어요');
   }
   else { r.qty = Math.round((r.qty - amt) * 100) / 100; showToast(`${amt}y 출고, 남은 마수 ${r.qty}y`); }
@@ -2606,7 +2606,7 @@ async function saveRollEdit() {
   r.costPerY = (costRaw.trim() !== '' && !isNaN(parseFloat(costRaw)) && parseFloat(costRaw) > 0) ? parseFloat(costRaw) : null;
 
   if (r.qty === 0) {
-    cleanupDepletedRolls(r.item, r.color, [r.id]);
+    await cleanupDepletedRolls(r.item, r.color, [r.id]);
   }
   compactTangsForItemColor(r.item, r.color);
   if (movedToOtherGroup) {
@@ -2666,9 +2666,12 @@ async function deleteRoll(id) {
   if (!confirm('이 롤을 삭제하시겠습니까?')) return;
   const target = rolls.find(x => x.id === id);
   if (!target) return;
-  // 이게 이 컬러의 마지막 재고였어도 0y로 남기지 않고 완전히 지움 (컬러 카드는 스왓치정보 기준으로 계속 보이니 안 사라짐)
-  rolls = rolls.filter(x => x.id !== id);
-  compactTangsForItemColor(target.item, target.color);
+  const item = target.item, color = target.color;
+  // 이게 이 컬러의 마지막 재고였어도 0y로 남기지 않고 완전히 지움
+  // (안전장치가 있는 cleanupDepletedRolls에 맡겨서, 컬러 카드가 스왓치정보 기준으로 계속 보이도록 자동으로 등록까지 같이 처리함)
+  target.qty = 0;
+  await cleanupDepletedRolls(item, color, [id]);
+  compactTangsForItemColor(item, color);
   await persistRolls(); render(); showToast('삭제되었습니다');
 }
 async function renameFieldInArchive(fieldName, oldValue, newValue) {
@@ -3677,7 +3680,7 @@ async function confirmLogEdit() {
   // 2) 새 값으로 다시 적용
   const isJeol = (e.unit || 'y') === '절';
   const newYards = isJeol ? Math.round(newQty * 55 * 100) / 100 : newQty;
-  const inv = deductFromInventory(e.item, e.color, newYards, null);
+  const inv = await deductFromInventory(e.item, e.color, newYards, null);
   e.invDeductedAmount = inv.deducted;
   e.deductBreakdown = inv.breakdown || null;
   if (inv.ok) await persistRolls(); else await persistRolls();
@@ -3976,7 +3979,7 @@ async function confirmSaleEditInner(keepOpen) {
   if (isNew) {
     const skipInventory = document.getElementById('sale-edit-skip-inventory').checked;
     const resolvedColor = resolveInventoryColor(item, color);
-    const inv = skipInventory ? { ok: false, deducted: 0, breakdown: null } : deductFromInventory(item, color, yardsRaw, null);
+    const inv = skipInventory ? { ok: false, deducted: 0, breakdown: null } : await deductFromInventory(item, color, yardsRaw, null);
     if (inv.ok) await persistRolls();
     shipmentLog.push({
       id: genUniqueId(), date: dateVal, orderId: null,
@@ -5525,7 +5528,7 @@ async function deleteReturnDefectEntry(id) {
     } else {
       // 예전 기록이라 롤 정보가 없으면, 같은 품목/컬러 탕1에서 최대한 빼봄
       const resolvedColor = resolveInventoryColor(e.item, e.color);
-      deductFromInventory(e.item, resolvedColor, qty, 1);
+      await deductFromInventory(e.item, resolvedColor, qty, 1);
     }
     await persistRolls();
   }
@@ -5663,7 +5666,7 @@ async function confirmReturnDefectEdit() {
       // 예전 기록이라 롤 정보가 없으면, 기존 방식대로 예전 수량만큼 재고에서 빼고 새 수량만큼 새 롤로 추가함
       const oldQty = Math.abs(e.yardsShipped || e.amount || 0);
       const oldResolvedColor = resolveInventoryColor(e.item, e.color);
-      deductFromInventory(e.item, oldResolvedColor, oldQty, 1);
+      await deductFromInventory(e.item, oldResolvedColor, oldQty, 1);
       const newResolvedColor = resolveInventoryColor(newItem, newColor);
       const existingCat = (rolls.find(r => String(r.item).trim() === newItem) || {}).cat || '';
       const chosenTang = (rolls.filter(r => String(r.item).trim() === newItem && String(r.color).trim() === newResolvedColor).reduce((max, r) => Math.max(max, r.tang), 0)) + 1;
@@ -8343,6 +8346,19 @@ async function rememberPrice(customer, item, color, unitPrice) {
   await persistPriceBook();
 }
 
+function unmatchedSwatchOrderInfo(item, colorText) {
+  // "N번" 형식으로 입력됐는데, 그 순번의 스왓치가 아직 등록 안 돼서 컬러 매칭 자체가 실패한 상황인지 확인
+  // (이 경우 실제로는 재고가 있어도 엉뚱하게 "재고 없음"으로 보이니, 원인을 정확히 구분해서 알려주기 위함)
+  const t_item = resolveInventoryItem(item);
+  const t_color = String(colorText || '').trim();
+  if (colorExistsForItem(t_item, t_color)) return null; // 정상적으로 매칭되면 문제없음
+  const m = t_color.match(/^(\d+)\s*번/);
+  if (!m) return null;
+  const order = parseInt(m[1]);
+  const sw = swatchInfo.find(s => String(s.item).trim() === t_item && s.order === order && s.color != null);
+  if (!sw) return { order }; // 그 순번 자체가 아예 등록 안 돼있음
+  return null;
+}
 function findInventoryRolls(item, color) {
   const t_item = resolveInventoryItem(item);
   const t_color = String(resolveInventoryColor(item, color)).trim();
@@ -8403,7 +8419,10 @@ function openOrderReceiveModal(id) {
       document.getElementById('or-jeol-new-tang-list').innerHTML = '';
       updateJeolTangTotal();
     } else {
-      stockInfoEl.innerHTML = `현재 이 컬러 재고가 없어요 (0y)`;
+      const unmatched = unmatchedSwatchOrderInfo(o.item, o.color);
+      stockInfoEl.innerHTML = unmatched
+        ? `⚠️ "${unmatched.order}번" 컬러는 아직 스왓치 순번이 등록 안 돼서 재고를 자동으로 못 찾았어요. 재고 탭에서 이 컬러의 순번을 먼저 입력해주시거나, 재고가 실제로 있는지 확인해주세요.`
+        : `현재 이 컬러 재고가 없어요 (0y)`;
       stockInfoEl.classList.remove('hidden');
       tangSection.classList.add('hidden');
       jeolManualWrap.classList.remove('hidden');
@@ -8436,6 +8455,10 @@ function openOrderReceiveModal(id) {
   } else {
     rollsWrap.classList.add('hidden');
     manualWrap.classList.remove('hidden');
+    const unmatched = unmatchedSwatchOrderInfo(o.item, o.color);
+    if (unmatched) {
+      showToast(`⚠️ "${unmatched.order}번" 컬러는 스왓치 순번이 등록 안 돼서 재고를 자동으로 못 찾았어요. 재고 탭에서 순번을 먼저 입력해주세요.`);
+    }
   }
   document.getElementById('orderReceiveModal').classList.add('open');
 }
@@ -8585,7 +8608,7 @@ function closeOrderReceiveModal() {
     document.getElementById('customerShipListModal').classList.add('open');
   }
 }
-function cleanupDepletedRolls(item, color, touchedRollIds) {
+async function cleanupDepletedRolls(item, color, touchedRollIds) {
   // 이번 거래로 재고 0이 된 롤들은 완전히 삭제함 (0y로 남겨두면 직원들이 헷갈리니까)
   // 컬러 카드 자체는 스왓치정보 기준으로 계속 보이니, 롤을 다 지워도 카드가 안 사라짐
   const zeroed = rolls.filter(r => touchedRollIds.includes(r.id) && r.qty <= 0);
@@ -8603,7 +8626,9 @@ function cleanupDepletedRolls(item, color, touchedRollIds) {
       swatchChanged = true;
     }
   }
-  if (swatchChanged) persistSwatchInfo();
+  // 이 저장이 끝나는 걸 반드시 기다려야, 호출한 쪽(재고 저장)이 먼저 끝나버려서
+  // "재고는 이미 지워졌는데 스왓치 자동등록은 저장 안 된" 상태가 되는 걸 막을 수 있음 (컬러가 사라지는 버그의 원인이었음)
+  if (swatchChanged) await persistSwatchInfo();
 }
 
 function compactTangsForItemColor(item, color) {
@@ -8631,7 +8656,7 @@ function compactTangsForItemColor(item, color) {
   }
 }
 
-function deductFromInventory(item, color, amount, tang) {
+async function deductFromInventory(item, color, amount, tang) {
   const t_item = resolveInventoryItem(item);
   const t_color = String(resolveInventoryColor(item, color)).trim();
   let matches = rolls.filter(r => String(r.item).trim() === t_item && String(r.color).trim() === t_color && !r.defective);
@@ -8656,7 +8681,7 @@ function deductFromInventory(item, color, amount, tang) {
       remain = 0;
     }
   }
-  cleanupDepletedRolls(item, color, matches.map(r => r.id));
+  await cleanupDepletedRolls(item, color, matches.map(r => r.id));
   compactTangsForItemColor(item, color);
   const deducted = Math.round((amount - remain) * 100) / 100;
   return { ok: true, deducted, shortBy: remain, breakdown };
@@ -8715,7 +8740,7 @@ async function confirmOrderReceiveInner(o) {
         roll.qty = Math.round(Math.max(0, roll.qty - take) * 100) / 100;
         if (take > 0) jeolBreakdown.push({ tang: roll.tang, qty: Math.round(take * 100) / 100, rollId: roll.id });
       }
-      cleanupDepletedRolls(o.item, resolveInventoryColor(o.item, o.color), allocations.map(a => a.rollId));
+      await cleanupDepletedRolls(o.item, resolveInventoryColor(o.item, o.color), allocations.map(a => a.rollId));
       compactTangsForItemColor(o.item, resolveInventoryColor(o.item, o.color));
       await persistRolls();
       const deductedFromStock = Math.round(allocations.reduce((s, a) => s + a.amt, 0) * 100) / 100;
@@ -8737,7 +8762,7 @@ async function confirmOrderReceiveInner(o) {
       let combinedBreakdown = [];
       let totalDeducted = 0, totalShortBy = 0, anyOk = false, fullySucceededCount = 0;
       for (const y of yards) {
-        const r1 = deductFromInventory(o.item, o.color, y, null);
+        const r1 = await deductFromInventory(o.item, o.color, y, null);
         if (r1.ok) anyOk = true;
         if (r1.shortBy <= 0.001) fullySucceededCount++; // 이 절만큼은 재고에서 정확히 다 빠짐 (부족분 없음) - "완료"로 셀 수 있는 절만 이렇게 셈
         combinedBreakdown = combinedBreakdown.concat(r1.breakdown);
@@ -8787,7 +8812,7 @@ async function confirmOrderReceiveInner(o) {
       breakdown.push(...newTangEntriesY);
       yardsShipped = Math.round((yardsShipped + newTangTotal) * 100) / 100; // 새 탕 물량은 기존 재고 차감 없이 그대로 출고량에 포함
       deductedFromStock = Math.round(deductedFromStock * 100) / 100; // 새 탕분은 여기 안 들어감 - 취소해도 복원 안 되게
-      cleanupDepletedRolls(o.item, resolveInventoryColor(o.item, o.color), allocations.map(a => a.rollId));
+      await cleanupDepletedRolls(o.item, resolveInventoryColor(o.item, o.color), allocations.map(a => a.rollId));
       compactTangsForItemColor(o.item, resolveInventoryColor(o.item, o.color));
       await persistRolls();
       inv = { ok: true, deducted: deductedFromStock, shortBy: 0, breakdown };
@@ -8796,7 +8821,7 @@ async function confirmOrderReceiveInner(o) {
       raw = parseFloat(document.getElementById('or-qty').value);
       if (!raw || raw <= 0 || isNaN(raw)) { showToast('마수를 입력해주세요'); return; }
       yardsShipped = raw;
-      inv = deductFromInventory(o.item, o.color, raw, null);
+      inv = await deductFromInventory(o.item, o.color, raw, null);
       if (inv.ok) await persistRolls();
     }
   }
@@ -9452,7 +9477,7 @@ async function markOrderDone(id) {
     unitPrice = (unitPriceRaw && unitPriceRaw > 0) ? unitPriceRaw : null;
 
     yardsShipped = isJeol ? Math.round(remain * 55 * 100) / 100 : remain;
-    const inv = deductFromInventory(o.item, o.color, yardsShipped, null);
+    const inv = await deductFromInventory(o.item, o.color, yardsShipped, null);
     invDeductedAmountFlag = inv.deducted;
     invBreakdownFlag = inv.breakdown || null;
     if (inv.ok) await persistRolls();
@@ -9666,7 +9691,11 @@ async function saveSwatchEdit() {
     swatchInfo.push(sw);
   }
   sw.order = order; sw.chinaCode = chinaCode;
-  swatchInfo = swatchInfo.filter(s => s.order != null || s.chinaCode != null);
+  // 방금 수정한 이 컬러 자신이 순번도 중국품번도 다 비워졌으면 그 항목만 정리함
+  // (전체 스왓치 목록에서 빈 항목을 다 지우면, 재고소진으로 자동보호 등록된 다른 컬러들까지 같이 삭제돼버리는 심각한 버그가 있었음)
+  if (sw.order == null && sw.chinaCode == null) {
+    swatchInfo = swatchInfo.filter(s => s !== sw);
+  }
   await persistSwatchInfo(); closeSwatchEditModal(); render();
   showToast(renamed ? '컬러 이름과 정보를 저장했습니다' : (conflictOccurred ? `${order}번으로 저장, 겹치던 컬러들은 자동으로 한 칸씩 밀렸어요` : '저장되었습니다'));
 }
@@ -9859,11 +9888,11 @@ async function repairInventoryFromShipmentLog() {
     let shortfall = false;
     if (e.deductBreakdown && e.deductBreakdown.length > 0) {
       for (const b of e.deductBreakdown) {
-        const r = deductFromInventory(e.item, e.color, b.qty, b.tang);
+        const r = await deductFromInventory(e.item, e.color, b.qty, b.tang);
         if (!r.ok || r.shortBy > 0.01) shortfall = true;
       }
     } else {
-      const r = deductFromInventory(e.item, e.color, deductQty, null);
+      const r = await deductFromInventory(e.item, e.color, deductQty, null);
       if (!r.ok || r.shortBy > 0.01) shortfall = true;
     }
     appliedCount++;
