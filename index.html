@@ -191,6 +191,7 @@
     <button class="tab-btn" id="tab-cost" onclick="switchTab('cost')">원가표</button>
     <button class="tab-btn" id="tab-order" onclick="switchTab('order')">이월장부</button>
     <button class="tab-btn" id="tab-sales" onclick="switchTab('sales')">매출</button>
+    <button class="tab-btn" id="tab-china" onclick="switchTab('china')">중국발주</button>
   </div>
 </header>
 
@@ -392,6 +393,30 @@
     <div class="modal-actions">
       <button class="btn-cancel" onclick="closeDateRangeArchiveModal(null)">취소</button>
       <button class="btn-save" onclick="confirmDateRangeArchiveModal()">확인</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="chinaOrderModal">
+  <div class="modal">
+    <h3 id="china-modal-title">중국 발주 등록</h3>
+    <label>발주일</label>
+    <input id="china-date" type="date">
+    <p id="china-arrival-hint" style="font-size:12px;color:var(--muted);margin-top:-6px;"></p>
+    <label>중국품번</label>
+    <input id="china-code" placeholder="예: 2820" oninput="autoFillChinaItemName()">
+    <label>품명 (사내)</label>
+    <input id="china-item" placeholder="예: 테디" autocomplete="off" oninput="showItemSuggestions(this)" onfocus="showItemSuggestions(this)" onblur="hideItemSuggestionsDelayed()">
+    <label>컬러명</label>
+    <input id="china-color" placeholder="예: #61베이지">
+    <label>발주수량</label>
+    <input id="china-qty" placeholder="예: 21y, 2절, 반절 등 자유롭게">
+    <label style="display:flex; align-items:center; gap:6px; margin-top:10px;"><input type="checkbox" id="china-urgent" style="width:auto;"> 급송(항공) 건이에요</label>
+    <label>비고</label>
+    <input id="china-note" placeholder="선택사항">
+    <div class="modal-actions" id="china-modal-actions">
+      <button class="btn-cancel" onclick="closeChinaOrderModal()">취소</button>
+      <button class="btn-save" onclick="saveChinaOrderModal()">저장</button>
     </div>
   </div>
 </div>
@@ -983,7 +1008,7 @@
 const PASSWORD = "3059";
 const ADMIN_PASSWORD = "9503"; // 매출/미수금 탭 전용 - 필요하면 이 값만 바꿔서 변경 가능
 const DATA_VERSION = "2026-08-03-v4"; // 재고/이월장부 씨앗 데이터를 바꿀 때마다 이 값을 새로 바꿔주세요
-const APP_CODE_VERSION = "2026-09-17-f"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
+const APP_CODE_VERSION = "2026-09-18-b"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
 const SCHEMA_STAMP = 2; // 서버 저장규칙이 확인하는 "최신 앱 도장" - 절대 자주 바꾸지 않음(이 값을 아는 코드만 저장 가능하게 서버에서 막을 때 씀)
 
 const firebaseConfig = {
@@ -992,11 +1017,37 @@ const firebaseConfig = {
   appId: "1:995742705102:web:7294216d6e4745dd1df79f"
 };
 let useFirebase = false;
-let lastSnapshotJSON = { orders: null, shipmentLog: null, rolls: null, settings: null, costs: null, swatchInfo: null, priceBook: null, depositMemos: null, customerList: null, expenses: null, customerNotes: null }; // 여러 명이 동시에 쓸 때 덮어쓰기 사고 막기용
+let lastSnapshotJSON = { orders: null, shipmentLog: null, rolls: null, settings: null, costs: null, swatchInfo: null, priceBook: null, depositMemos: null, customerList: null, expenses: null, customerNotes: null, chinaOrders: null, chinaProductMap: null }; // 여러 명이 동시에 쓸 때 덮어쓰기 사고 막기용
 let settingsFirstLoadDone = false; // 서버에서 사업자정보/설정을 최초로 한 번이라도 받아왔는지 - 이게 true가 되기 전엔 저장을 막아서, 빈 값으로 서버를 덮어쓰는 사고를 원천 차단
 let rollsFirstLoadDone = false; // 서버에서 재고를 최초로 한 번이라도 정상적으로 받아왔는지 - settings와 동일한 목적의 안전장치
 let costsFirstLoadDone = false; // 원가표 버전
 let ordersFirstLoadDone = false; // 이월장부 버전
+let chinaOrders = []; // 중국원단발주 목록 - 이월장부(orders)/재고(rolls)와 완전히 독립된 별도 데이터
+let nextChinaOrderId = 1;
+let chinaOrderFilter = 'waiting'; // all | waiting | received
+let chinaOrdersFirstLoadDone = false; // rolls/costs/orders/settings와 동일한 목적의 이중 안전장치
+let chinaProductMap = []; // 중국품번 -> 사내품명 매핑표 [{id, chinaCode, itemName}]
+let nextChinaProductMapId = 1;
+let chinaProductMapFirstLoadDone = false;
+const CHINA_ORDER_DEPARTURE_DOWS = [2, 6]; // 화요일(2), 토요일(6)에 중국에서 출발
+function getChinaOrderArrivalDate(orderDateStr) {
+  // 'YY.MM.DD' 발주일을 받아서, 다음으로 돌아오는 화/토요일에 중국에서 출발해 그로부터 3일 뒤 국내 도착한다고 가정한 예상 도착일을 'YY.MM.DD'로 반환
+  const parts = String(orderDateStr || '').split('.');
+  if (parts.length < 3) return null;
+  const d = new Date(2000 + parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
+  if (isNaN(d.getTime())) return null;
+  let bestDiff = 7;
+  for (const dow of CHINA_ORDER_DEPARTURE_DOWS) {
+    const diff = (dow - d.getDay() + 7) % 7;
+    if (diff < bestDiff) bestDiff = diff;
+  }
+  const arrival = new Date(d);
+  arrival.setDate(arrival.getDate() + bestDiff + 3);
+  const yy = String(arrival.getFullYear()).slice(2);
+  const mm = String(arrival.getMonth() + 1).padStart(2, '0');
+  const dd = String(arrival.getDate()).padStart(2, '0');
+  return `${yy}.${mm}.${dd}`;
+}
 
 function mergeArrayInPlace(localArr, remoteArr) {
   // 배열 자체를 통째로 새 걸로 바꾸지 않고, id 기준으로 내용만 갱신해서
@@ -1157,8 +1208,8 @@ function showToast(msg) {
 async function loadAll() {
   if (useFirebase) {
     return new Promise((resolve) => {
-      let loaded = { rolls: false, costs: false, settings: false, orders: false, swatch: false, log: false, price: false, advance: false, custList: false, expenses: false, custNotes: false };
-      const checkDone = () => { if (loaded.rolls && loaded.costs && loaded.settings && loaded.orders && loaded.swatch && loaded.log && loaded.price && loaded.advance && loaded.custList && loaded.expenses && loaded.custNotes) resolve(); };
+      let loaded = { rolls: false, costs: false, settings: false, orders: false, swatch: false, log: false, price: false, advance: false, custList: false, expenses: false, custNotes: false, chinaOrders: false, chinaMap: false };
+      const checkDone = () => { if (loaded.rolls && loaded.costs && loaded.settings && loaded.orders && loaded.swatch && loaded.log && loaded.price && loaded.advance && loaded.custList && loaded.expenses && loaded.custNotes && loaded.chinaOrders && loaded.chinaMap) resolve(); };
 
       db.collection('inventory').doc('rolls').onSnapshot((doc) => {
         if (doc.exists && doc.data().data) {
@@ -1232,6 +1283,36 @@ async function loadAll() {
             ({ id: genUniqueId(), date, customer, factory, item, color, orderQty, unit: unit || 'y', received, note, done: false }));
         }
         loaded.orders = true; render(); checkDone();
+      });
+
+      db.collection('inventory').doc('chinaOrders').onSnapshot((doc) => {
+        if (doc.exists && doc.data().data) {
+          const remote = JSON.parse(doc.data().data);
+          if (loaded.chinaOrders) mergeArrayInPlace(chinaOrders, remote);
+          else chinaOrders = remote;
+          nextChinaOrderId = chinaOrders.reduce((m, r) => Math.max(m, r.id), 0) + 1;
+          lastSnapshotJSON.chinaOrders = doc.data().data;
+          chinaOrdersFirstLoadDone = true;
+        } else if (!loaded.chinaOrders) {
+          console.warn('chinaOrders 문서를 못 찾았어요 - 일시적인 문제일 수 있어 자동 저장은 하지 않았습니다 (완전 신규라면 빈 목록으로 시작해요)');
+          chinaOrders = [];
+        }
+        loaded.chinaOrders = true; render(); checkDone();
+      });
+
+      db.collection('inventory').doc('chinaProductMap').onSnapshot((doc) => {
+        if (doc.exists && doc.data().data) {
+          const remote = JSON.parse(doc.data().data);
+          if (loaded.chinaMap) mergeArrayInPlace(chinaProductMap, remote);
+          else chinaProductMap = remote;
+          nextChinaProductMapId = chinaProductMap.reduce((m, r) => Math.max(m, r.id), 0) + 1;
+          lastSnapshotJSON.chinaProductMap = doc.data().data;
+          chinaProductMapFirstLoadDone = true;
+        } else if (!loaded.chinaMap) {
+          console.warn('chinaProductMap 문서를 못 찾았어요 - 일시적인 문제일 수 있어 자동 저장은 하지 않았습니다 (완전 신규라면 빈 목록으로 시작해요)');
+          chinaProductMap = [];
+        }
+        loaded.chinaMap = true; render(); checkDone();
       });
 
       db.collection('inventory').doc('swatchInfo').onSnapshot((doc) => {
@@ -1334,6 +1415,20 @@ async function fallbackLoadAll() {
     console.warn('orders를 못 불러왔어요 - 일시적인 문제일 수 있어 자동 저장은 하지 않았습니다', e);
     orders = DEFAULT_ORDERS.map(([date, customer, factory, item, color, orderQty, unit, received, note]) =>
       ({ id: genUniqueId(), date, customer, factory, item, color, orderQty, unit: unit || 'y', received, note, done: false }));
+  }
+  try {
+    const res = await safeStorage.get('chinaOrders', true);
+    chinaOrders = JSON.parse(res.value);
+    nextChinaOrderId = chinaOrders.reduce((m, r) => Math.max(m, r.id), 0) + 1;
+  } catch (e) {
+    chinaOrders = [];
+  }
+  try {
+    const res = await safeStorage.get('chinaProductMap', true);
+    chinaProductMap = JSON.parse(res.value);
+    nextChinaProductMapId = chinaProductMap.reduce((m, r) => Math.max(m, r.id), 0) + 1;
+  } catch (e) {
+    chinaProductMap = [];
   }
   try {
     const res = await safeStorage.get('swatchInfo', true);
@@ -1568,6 +1663,20 @@ async function persistOrders() {
   }
   return await persistGuarded('orders', 'orders', orders);
 }
+async function persistChinaOrders() {
+  if (useFirebase && !chinaOrdersFirstLoadDone) {
+    alert('⚠️ 아직 서버에서 중국발주 목록을 불러오는 중이에요.\n잠시 후 다시 시도해주세요. (계속 뜨면 화면을 새로고침해주세요)');
+    return false;
+  }
+  return await persistGuarded('chinaOrders', 'chinaOrders', chinaOrders);
+}
+async function persistChinaProductMap() {
+  if (useFirebase && !chinaProductMapFirstLoadDone) {
+    alert('⚠️ 아직 서버에서 품명 매핑표를 불러오는 중이에요.\n잠시 후 다시 시도해주세요. (계속 뜨면 화면을 새로고침해주세요)');
+    return false;
+  }
+  return await persistGuarded('chinaProductMap', 'chinaProductMap', chinaProductMap);
+}
 async function persistSwatchInfo() { return await persistGuarded('swatchInfo', 'swatchInfo', swatchInfo); }
 async function persistShipmentLog() { return await persistGuarded('shipmentLog', 'shipmentLog', shipmentLog); }
 async function persistPriceBook() { return await persistGuarded('priceBook', 'priceBook', priceBook); }
@@ -1627,9 +1736,10 @@ function switchTab(tab) {
   document.getElementById('tab-cost').classList.toggle('active', tab === 'cost');
   document.getElementById('tab-order').classList.toggle('active', tab === 'order');
   document.getElementById('tab-sales').classList.toggle('active', tab === 'sales');
-  const titles = { inv: '원단 재고관리', cost: '원단 원가표', order: '이월장부(발주현황)', sales: '매출/미수금 (관리자)' };
-  const placeholders = { inv: '품번(품목) 또는 칼라 검색', cost: '품목(품번) 검색', order: '거래처 또는 품목 검색', sales: '거래처 또는 품목 검색' };
-  const fabLabels = { inv: '+ 입고', cost: '+ 원가 등록', order: '+ 발주 등록', sales: '' };
+  document.getElementById('tab-china').classList.toggle('active', tab === 'china');
+  const titles = { inv: '원단 재고관리', cost: '원단 원가표', order: '이월장부(발주현황)', sales: '매출/미수금 (관리자)', china: '중국원단발주' };
+  const placeholders = { inv: '품번(품목) 또는 칼라 검색', cost: '품목(품번) 검색', order: '거래처 또는 품목 검색', sales: '거래처 또는 품목 검색', china: '품명, 중국품번, 컬러 검색' };
+  const fabLabels = { inv: '+ 입고', cost: '+ 원가 등록', order: '+ 발주 등록', sales: '', china: '+ 발주추가' };
   document.getElementById('page-title').textContent = titles[tab];
   document.getElementById('search').placeholder = placeholders[tab];
   document.getElementById('fabAdd').textContent = fabLabels[tab];
@@ -1643,6 +1753,7 @@ function openAddModal() {
   if (currentTab === 'inv') openRollAddModal();
   else if (currentTab === 'cost') openCostAddModal();
   else if (currentTab === 'order') openOrderAddModal();
+  else if (currentTab === 'china') openChinaOrderAddModal();
 }
 
 // ---------- 공통 ----------
@@ -1673,6 +1784,7 @@ function render() {
   if (currentTab === 'inv') renderInv();
   else if (currentTab === 'cost') renderCost();
   else if (currentTab === 'order') renderOrders();
+  else if (currentTab === 'china') renderChinaOrders();
   else renderSales();
 }
 
@@ -1744,8 +1856,8 @@ function showColorSuggestions(colorInputEl, itemInputIdOrEl) {
   const orderOf = (color) => {
     const sw = swatchInfo.find(s => String(s.item).trim() === itemVal && s.color != null && String(s.color).trim() === color && s.order != null);
     if (sw) return sw.order;
-    if (color.endsWith(' 기모')) {
-      const base = color.slice(0, -3).trim();
+    const base = splitKimoColorName(color);
+    if (base != null) {
       const baseSw = swatchInfo.find(s => String(s.item).trim() === itemVal && s.color != null && String(s.color).trim() === base && s.order != null);
       if (baseSw) return baseSw.order + 0.5; // 무지 바로 다음에 오도록
     }
@@ -2095,8 +2207,9 @@ function renderInv() {
         return c && c._swatch && c._swatch.order != null ? c._swatch.order : null;
       };
       const sortInfo = (g) => {
-        const isKimo = g.color.endsWith(' 기모');
-        const baseColor = isKimo ? g.color.slice(0, -3).trim() : g.color;
+        const kimoBase = splitKimoColorName(g.color);
+        const isKimo = kimoBase != null;
+        const baseColor = isKimo ? kimoBase : g.color;
         let order = g._swatch && g._swatch.order != null ? g._swatch.order : null;
         if (order == null && isKimo) order = orderOf(baseColor);
         return { order: order != null ? order : Infinity, isKimo: isKimo ? 1 : 0 };
@@ -2680,9 +2793,11 @@ async function bulkDeleteSelectedRolls(rollsDiv) {
   compactTangsForItemColor(item, color);
   // 선택한 걸 다 지워서 이 컬러의 마지막 재고까지 없어진 경우에도, 컬러 자체는 스왓치정보로 계속 남게 함 (재고소진 자동정리와 똑같은 안전장치)
   if (!colorExistsForItem(String(item).trim(), String(color).trim())) {
-    const t_item = String(item).trim();
-    const maxOrder = swatchInfo.filter(s => String(s.item).trim() === t_item).reduce((m, s) => Math.max(m, s.order || 0), 0);
-    swatchInfo.push({ id: nextSwatchId++, cat: targets[0].cat || '', item: t_item, color: String(color).trim(), order: maxOrder + 1, chinaCode: null });
+    const t_item = String(item).trim(), t_color = String(color).trim();
+    const baseColor = splitKimoColorName(t_color);
+    const baseSwatch = baseColor ? swatchInfo.find(s => String(s.item).trim() === t_item && String(s.color).trim() === baseColor && s.order != null) : null;
+    const order = baseSwatch ? baseSwatch.order : (swatchInfo.filter(s => String(s.item).trim() === t_item).reduce((m, s) => Math.max(m, s.order || 0), 0) + 1);
+    swatchInfo.push({ id: nextSwatchId++, cat: targets[0].cat || '', item: t_item, color: t_color, order, chinaCode: null });
     await persistSwatchInfo();
   }
   await persistRolls();
@@ -2847,8 +2962,9 @@ function renderCost() {
     const colorsForItem = Array.from(new Set([...colorsFromRollsForItem, ...colorsFromSwatchForItem]))
       .sort((a, b) => {
         const sortInfo = (colorName) => {
-          const isKimo = colorName.endsWith(' 기모');
-          const baseColor = isKimo ? colorName.slice(0, -3).trim() : colorName;
+          const kimoBase = splitKimoColorName(colorName);
+          const isKimo = kimoBase != null;
+          const baseColor = isKimo ? kimoBase : colorName;
           const swExact = findSwatchFor(c.cat, c.item, colorName);
           let order = swExact ? swExact.order : null;
           if (order == null && isKimo) {
@@ -7785,6 +7901,216 @@ function renderSales() {
   }
 }
 
+function formatChinaArrivalLabel(dateStr) {
+  const parts = String(dateStr).split('.');
+  if (parts.length < 3) return dateStr;
+  const dowNames = ['일', '월', '화', '수', '목', '금', '토'];
+  const d = new Date(2000 + parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
+  return `${parseInt(parts[1])}/${parseInt(parts[2])}(${dowNames[d.getDay()]})`;
+}
+function renderChinaOrders() {
+  document.getElementById('rateBar').classList.add('hidden');
+  document.getElementById('invTools').classList.add('hidden');
+  document.getElementById('salesTools').classList.add('hidden');
+  document.getElementById('orderTools').classList.add('hidden');
+
+  const list = document.getElementById('list');
+  list.innerHTML = '';
+
+  const waitCount = chinaOrders.filter(o => o.status !== 'received').length;
+  const recvCount = chinaOrders.filter(o => o.status === 'received').length;
+  document.getElementById('stats').innerHTML = `<span>대기중 ${waitCount}건</span><span>입고완료 ${recvCount}건</span><span>전체 ${chinaOrders.length}건</span>`;
+
+  const chipRow = document.createElement('div');
+  chipRow.style.cssText = 'display:flex; gap:6px; margin-bottom:10px; overflow-x:auto;';
+  const filters = [['all', '전체', chinaOrders.length], ['waiting', '대기중', waitCount], ['received', '입고완료', recvCount]];
+  for (const [val, label, count] of filters) {
+    const chip = document.createElement('div');
+    chip.textContent = `${label} ${count}`;
+    const isActive = chinaOrderFilter === val;
+    chip.style.cssText = `flex:none; padding:6px 14px; border-radius:20px; font-size:12px; font-weight:600; cursor:pointer; background:${isActive ? 'var(--primary-dark)' : '#fff'}; color:${isActive ? '#fff' : '#5f5e5a'}; border:1px solid ${isActive ? 'var(--primary-dark)' : 'var(--border)'};`;
+    chip.onclick = () => { chinaOrderFilter = val; render(); };
+    chipRow.appendChild(chip);
+  }
+  list.appendChild(chipRow);
+
+  let filtered = chinaOrders;
+  const t = searchTerm.trim().toLowerCase();
+  if (t) {
+    filtered = filtered.filter(o =>
+      String(o.item || '').toLowerCase().includes(t) ||
+      String(o.chinaCode || '').toLowerCase().includes(t) ||
+      String(o.color || '').toLowerCase().includes(t)
+    );
+  }
+  if (chinaOrderFilter !== 'all') filtered = filtered.filter(o => o.status === chinaOrderFilter);
+
+  if (filtered.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'empty';
+    empty.textContent = '발주 기록이 없습니다';
+    list.appendChild(empty);
+    return;
+  }
+
+  // 검색 중이거나 "입고완료"만 볼 때는 도착일 그룹 없이 그냥 발주일 최신순으로 쭉 나열 (검색은 "이 컬러 이미 시켰나" 확인용이라 그룹핑이 오히려 방해됨)
+  const shouldGroup = !t && chinaOrderFilter !== 'received';
+  if (!shouldGroup) {
+    const sorted = filtered.slice().sort((a, b) => b.date.localeCompare(a.date));
+    for (const o of sorted) list.appendChild(buildChinaOrderCard(o));
+    return;
+  }
+
+  const waitingOnes = filtered.filter(o => o.status !== 'received');
+  const receivedOnes = filtered.filter(o => o.status === 'received');
+  const groups = new Map();
+  for (const o of waitingOnes) {
+    const arrival = getChinaOrderArrivalDate(o.date) || '미정';
+    if (!groups.has(arrival)) groups.set(arrival, []);
+    groups.get(arrival).push(o);
+  }
+  const sortedDates = Array.from(groups.keys()).sort();
+  for (const dateKey of sortedDates) {
+    const items = groups.get(dateKey);
+    const header = document.createElement('div');
+    header.style.cssText = 'font-size:12px; font-weight:700; color:#a15c1e; background:#fff3d6; border:1px solid #f0dca3; border-radius:8px; padding:8px 12px; margin:10px 0 6px;';
+    header.textContent = dateKey === '미정' ? `도착일 미정 · ${items.length}건` : `${formatChinaArrivalLabel(dateKey)} 도착 예정 · ${items.length}건`;
+    list.appendChild(header);
+    items.sort((a, b) => String(a.item).localeCompare(String(b.item), 'ko'));
+    for (const o of items) list.appendChild(buildChinaOrderCard(o));
+  }
+  if (chinaOrderFilter === 'all' && receivedOnes.length > 0) {
+    const header = document.createElement('div');
+    header.style.cssText = 'font-size:12px; font-weight:700; color:#5f5e5a; margin:14px 0 6px;';
+    header.textContent = `입고완료 · ${receivedOnes.length}건`;
+    list.appendChild(header);
+    receivedOnes.sort((a, b) => b.date.localeCompare(a.date));
+    for (const o of receivedOnes) list.appendChild(buildChinaOrderCard(o));
+  }
+}
+function buildChinaOrderCard(o) {
+  const card = document.createElement('div');
+  card.className = 'group';
+  card.style.cssText = 'padding:10px 12px; margin-bottom:6px; display:flex; justify-content:space-between; align-items:center; cursor:pointer;';
+  card.onclick = () => openChinaOrderEditModal(o.id);
+  const isReceived = o.status === 'received';
+  card.innerHTML = `
+    <div style="min-width:0; flex:1;">
+      <div style="font-weight:700; font-size:14px;">${esc(o.item || '(품명 미정)')}${o.chinaCode ? ` <span style="font-size:11px; color:var(--muted); font-weight:400;">(${esc(o.chinaCode)})</span>` : ''}</div>
+      <div style="font-size:12px; color:var(--muted); margin-top:2px;">${esc(o.color || '')}${o.color ? ' · ' : ''}${esc(o.qty || '')}${o.urgent ? ' <span style="color:#c0392b; font-weight:600;">· 급송(A)</span>' : ''}</div>
+      <div style="font-size:11px; color:var(--muted); margin-top:2px;">발주일 ${esc(o.date)}${o.note ? ` · ${esc(o.note)}` : ''}</div>
+    </div>
+    <div style="display:flex; align-items:center; gap:6px; flex:none;">
+      <div style="font-size:11px; font-weight:700; padding:3px 8px; border-radius:6px; background:${isReceived ? '#eaf3ec' : '#fdecea'}; color:${isReceived ? '#2f6b46' : '#c0392b'};">${isReceived ? '입고완료' : '대기중'}</div>
+      <button onclick="event.stopPropagation(); toggleChinaOrderStatus(${o.id})" style="border:none;background:#eee;color:var(--text);border-radius:6px;padding:5px 8px;font-size:11px;">${isReceived ? '대기로' : '입고처리'}</button>
+    </div>
+  `;
+  return card;
+}
+async function toggleChinaOrderStatus(id) {
+  const o = chinaOrders.find(x => x.id === id);
+  if (!o) return;
+  o.status = o.status === 'received' ? 'waiting' : 'received';
+  await persistChinaOrders();
+  render();
+  showToast(o.status === 'received' ? '입고완료 처리했습니다' : '대기중으로 되돌렸습니다');
+}
+let _editingChinaOrderId = null;
+function openChinaOrderAddModal() {
+  _editingChinaOrderId = null;
+  document.getElementById('china-modal-title').textContent = '중국 발주 등록';
+  document.getElementById('china-date').value = toDateInputValue(todayStr());
+  document.getElementById('china-code').value = '';
+  document.getElementById('china-item').value = '';
+  document.getElementById('china-color').value = '';
+  document.getElementById('china-qty').value = '';
+  document.getElementById('china-urgent').checked = false;
+  document.getElementById('china-note').value = '';
+  updateChinaArrivalHint();
+  const actions = document.getElementById('china-modal-actions');
+  actions.innerHTML = `
+    <button class="btn-cancel" onclick="closeChinaOrderModal()">취소</button>
+    <button class="btn-save" onclick="saveChinaOrderModal()">저장</button>
+  `;
+  document.getElementById('china-date').onchange = updateChinaArrivalHint;
+  document.getElementById('chinaOrderModal').classList.add('open');
+}
+function openChinaOrderEditModal(id) {
+  const o = chinaOrders.find(x => x.id === id);
+  if (!o) return;
+  _editingChinaOrderId = id;
+  document.getElementById('china-modal-title').textContent = '중국 발주 수정';
+  document.getElementById('china-date').value = toDateInputValue(o.date);
+  document.getElementById('china-code').value = o.chinaCode || '';
+  document.getElementById('china-item').value = o.item || '';
+  document.getElementById('china-color').value = o.color || '';
+  document.getElementById('china-qty').value = o.qty || '';
+  document.getElementById('china-urgent').checked = !!o.urgent;
+  document.getElementById('china-note').value = o.note || '';
+  updateChinaArrivalHint();
+  const actions = document.getElementById('china-modal-actions');
+  actions.innerHTML = `
+    <button class="btn-cancel" onclick="closeChinaOrderModal()">취소</button>
+    <button onclick="deleteChinaOrder(${id})" style="border:none;background:#fdecea;color:var(--danger);border-radius:8px;padding:10px 14px;font-weight:600;">삭제</button>
+    <button class="btn-save" onclick="saveChinaOrderModal()">저장</button>
+  `;
+  document.getElementById('china-date').onchange = updateChinaArrivalHint;
+  document.getElementById('chinaOrderModal').classList.add('open');
+}
+function closeChinaOrderModal() {
+  document.getElementById('chinaOrderModal').classList.remove('open');
+  _editingChinaOrderId = null;
+}
+function updateChinaArrivalHint() {
+  const dateV = document.getElementById('china-date').value;
+  const hint = document.getElementById('china-arrival-hint');
+  if (!dateV) { hint.textContent = ''; return; }
+  const dateStr = fromDateInputValue(dateV);
+  const arrival = getChinaOrderArrivalDate(dateStr);
+  hint.textContent = arrival ? `예상 도착일: ${formatChinaArrivalLabel(arrival)} (자동계산, 화/토 배송 기준)` : '';
+}
+function autoFillChinaItemName() {
+  const code = document.getElementById('china-code').value.trim();
+  if (!code) return;
+  const mapped = chinaProductMap.find(m => String(m.chinaCode).trim() === code);
+  if (mapped) document.getElementById('china-item').value = mapped.itemName;
+}
+async function saveChinaOrderModal() {
+  const dateV = document.getElementById('china-date').value;
+  if (!dateV) { showToast('발주일을 선택해주세요'); return; }
+  const date = fromDateInputValue(dateV);
+  const chinaCode = document.getElementById('china-code').value.trim();
+  const item = document.getElementById('china-item').value.trim();
+  const color = document.getElementById('china-color').value.trim();
+  const qty = document.getElementById('china-qty').value.trim();
+  const urgent = document.getElementById('china-urgent').checked;
+  const note = document.getElementById('china-note').value.trim();
+  if (!item && !chinaCode) { showToast('품명이나 중국품번 중 하나는 입력해주세요'); return; }
+
+  if (_editingChinaOrderId != null) {
+    const o = chinaOrders.find(x => x.id === _editingChinaOrderId);
+    if (o) { o.date = date; o.chinaCode = chinaCode; o.item = item; o.color = color; o.qty = qty; o.urgent = urgent; o.note = note; }
+  } else {
+    chinaOrders.push({ id: nextChinaOrderId++, date, chinaCode, item, color, qty, urgent, note, status: 'waiting' });
+    // 중국품번-품명 매핑이 새로 등록된 거면 매핑표에도 같이 저장해서 다음부터 자동완성되게 함
+    if (chinaCode && item && !chinaProductMap.some(m => String(m.chinaCode).trim() === chinaCode)) {
+      chinaProductMap.push({ id: nextChinaProductMapId++, chinaCode, itemName: item });
+      await persistChinaProductMap();
+    }
+  }
+  await persistChinaOrders();
+  closeChinaOrderModal();
+  render();
+  showToast('저장되었습니다');
+}
+async function deleteChinaOrder(id) {
+  if (!confirm('이 발주 기록을 삭제하시겠습니까?')) return;
+  chinaOrders = chinaOrders.filter(x => x.id !== id);
+  await persistChinaOrders();
+  closeChinaOrderModal();
+  render();
+  showToast('삭제되었습니다');
+}
 function renderShipmentLog() {
   let log = shipmentLog.concat(shipmentLogArchivedCache).slice();
   if (searchTerm.trim()) {
@@ -8270,6 +8596,16 @@ function hasKnownItem(item) {
   return _knownItemNames.includes(String(item).trim());
 }
 
+function splitKimoColorName(colorName) {
+  // "차콜 기모"든 "차콜기모"든 둘 다 인식해서, 기반이 되는 컬러 이름("차콜")을 뽑아냄
+  // (기모 컬러는 보통 순번을 따로 안 매기고 기반 컬러 순번을 그대로 물려받아 그 밑에 정렬되게 하는 관례라서)
+  const t = String(colorName || '').trim();
+  const m = t.match(/^(.+?)\s*기모$/);
+  if (!m) return null;
+  const base = m[1].trim();
+  if (!base) return null;
+  return base;
+}
 function resolveInventoryItem(itemName) {
   const t = String(itemName).trim();
   if (rolls.some(r => String(r.item).trim() === t)) return t;
@@ -8648,8 +8984,12 @@ async function cleanupDepletedRolls(item, color, touchedRollIds) {
   for (const r of zeroed) {
     const t_item = String(r.item).trim(), t_color = String(r.color).trim();
     if (!colorExistsForItem(t_item, t_color)) {
-      const maxOrder = swatchInfo.filter(s => String(s.item).trim() === t_item).reduce((m, s) => Math.max(m, s.order || 0), 0);
-      swatchInfo.push({ id: nextSwatchId++, cat: r.cat || '', item: t_item, color: t_color, order: maxOrder + 1, chinaCode: null });
+      // "OO기모" 컬러는 기반 컬러("OO")의 순번을 그대로 물려받게 해서, 화면에서 계속 그 밑에 붙어보이게 함
+      // (기반 컬러도 순번이 없으면 어쩔 수 없이 새 번호를 매김)
+      const baseColor = splitKimoColorName(t_color);
+      const baseSwatch = baseColor ? swatchInfo.find(s => String(s.item).trim() === t_item && String(s.color).trim() === baseColor && s.order != null) : null;
+      const order = baseSwatch ? baseSwatch.order : (swatchInfo.filter(s => String(s.item).trim() === t_item).reduce((m, s) => Math.max(m, s.order || 0), 0) + 1);
+      swatchInfo.push({ id: nextSwatchId++, cat: r.cat || '', item: t_item, color: t_color, order, chinaCode: null });
       swatchChanged = true;
     }
   }
