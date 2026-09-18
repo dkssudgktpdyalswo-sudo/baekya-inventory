@@ -983,7 +983,7 @@
 const PASSWORD = "3059";
 const ADMIN_PASSWORD = "9503"; // 매출/미수금 탭 전용 - 필요하면 이 값만 바꿔서 변경 가능
 const DATA_VERSION = "2026-08-03-v4"; // 재고/이월장부 씨앗 데이터를 바꿀 때마다 이 값을 새로 바꿔주세요
-const APP_CODE_VERSION = "2026-09-17-d"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
+const APP_CODE_VERSION = "2026-09-17-f"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
 const SCHEMA_STAMP = 2; // 서버 저장규칙이 확인하는 "최신 앱 도장" - 절대 자주 바꾸지 않음(이 값을 아는 코드만 저장 가능하게 서버에서 막을 때 씀)
 
 const firebaseConfig = {
@@ -994,6 +994,9 @@ const firebaseConfig = {
 let useFirebase = false;
 let lastSnapshotJSON = { orders: null, shipmentLog: null, rolls: null, settings: null, costs: null, swatchInfo: null, priceBook: null, depositMemos: null, customerList: null, expenses: null, customerNotes: null }; // 여러 명이 동시에 쓸 때 덮어쓰기 사고 막기용
 let settingsFirstLoadDone = false; // 서버에서 사업자정보/설정을 최초로 한 번이라도 받아왔는지 - 이게 true가 되기 전엔 저장을 막아서, 빈 값으로 서버를 덮어쓰는 사고를 원천 차단
+let rollsFirstLoadDone = false; // 서버에서 재고를 최초로 한 번이라도 정상적으로 받아왔는지 - settings와 동일한 목적의 안전장치
+let costsFirstLoadDone = false; // 원가표 버전
+let ordersFirstLoadDone = false; // 이월장부 버전
 
 function mergeArrayInPlace(localArr, remoteArr) {
   // 배열 자체를 통째로 새 걸로 바꾸지 않고, id 기준으로 내용만 갱신해서
@@ -1164,9 +1167,12 @@ async function loadAll() {
           else rolls = remoteRolls;
           nextId = rolls.reduce((m, r) => Math.max(m, r.id), 0) + 1;
           lastSnapshotJSON.rolls = doc.data().data;
+          rollsFirstLoadDone = true;
         } else if (!loaded.rolls) {
+          // 문서가 안 보여도, 진짜 최초 설치인지 일시적으로 못 불러온 건지 구분이 안 되니
+          // 화면엔 임시로 기본값을 보여주되, 서버에 자동 저장은 하지 않음 (안 그러면 캐시 문제로 실제 데이터가 기본값에 덮어써질 위험이 있음 - 데이터 초기화 사고의 원인이었음)
+          console.warn('rolls 문서를 못 찾았어요 - 일시적인 문제일 수 있어 자동 저장은 하지 않았습니다');
           rolls = DEFAULT_ROLLS.map(([cat, item, color, tang, qty]) => ({ id: nextId++, cat, item, color, tang, qty }));
-          persistRolls();
         }
         loaded.rolls = true; render(); checkDone();
       }, (err) => { console.error(err); useFirebase = false; fallbackLoadAll().then(resolve); });
@@ -1183,30 +1189,32 @@ async function loadAll() {
           costs = JSON.parse(incomingJSON);
           nextCostId = costs.reduce((m, r) => Math.max(m, r.id), 0) + 1;
           lastSnapshotJSON.costs = incomingJSON;
+          costsFirstLoadDone = true;
         } else if (!loaded.costs) {
+          console.warn('costs 문서를 못 찾았어요 - 일시적인 문제일 수 있어 자동 저장은 하지 않았습니다');
           costs = DEFAULT_COSTS.map(([cat, item, type, price]) => ({ id: nextCostId++, cat, item, type, price }));
-          persistCosts();
         }
         loaded.costs = true; render(); checkDone();
       });
 
       db.collection('inventory').doc('settings').onSnapshot((doc) => {
         if (doc.exists && doc.data() && doc.data().data) {
-          // 새 형식(문자열로 감싸서 저장)
+          // 새 형식(문자열로 감싸서 저장) - 진짜 서버 데이터를 받은 경우
           settings = { ...DEFAULT_SETTINGS, ...JSON.parse(doc.data().data) };
           lastSnapshotJSON.settings = doc.data().data;
+          settingsFirstLoadDone = true;
         } else if (doc.exists && doc.data() && Object.keys(doc.data()).length > 0) {
-          // 예전 형식(객체를 그대로 저장한 것) - 읽은 뒤 새 형식으로 한 번 옮겨 저장
+          // 예전 형식(객체를 그대로 저장한 것) - 이것도 진짜 서버 데이터 - 읽은 뒤 새 형식으로 한 번 옮겨 저장
           settings = { ...DEFAULT_SETTINGS, ...doc.data() };
           lastSnapshotJSON.settings = null;
           settingsFirstLoadDone = true;
           persistSettings();
         } else if (!loaded.settings) {
+          // 문서를 못 찾은 경우 - 진짜 데이터가 아니니 settingsFirstLoadDone은 계속 false로 남겨둬서
+          // 혹시 이 상태에서 사용자가 뭔가 저장하려 해도 persistSettings의 안전장치가 막아주게 함
+          console.warn('settings 문서를 못 찾았어요 - 일시적인 문제일 수 있어 자동 저장은 하지 않았습니다');
           settings = { ...DEFAULT_SETTINGS };
-          settingsFirstLoadDone = true;
-          persistSettings();
         }
-        settingsFirstLoadDone = true;
         loaded.settings = true; updateRateBar(); render(); checkDone();
       });
 
@@ -1217,10 +1225,11 @@ async function loadAll() {
           else orders = remoteOrders;
           nextOrderId = orders.reduce((m, r) => Math.max(m, r.id), 0) + 1;
           lastSnapshotJSON.orders = doc.data().data;
+          ordersFirstLoadDone = true;
         } else if (!loaded.orders) {
+          console.warn('orders 문서를 못 찾았어요 - 일시적인 문제일 수 있어 자동 저장은 하지 않았습니다');
           orders = DEFAULT_ORDERS.map(([date, customer, factory, item, color, orderQty, unit, received, note]) =>
             ({ id: genUniqueId(), date, customer, factory, item, color, orderQty, unit: unit || 'y', received, note, done: false }));
-          persistOrders();
         }
         loaded.orders = true; render(); checkDone();
       });
@@ -1299,32 +1308,32 @@ async function fallbackLoadAll() {
     rolls = JSON.parse(res.value);
     nextId = rolls.reduce((m, r) => Math.max(m, r.id), 0) + 1;
   } catch (e) {
+    console.warn('rolls를 못 불러왔어요 - 일시적인 문제일 수 있어 자동 저장은 하지 않았습니다', e);
     rolls = DEFAULT_ROLLS.map(([cat, item, color, tang, qty]) => ({ id: nextId++, cat, item, color, tang, qty }));
-    await persistRolls();
   }
   try {
     const res = await safeStorage.get('costs', true);
     costs = JSON.parse(res.value);
     nextCostId = costs.reduce((m, r) => Math.max(m, r.id), 0) + 1;
   } catch (e) {
+    console.warn('costs를 못 불러왔어요 - 일시적인 문제일 수 있어 자동 저장은 하지 않았습니다', e);
     costs = DEFAULT_COSTS.map(([cat, item, type, price]) => ({ id: nextCostId++, cat, item, type, price }));
-    await persistCosts();
   }
   try {
     const res = await safeStorage.get('settings', true);
     settings = JSON.parse(res.value);
   } catch (e) {
+    console.warn('settings를 못 불러왔어요 - 일시적인 문제일 수 있어 자동 저장은 하지 않았습니다', e);
     settings = { ...DEFAULT_SETTINGS };
-    await persistSettings();
   }
   try {
     const res = await safeStorage.get('orders', true);
     orders = JSON.parse(res.value);
     nextOrderId = orders.reduce((m, r) => Math.max(m, r.id), 0) + 1;
   } catch (e) {
+    console.warn('orders를 못 불러왔어요 - 일시적인 문제일 수 있어 자동 저장은 하지 않았습니다', e);
     orders = DEFAULT_ORDERS.map(([date, customer, factory, item, color, orderQty, unit, received, note]) =>
       ({ id: genUniqueId(), date, customer, factory, item, color, orderQty, unit: unit || 'y', received, note, done: false }));
-    await persistOrders();
   }
   try {
     const res = await safeStorage.get('swatchInfo', true);
@@ -1502,8 +1511,20 @@ async function persistGuarded(docId, key, dataArray) {
     endWrite();
   }
 }
-async function persistRolls() { return await persistGuarded('rolls', 'rolls', rolls); }
-async function persistCosts() { return await persistGuarded('costs', 'costs', costs); }
+async function persistRolls() {
+  if (useFirebase && !rollsFirstLoadDone) {
+    alert('⚠️ 아직 서버에서 재고를 불러오는 중이에요.\n잠시 후 다시 시도해주세요. (계속 뜨면 화면을 새로고침해주세요)');
+    return false;
+  }
+  return await persistGuarded('rolls', 'rolls', rolls);
+}
+async function persistCosts() {
+  if (useFirebase && !costsFirstLoadDone) {
+    alert('⚠️ 아직 서버에서 원가표를 불러오는 중이에요.\n잠시 후 다시 시도해주세요. (계속 뜨면 화면을 새로고침해주세요)');
+    return false;
+  }
+  return await persistGuarded('costs', 'costs', costs);
+}
 async function persistSettings() {
   if (!useFirebase) { await safeStorage.set('settings', JSON.stringify(settings), true); return true; }
   if (!settingsFirstLoadDone) {
@@ -1540,7 +1561,13 @@ async function persistSettings() {
     endWrite();
   }
 }
-async function persistOrders() { return await persistGuarded('orders', 'orders', orders); }
+async function persistOrders() {
+  if (useFirebase && !ordersFirstLoadDone) {
+    alert('⚠️ 아직 서버에서 이월장부를 불러오는 중이에요.\n잠시 후 다시 시도해주세요. (계속 뜨면 화면을 새로고침해주세요)');
+    return false;
+  }
+  return await persistGuarded('orders', 'orders', orders);
+}
 async function persistSwatchInfo() { return await persistGuarded('swatchInfo', 'swatchInfo', swatchInfo); }
 async function persistShipmentLog() { return await persistGuarded('shipmentLog', 'shipmentLog', shipmentLog); }
 async function persistPriceBook() { return await persistGuarded('priceBook', 'priceBook', priceBook); }
