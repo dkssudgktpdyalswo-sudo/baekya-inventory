@@ -188,10 +188,10 @@
   <div class="stats" id="stats">불러오는 중...</div>
   <div class="tabs">
     <button class="tab-btn active" id="tab-inv" onclick="switchTab('inv')">재고</button>
+    <button class="tab-btn" id="tab-china" onclick="switchTab('china')">중국발주</button>
     <button class="tab-btn" id="tab-cost" onclick="switchTab('cost')">원가표</button>
     <button class="tab-btn" id="tab-order" onclick="switchTab('order')">이월장부</button>
     <button class="tab-btn" id="tab-sales" onclick="switchTab('sales')">매출</button>
-    <button class="tab-btn" id="tab-china" onclick="switchTab('china')">중국발주</button>
   </div>
 </header>
 
@@ -403,12 +403,12 @@
     <label>발주일</label>
     <input id="china-date" type="date">
     <p id="china-arrival-hint" style="font-size:12px;color:var(--muted);margin-top:-6px;"></p>
-    <label>중국품번</label>
-    <input id="china-code" placeholder="예: 2820" oninput="autoFillChinaItemName()">
     <label>품명 (사내)</label>
     <input id="china-item" placeholder="예: 테디" autocomplete="off" oninput="showItemSuggestions(this)" onfocus="showItemSuggestions(this)" onblur="hideItemSuggestionsDelayed()">
+    <label>중국품번</label>
+    <input id="china-code" placeholder="품명을 먼저 입력하면 여기서 골라 쓸 수 있어요" autocomplete="off" oninput="autoFillChinaItemName()" onfocus="showChinaCodeSuggestions()" onblur="hideItemSuggestionsDelayed()">
     <label>컬러명</label>
-    <input id="china-color" placeholder="예: #61베이지">
+    <input id="china-color" placeholder="예: #61베이지" autocomplete="off" oninput="showColorSuggestions(this,'china-item')" onfocus="showColorSuggestions(this,'china-item')" onblur="hideItemSuggestionsDelayed()">
     <label>발주수량</label>
     <input id="china-qty" placeholder="예: 21y, 2절, 반절 등 자유롭게">
     <label style="display:flex; align-items:center; gap:6px; margin-top:10px;"><input type="checkbox" id="china-urgent" style="width:auto;"> 급송(항공) 건이에요</label>
@@ -418,6 +418,30 @@
       <button class="btn-cancel" onclick="closeChinaOrderModal()">취소</button>
       <button class="btn-save" onclick="saveChinaOrderModal()">저장</button>
     </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="chinaReceiveModal">
+  <div class="modal">
+    <h3>입고 처리</h3>
+    <p id="china-receive-desc" style="font-size:13px;color:var(--muted);margin-top:-6px;"></p>
+    <label>이번에 실제로 입고된 수량</label>
+    <input id="china-receive-qty" placeholder="예: 2절">
+    <label>남아서 이월할 수량 (다 왔으면 비워두세요)</label>
+    <input id="china-receive-remain" placeholder="예: 1절">
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="closeChinaReceiveModal()">취소</button>
+      <button class="btn-save" onclick="confirmChinaReceive()">확인</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="chinaMatchModal">
+  <div class="modal">
+    <h3>🚢 대기중인 중국발주가 있어요</h3>
+    <p id="china-match-desc" style="font-size:13px;margin-top:-6px;"></p>
+    <p id="china-match-detail" style="font-size:13px;color:var(--muted);margin-top:-6px;"></p>
+    <div class="modal-actions" id="china-match-actions" style="flex-direction:column; gap:8px;"></div>
   </div>
 </div>
 
@@ -1008,7 +1032,7 @@
 const PASSWORD = "3059";
 const ADMIN_PASSWORD = "9503"; // 매출/미수금 탭 전용 - 필요하면 이 값만 바꿔서 변경 가능
 const DATA_VERSION = "2026-08-03-v4"; // 재고/이월장부 씨앗 데이터를 바꿀 때마다 이 값을 새로 바꿔주세요
-const APP_CODE_VERSION = "2026-09-18-b"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
+const APP_CODE_VERSION = "2026-09-19-a"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
 const SCHEMA_STAMP = 2; // 서버 저장규칙이 확인하는 "최신 앱 도장" - 절대 자주 바꾸지 않음(이 값을 아는 코드만 저장 가능하게 서버에서 막을 때 씀)
 
 const firebaseConfig = {
@@ -1030,6 +1054,24 @@ let chinaProductMap = []; // 중국품번 -> 사내품명 매핑표 [{id, chinaC
 let nextChinaProductMapId = 1;
 let chinaProductMapFirstLoadDone = false;
 const CHINA_ORDER_DEPARTURE_DOWS = [2, 6]; // 화요일(2), 토요일(6)에 중국에서 출발
+function parseChinaQtyForAutoMatch(qtyStr) {
+  // 발주수량이 "6절"이나 "900y"처럼 숫자+단위로 깔끔하게 적혀있으면 자동계산 대상으로 삼음
+  // "반절","전부" 같은 애매한 표현은 컴퓨터가 숫자로 확신할 수 없으니 자동계산 대상에서 제외함(null)
+  const t = String(qtyStr || '').trim();
+  let m = t.match(/^(\d+(?:\.\d+)?)\s*절$/);
+  if (m) return { unit: '절', value: parseFloat(m[1]) };
+  m = t.match(/^(\d+(?:\.\d+)?)\s*y$/i);
+  if (m) return { unit: 'y', value: parseFloat(m[1]) };
+  return null;
+}
+function findWaitingChinaOrderMatch(item, color) {
+  // 이 품목·컬러로 아직 대기중인 중국발주 중 제일 오래된 것 하나를 찾음 (여러개면 오래된 것부터 순서대로 처리하는 게 자연스러우니까)
+  const t_item = String(item).trim(), t_color = String(color).trim();
+  const matches = chinaOrders.filter(o => o.status !== 'received' && String(o.item).trim() === t_item && String(o.color).trim() === t_color);
+  if (matches.length === 0) return null;
+  matches.sort((a, b) => String(a.date).localeCompare(String(b.date)));
+  return matches[0];
+}
 function getChinaOrderArrivalDate(orderDateStr) {
   // 'YY.MM.DD' 발주일을 받아서, 다음으로 돌아오는 화/토요일에 중국에서 출발해 그로부터 3일 뒤 국내 도착한다고 가정한 예상 도착일을 'YY.MM.DD'로 반환
   const parts = String(orderDateStr || '').split('.');
@@ -2102,8 +2144,9 @@ function renderLowStockAlerts(list) {
       <div style="font-size:12px; color:#a15c1e;">${isOpen ? '접기 ▲' : '펼치기 ▼'}</div>
     </div>
     ${isOpen ? `
+      <div style="column-width:230px; column-gap:8px; margin-top:8px;">
       ${itemGroupsSorted.map(g => `
-        <div style="background:#fff; border-radius:8px; margin-top:8px; padding:8px 10px;">
+        <div style="background:#fff; border-radius:8px; margin-bottom:8px; padding:8px 10px; break-inside:avoid;">
           <div style="font-weight:700; font-size:14px; margin-bottom:4px;">${esc(g.item)}</div>
           <div style="display:flex; flex-direction:column; gap:5px;">
             ${g.colors.map(a => {
@@ -2126,6 +2169,7 @@ function renderLowStockAlerts(list) {
           </div>
         </div>
       `).join('')}
+      </div>
       ${dismissedList.length > 0 ? `
         <div onclick="event.stopPropagation();toggleGroup('${dismissedGk}')" style="margin-top:8px; padding-top:6px; border-top:1px dashed #e8c98a; font-size:12px; color:#a15c1e; cursor:pointer; text-decoration:underline;">
           무시한 항목 ${dismissedList.length}개 ${dismissedOpen ? '숨기기' : '보기'}
@@ -2621,6 +2665,34 @@ async function saveAdd() {
   const blocks = document.querySelectorAll('.f-color-block');
   if (blocks.length === 0) { showToast('컬러를 하나 이상 추가해주세요'); return; }
 
+  // 실제로 재고를 저장하기 전에, 각 컬러가 대기중인 중국발주와 일치하는지 먼저 확인함
+  // (발주수량이 "6절"이나 "900y"처럼 숫자로 깔끔하면, 지금 입력한 탕 개수·마수합과 비교해서 이월할 양까지 자동으로 계산해줌)
+  const chinaMatchDecisions = [];
+  for (const block of blocks) {
+    const color = block.querySelector('.f-block-color').value.trim();
+    if (!color) continue;
+    const qtysInBlock = [];
+    block.querySelectorAll('.f-roll-row').forEach(rowEl => {
+      const q = parseFloat(rowEl.querySelector('.f-roll-qty').value);
+      if (!isNaN(q) && q >= 0) qtysInBlock.push(q);
+    });
+    if (qtysInBlock.length === 0) continue;
+
+    const matchedOrder = findWaitingChinaOrderMatch(item, color);
+    if (!matchedOrder) continue;
+    const parsed = parseChinaQtyForAutoMatch(matchedOrder.qty);
+    let enteredInfo = null;
+    if (parsed) {
+      if (parsed.unit === '절') {
+        enteredInfo = { unit: '절', enteredValue: qtysInBlock.length, orderValue: parsed.value };
+      } else {
+        enteredInfo = { unit: 'y', enteredValue: Math.round(qtysInBlock.reduce((s, v) => s + v, 0) * 100) / 100, orderValue: parsed.value };
+      }
+    }
+    const decision = await openChinaMatchConfirm(matchedOrder, enteredInfo);
+    if (decision.action !== 'none') chinaMatchDecisions.push({ order: matchedOrder, ...decision });
+  }
+
   let totalEntries = 0;
   let totalColors = 0;
   for (const block of blocks) {
@@ -2678,8 +2750,27 @@ async function saveAdd() {
   await persistRolls();
   await persistSwatchInfo();
 
+  if (chinaMatchDecisions.length > 0) {
+    for (const d of chinaMatchDecisions) {
+      const o = chinaOrders.find(x => x.id === d.order.id);
+      if (!o) continue;
+      if (d.action === 'full') {
+        if (d.receivedQty) o.qty = d.receivedQty;
+        o.status = 'received';
+      } else if (d.action === 'partial') {
+        o.qty = d.receivedQty;
+        o.status = 'received';
+        chinaOrders.push({
+          id: nextChinaOrderId++, date: o.date, chinaCode: o.chinaCode, item: o.item, color: o.color,
+          qty: d.remainQty, urgent: o.urgent, note: `이전 발주(${o.date})에서 이월됨`, status: 'waiting'
+        });
+      }
+    }
+    await persistChinaOrders();
+  }
+
   closeAddModal(); render();
-  showToast(`입고 등록되었습니다 (컬러 ${totalColors}개, 탕 ${totalEntries}개)`);
+  showToast(`입고 등록되었습니다 (컬러 ${totalColors}개, 탕 ${totalEntries}개)${chinaMatchDecisions.length > 0 ? ' · 중국발주도 같이 처리했어요' : ''}`);
 }
 
 function openOutModal(id) {
@@ -7998,11 +8089,12 @@ function buildChinaOrderCard(o) {
     <div style="min-width:0; flex:1;">
       <div style="font-weight:700; font-size:14px;">${esc(o.item || '(품명 미정)')}${o.chinaCode ? ` <span style="font-size:11px; color:var(--muted); font-weight:400;">(${esc(o.chinaCode)})</span>` : ''}</div>
       <div style="font-size:12px; color:var(--muted); margin-top:2px;">${esc(o.color || '')}${o.color ? ' · ' : ''}${esc(o.qty || '')}${o.urgent ? ' <span style="color:#c0392b; font-weight:600;">· 급송(A)</span>' : ''}</div>
-      <div style="font-size:11px; color:var(--muted); margin-top:2px;">발주일 ${esc(o.date)}${o.note ? ` · ${esc(o.note)}` : ''}</div>
+      <div style="font-size:11px; color:var(--muted); margin-top:2px;">발주일 ${esc(o.date)}</div>
+      ${o.note ? `<div style="font-size:12px; color:#a15c1e; font-weight:700; margin-top:3px; background:#fff3d6; border-radius:5px; padding:3px 7px; display:inline-block;">📝 ${esc(o.note)}</div>` : ''}
     </div>
     <div style="display:flex; align-items:center; gap:6px; flex:none;">
       <div style="font-size:11px; font-weight:700; padding:3px 8px; border-radius:6px; background:${isReceived ? '#eaf3ec' : '#fdecea'}; color:${isReceived ? '#2f6b46' : '#c0392b'};">${isReceived ? '입고완료' : '대기중'}</div>
-      <button onclick="event.stopPropagation(); toggleChinaOrderStatus(${o.id})" style="border:none;background:#eee;color:var(--text);border-radius:6px;padding:5px 8px;font-size:11px;">${isReceived ? '대기로' : '입고처리'}</button>
+      <button onclick="event.stopPropagation(); ${isReceived ? `toggleChinaOrderStatus(${o.id})` : `openChinaReceiveModal(${o.id})`}" style="border:none;background:#eee;color:var(--text);border-radius:6px;padding:5px 8px;font-size:11px;">${isReceived ? '대기로' : '입고처리'}</button>
     </div>
   `;
   return card;
@@ -8014,6 +8106,70 @@ async function toggleChinaOrderStatus(id) {
   await persistChinaOrders();
   render();
   showToast(o.status === 'received' ? '입고완료 처리했습니다' : '대기중으로 되돌렸습니다');
+}
+let _receivingChinaOrderId = null;
+function openChinaReceiveModal(id) {
+  const o = chinaOrders.find(x => x.id === id);
+  if (!o) return;
+  _receivingChinaOrderId = id;
+  document.getElementById('china-receive-desc').textContent = `${o.item || ''} ${o.color || ''} · 발주수량: ${o.qty || ''}`;
+  document.getElementById('china-receive-qty').value = o.qty || '';
+  document.getElementById('china-receive-remain').value = '';
+  document.getElementById('chinaReceiveModal').classList.add('open');
+}
+function closeChinaReceiveModal() {
+  document.getElementById('chinaReceiveModal').classList.remove('open');
+  _receivingChinaOrderId = null;
+}
+async function confirmChinaReceive() {
+  const o = chinaOrders.find(x => x.id === _receivingChinaOrderId);
+  if (!o) return;
+  const receivedQty = document.getElementById('china-receive-qty').value.trim();
+  const remainQty = document.getElementById('china-receive-remain').value.trim();
+  if (!receivedQty) { showToast('입고된 수량을 입력해주세요'); return; }
+
+  o.qty = receivedQty; // 발주수량이 아니라 실제로 온 만큼으로 기록을 정확하게 남김
+  o.status = 'received';
+  if (remainQty) {
+    // 이월장부에서 부분출고 후 남은 만큼 발주가 계속 진행중으로 남는 것과 똑같이, 남은 수량을 새 대기건으로 만듦
+    chinaOrders.push({
+      id: nextChinaOrderId++, date: o.date, chinaCode: o.chinaCode, item: o.item, color: o.color,
+      qty: remainQty, urgent: o.urgent, note: `이전 발주(${o.date})에서 이월됨`, status: 'waiting'
+    });
+  }
+  await persistChinaOrders();
+  closeChinaReceiveModal();
+  render();
+  showToast(remainQty ? `입고완료 처리했고, 남은 ${remainQty}은(는) 새 대기건으로 이월했어요` : '입고완료 처리했습니다');
+}
+let _chinaMatchResolve = null;
+function openChinaMatchConfirm(order, enteredInfo) {
+  // enteredInfo: {unit, enteredValue, orderValue} - 발주수량이 숫자로 깔끔하게 파싱돼서 자동계산이 가능한 경우만 넘어옴. 안 되면 null
+  document.getElementById('china-match-desc').textContent = `${order.item || ''} ${order.color || ''} · 발주수량: ${order.qty} (${order.date})`;
+  const actions = document.getElementById('china-match-actions');
+  let html = '';
+  if (enteredInfo) {
+    const remaining = Math.round((enteredInfo.orderValue - enteredInfo.enteredValue) * 100) / 100;
+    if (remaining > 0.001) {
+      const remainingText = `${remaining}${enteredInfo.unit}`;
+      document.getElementById('china-match-detail').textContent = `지금 ${enteredInfo.enteredValue}${enteredInfo.unit} 입력하셨어요 → ${remainingText} 부족해요`;
+      html += `<button onclick='resolveChinaMatch({action:"partial", receivedQty:"${enteredInfo.enteredValue}${enteredInfo.unit}", remainQty:"${remainingText}"})' style="border:none;background:var(--primary-dark);color:#fff;border-radius:8px;padding:10px;font-size:14px;font-weight:700;">✓ 맞아요, ${remainingText} 이월 처리</button>`;
+    } else {
+      document.getElementById('china-match-detail').textContent = `지금 ${enteredInfo.enteredValue}${enteredInfo.unit} 입력하셨어요 → 발주량만큼 다 왔어요`;
+      html += `<button onclick='resolveChinaMatch({action:"full", receivedQty:"${enteredInfo.enteredValue}${enteredInfo.unit}"})' style="border:none;background:var(--primary-dark);color:#fff;border-radius:8px;padding:10px;font-size:14px;font-weight:700;">✓ 발주 다 왔어요 (완료처리)</button>`;
+    }
+  } else {
+    document.getElementById('china-match-detail').textContent = '';
+    html += `<button onclick='resolveChinaMatch({action:"full"})' style="border:none;background:var(--primary-dark);color:#fff;border-radius:8px;padding:10px;font-size:14px;font-weight:700;">발주 다 왔어요 (완료처리)</button>`;
+  }
+  html += `<button onclick='resolveChinaMatch({action:"none"})' style="border:none;background:none;color:var(--muted);padding:6px;font-size:13px;">이 발주랑 상관없음</button>`;
+  actions.innerHTML = html;
+  document.getElementById('chinaMatchModal').classList.add('open');
+  return new Promise(resolve => { _chinaMatchResolve = resolve; });
+}
+function resolveChinaMatch(result) {
+  document.getElementById('chinaMatchModal').classList.remove('open');
+  if (_chinaMatchResolve) { _chinaMatchResolve(result); _chinaMatchResolve = null; }
 }
 let _editingChinaOrderId = null;
 function openChinaOrderAddModal() {
@@ -8072,8 +8228,26 @@ function updateChinaArrivalHint() {
 function autoFillChinaItemName() {
   const code = document.getElementById('china-code').value.trim();
   if (!code) return;
+  const itemInput = document.getElementById('china-item');
+  if (itemInput.value.trim()) return; // 품명을 이미 직접 입력해두셨으면 안 건드림 (품명을 먼저 입력하는 순서라, 덮어쓰면 방금 입력한 걸 잃어버림)
   const mapped = chinaProductMap.find(m => String(m.chinaCode).trim() === code);
-  if (mapped) document.getElementById('china-item').value = mapped.itemName;
+  if (mapped) itemInput.value = mapped.itemName;
+}
+function showChinaCodeSuggestions() {
+  // 품명을 먼저 입력해두면, 그 품명에 매핑된 중국품번 후보들을 보여줌 (한 품명에 중국품번이 여러개 매핑된 경우도 있어서)
+  const itemVal = document.getElementById('china-item').value.trim();
+  const codeInput = document.getElementById('china-code');
+  const box = document.getElementById('itemSuggestBox');
+  if (!itemVal) { box.classList.add('hidden'); return; }
+  const matches = chinaProductMap.filter(m => String(m.itemName).trim() === itemVal);
+  if (matches.length === 0) { box.classList.add('hidden'); return; }
+  _itemSuggestTarget = codeInput;
+  box.innerHTML = matches.map(m => `<div onmousedown="selectItemSuggestion('${escAttr(String(m.chinaCode))}')" style="padding:9px 12px; font-size:14px; border-bottom:1px solid var(--border); cursor:pointer;">${esc(String(m.chinaCode))}</div>`).join('');
+  const rect = codeInput.getBoundingClientRect();
+  box.style.left = rect.left + 'px';
+  box.style.top = (rect.bottom + 2) + 'px';
+  box.style.width = rect.width + 'px';
+  box.classList.remove('hidden');
 }
 async function saveChinaOrderModal() {
   const dateV = document.getElementById('china-date').value;
