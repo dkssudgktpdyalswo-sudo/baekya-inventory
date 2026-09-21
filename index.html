@@ -402,7 +402,8 @@
     <h3 id="china-modal-title">중국 발주 등록</h3>
     <label>발주일 (한번에 등록하는 항목들은 같은 날짜로 저장돼요)</label>
     <input id="china-date" type="date">
-    <p id="china-arrival-hint" style="font-size:12px;color:var(--muted);margin-top:-6px;"></p>
+    <label>도착 예정일 <span style="font-weight:400; color:var(--muted); font-size:12px;">(화/토 배송 기준 자동계산 - 직접 고치셔도 돼요)</span></label>
+    <input id="china-arrival-date" type="date" oninput="_chinaArrivalManuallyEdited = true;">
     <div id="china-multi-list"></div>
     <div style="border:2px dashed var(--primary-dark); border-radius:10px; padding:10px; background:#eef4f7; margin:8px 0;">
     <label>품명 (사내)</label>
@@ -1036,7 +1037,7 @@
 const PASSWORD = "3059";
 const ADMIN_PASSWORD = "9503"; // 매출/미수금 탭 전용 - 필요하면 이 값만 바꿔서 변경 가능
 const DATA_VERSION = "2026-08-03-v4"; // 재고/이월장부 씨앗 데이터를 바꿀 때마다 이 값을 새로 바꿔주세요
-const APP_CODE_VERSION = "2026-09-19-t"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
+const APP_CODE_VERSION = "2026-09-19-w"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
 const SCHEMA_STAMP = 2; // 서버 저장규칙이 확인하는 "최신 앱 도장" - 절대 자주 바꾸지 않음(이 값을 아는 코드만 저장 가능하게 서버에서 막을 때 씀)
 const CONFIRMED_EMPTY = '__CONFIRMED_EMPTY__'; // "서버가 확실하게 문서가 없다고 확인해줬다"는 걸 표시하는 특수값
                                                  // (한번도 확인 안 한 null과 구분해서, 그 사이 다른 사람이 첫 데이터를 만들었으면 충돌로 감지하기 위함)
@@ -1055,6 +1056,8 @@ let ordersFirstLoadDone = false; // 이월장부 버전
 let chinaOrders = []; // 중국원단발주 목록 - 이월장부(orders)/재고(rolls)와 완전히 독립된 별도 데이터
 let nextChinaOrderId = 1;
 let chinaOrderFilter = 'waiting'; // all | waiting | received
+let chinaOrderGroupMode = 'arrival'; // arrival | item
+let chinaOrderSelectedArrivalDate = null; // 도착일별 보기에서 선택된 날짜 칩 (null이면 제일 가까운 날짜 자동선택)
 let chinaOrdersFirstLoadDone = false; // rolls/costs/orders/settings와 동일한 목적의 이중 안전장치
 let chinaProductMap = []; // 중국품번 -> 사내품명 매핑표 [{id, chinaCode, itemName}]
 let nextChinaProductMapId = 1;
@@ -8171,7 +8174,7 @@ function renderChinaOrders() {
   document.getElementById('stats').innerHTML = `<span>대기중 ${waitCount}건</span><span>입고완료 ${recvCount}건</span><span>전체 ${chinaOrders.length}건</span>`;
 
   const chipRow = document.createElement('div');
-  chipRow.style.cssText = 'display:flex; gap:6px; margin-bottom:10px; overflow-x:auto;';
+  chipRow.style.cssText = 'display:flex; gap:6px; margin-bottom:10px; overflow-x:auto; align-items:center;';
   const filters = [['all', '전체', chinaOrders.length], ['waiting', '대기중', waitCount], ['received', '입고완료', recvCount]];
   for (const [val, label, count] of filters) {
     const chip = document.createElement('div');
@@ -8181,6 +8184,11 @@ function renderChinaOrders() {
     chip.onclick = () => { chinaOrderFilter = val; render(); };
     chipRow.appendChild(chip);
   }
+  const groupToggleBtn = document.createElement('button');
+  groupToggleBtn.textContent = chinaOrderGroupMode === 'arrival' ? '품목별로 보기' : '도착일별로 보기';
+  groupToggleBtn.style.cssText = 'flex:none; margin-left:auto; border:none; background:#eee; color:var(--text); border-radius:20px; padding:6px 14px; font-size:12px; font-weight:600;';
+  groupToggleBtn.onclick = () => { chinaOrderGroupMode = chinaOrderGroupMode === 'arrival' ? 'item' : 'arrival'; render(); };
+  chipRow.appendChild(groupToggleBtn);
   list.appendChild(chipRow);
 
   let filtered = chinaOrders;
@@ -8202,6 +8210,11 @@ function renderChinaOrders() {
     return;
   }
 
+  if (chinaOrderGroupMode === 'item') {
+    renderChinaOrdersByItem(filtered);
+    return;
+  }
+
   // 검색 중이거나 "입고완료"만 볼 때는 도착일 그룹 없이 그냥 발주일 최신순으로 쭉 나열 (검색은 "이 컬러 이미 시켰나" 확인용이라 그룹핑이 오히려 방해됨)
   const shouldGroup = !t && chinaOrderFilter !== 'received';
   if (!shouldGroup) {
@@ -8214,16 +8227,41 @@ function renderChinaOrders() {
   const receivedOnes = filtered.filter(o => o.status === 'received');
   const groups = new Map();
   for (const o of waitingOnes) {
-    const arrival = getChinaOrderArrivalDate(o.date) || '미정';
+    const arrival = o.arrivalDate || getChinaOrderArrivalDate(o.date) || '미정';
     if (!groups.has(arrival)) groups.set(arrival, []);
     groups.get(arrival).push(o);
   }
   const sortedDates = Array.from(groups.keys()).sort();
-  for (const dateKey of sortedDates) {
-    const items = groups.get(dateKey);
+
+  if (sortedDates.length > 0) {
+    // 지금 선택된 날짜가 없거나, 이제는 그 날짜에 해당하는 게 없으면(다 입고처리됐거나 등) 제일 가까운 날짜로 자동 선택
+    if (!chinaOrderSelectedArrivalDate || !groups.has(chinaOrderSelectedArrivalDate)) {
+      chinaOrderSelectedArrivalDate = sortedDates[0];
+    }
+    const dateLabel = document.createElement('div');
+    dateLabel.style.cssText = 'font-size:11px; font-weight:700; color:#9a9488; margin:10px 0 5px;';
+    dateLabel.textContent = '도착예정일';
+    list.appendChild(dateLabel);
+
+    const dateChipRow = document.createElement('div');
+    dateChipRow.style.cssText = 'display:flex; gap:6px; margin-bottom:12px; overflow-x:auto;';
+    for (const dateKey of sortedDates) {
+      const items = groups.get(dateKey);
+      const isSelected = chinaOrderSelectedArrivalDate === dateKey;
+      const chip = document.createElement('div');
+      chip.style.cssText = `flex:none; padding:8px 14px; border-radius:10px; font-size:12px; font-weight:700; text-align:center; cursor:pointer; background:${isSelected ? 'var(--primary-dark)' : '#fff'}; color:${isSelected ? '#fff' : '#3a3733'}; border:1px solid ${isSelected ? 'var(--primary-dark)' : 'var(--border)'};`;
+      const dateLabelText = dateKey === '미정' ? '도착일 미정' : formatChinaArrivalLabel(dateKey);
+      chip.innerHTML = `${esc(dateLabelText)}<br><span style="font-weight:400; font-size:11px; ${isSelected ? 'opacity:0.85;' : 'color:var(--muted);'}">${items.length}건</span>`;
+      chip.onclick = () => { chinaOrderSelectedArrivalDate = dateKey; render(); };
+      dateChipRow.appendChild(chip);
+    }
+    list.appendChild(dateChipRow);
+
+    const items = groups.get(chinaOrderSelectedArrivalDate) || [];
     const header = document.createElement('div');
-    header.style.cssText = 'font-size:12px; font-weight:700; color:#a15c1e; background:#fff3d6; border:1px solid #f0dca3; border-radius:8px; padding:8px 12px; margin:10px 0 6px;';
-    header.textContent = dateKey === '미정' ? `도착일 미정 · ${items.length}건` : `${formatChinaArrivalLabel(dateKey)} 도착 예정 · ${items.length}건`;
+    header.style.cssText = 'font-size:12px; font-weight:700; color:#a15c1e; margin-bottom:8px;';
+    const selLabel = chinaOrderSelectedArrivalDate === '미정' ? '도착일 미정' : `${formatChinaArrivalLabel(chinaOrderSelectedArrivalDate)} 도착 예정`;
+    header.textContent = `🚢 ${selLabel} · ${items.length}건`;
     list.appendChild(header);
     items.sort((a, b) => String(a.item).localeCompare(String(b.item), 'ko'));
     for (const o of items) list.appendChild(buildChinaOrderCard(o));
@@ -8235,6 +8273,59 @@ function renderChinaOrders() {
     list.appendChild(header);
     receivedOnes.sort((a, b) => b.date.localeCompare(a.date));
     for (const o of receivedOnes) list.appendChild(buildChinaOrderCard(o));
+  }
+}
+function renderChinaOrdersByItem(filtered) {
+  const list = document.getElementById('list');
+  const groups = new Map();
+  for (const o of filtered) {
+    const key = String(o.item || '').trim() || '(품명 미정)';
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(o);
+  }
+  let arr = Array.from(groups.entries());
+  arr.sort((a, b) => {
+    const diff = b[1].length - a[1].length;
+    if (diff !== 0) return diff;
+    return a[0].localeCompare(b[0], 'ko');
+  });
+
+  for (const [itemName, orders] of arr) {
+    const items = orders.slice().sort((a, b) => b.date.localeCompare(a.date));
+    const k = 'chinaitemgrp:' + itemName;
+    const isOpen = openGroups.has(k);
+
+    const card = document.createElement('div');
+    card.style.cssText = 'background:#fff; border-radius:10px; border:1px solid var(--border); margin-bottom:8px; overflow:hidden;';
+    const headRow = document.createElement('div');
+    headRow.style.cssText = 'padding:12px 14px; display:flex; justify-content:space-between; align-items:center; cursor:pointer;';
+    headRow.innerHTML = `
+      <div style="font-weight:700; font-size:15px;">${esc(itemName)}</div>
+      <div style="font-size:12px; color:var(--muted);">컬러 ${items.length}개 · ${isOpen ? '접기 ▲' : '펼치기 ▼'}</div>
+    `;
+    headRow.onclick = () => toggleGroup(k);
+    card.appendChild(headRow);
+
+    if (isOpen) {
+      const rowsWrap = document.createElement('div');
+      rowsWrap.style.cssText = 'border-top:1px solid #f0eee8;';
+      items.forEach((o, idx) => {
+        const isReceived = o.status === 'received';
+        const row = document.createElement('div');
+        row.style.cssText = `padding:10px 14px; display:flex; justify-content:space-between; align-items:center; cursor:pointer;${idx < items.length - 1 ? ' border-bottom:1px solid #f5f3ee;' : ''}`;
+        row.innerHTML = `
+          <div style="min-width:0;">
+            <span style="font-weight:600; font-size:13px;">${esc(o.color || '(컬러 미정)')}</span>
+            <span style="font-size:11px; color:var(--muted); margin-left:6px;">${o.chinaCode ? `(${esc(o.chinaCode)}) · ` : ''}${esc(o.qty || '')}${o.urgent ? ' · 급송' : ''} · ${esc(o.date)}</span>
+          </div>
+          <div style="font-size:11px; font-weight:700; padding:3px 8px; border-radius:6px; flex:none; margin-left:8px; background:${isReceived ? '#eaf3ec' : '#fdecea'}; color:${isReceived ? '#2f6b46' : '#c0392b'};">${isReceived ? '입고완료' : '대기중'}</div>
+        `;
+        row.onclick = () => openChinaOrderEditModal(o.id);
+        rowsWrap.appendChild(row);
+      });
+      card.appendChild(rowsWrap);
+    }
+    list.appendChild(card);
   }
 }
 function buildChinaOrderCard(o) {
@@ -8343,9 +8434,11 @@ function resolveChinaMatch(result) {
 }
 let _editingChinaOrderId = null;
 let _chinaMultiAddItems = []; // 발주등록 화면에서 "+ 항목 추가"로 쌓인, 아직 저장 전인 항목들
+let _chinaArrivalManuallyEdited = false; // 도착예정일을 사용자가 직접 고쳤는지 - 고쳤으면 발주일이 바뀌어도 자동재계산 안 함
 function openChinaOrderAddModal() {
   _editingChinaOrderId = null;
   _chinaMultiAddItems = [];
+  _chinaArrivalManuallyEdited = false;
   document.getElementById('china-modal-title').textContent = '중국 발주 등록';
   document.getElementById('china-date').value = toDateInputValue(todayStr());
   document.getElementById('china-code').value = '';
@@ -8370,6 +8463,7 @@ function openChinaOrderEditModal(id) {
   if (!o) return;
   _editingChinaOrderId = id;
   _chinaMultiAddItems = [];
+  _chinaArrivalManuallyEdited = false;
   document.getElementById('china-modal-title').textContent = '중국 발주 수정';
   document.getElementById('china-date').value = toDateInputValue(o.date);
   document.getElementById('china-code').value = o.chinaCode || '';
@@ -8378,7 +8472,13 @@ function openChinaOrderEditModal(id) {
   document.getElementById('china-qty').value = o.qty || '';
   document.getElementById('china-urgent').checked = !!o.urgent;
   document.getElementById('china-note').value = o.note || '';
-  updateChinaArrivalHint();
+  if (o.arrivalDate) {
+    // 이미 저장된 도착예정일(자동계산이든 직접수정했든)이 있으면 그대로 보여주고, 발주일을 바꾸기 전까진 안 건드림
+    document.getElementById('china-arrival-date').value = toDateInputValue(o.arrivalDate);
+    _chinaArrivalManuallyEdited = true;
+  } else {
+    updateChinaArrivalHint();
+  }
   renderChinaMultiAddList();
   document.getElementById('china-add-item-btn').classList.add('hidden'); // 수정은 이 건 하나만 고치는 거라 "여러개 추가" 기능은 안 보여줌
   const actions = document.getElementById('china-modal-actions');
@@ -8439,12 +8539,12 @@ function renderChinaMultiAddList() {
   `).join('');
 }
 function updateChinaArrivalHint() {
+  if (_chinaArrivalManuallyEdited) return; // 직접 고치신 값은 발주일이 바뀌어도 안 건드림
   const dateV = document.getElementById('china-date').value;
-  const hint = document.getElementById('china-arrival-hint');
-  if (!dateV) { hint.textContent = ''; return; }
+  if (!dateV) return;
   const dateStr = fromDateInputValue(dateV);
   const arrival = getChinaOrderArrivalDate(dateStr);
-  hint.textContent = arrival ? `예상 도착일: ${formatChinaArrivalLabel(arrival)} (자동계산, 화/토 배송 기준)` : '';
+  if (arrival) document.getElementById('china-arrival-date').value = toDateInputValue(arrival);
 }
 function autoFillChinaItemName() {
   const code = document.getElementById('china-code').value.trim();
@@ -8474,14 +8574,16 @@ async function saveChinaOrderModal() {
   const dateV = document.getElementById('china-date').value;
   if (!dateV) { showToast('발주일을 선택해주세요'); return; }
   const date = fromDateInputValue(dateV);
+  const arrivalDateV = document.getElementById('china-arrival-date').value;
+  const arrivalDate = arrivalDateV ? fromDateInputValue(arrivalDateV) : getChinaOrderArrivalDate(date);
 
   if (_editingChinaOrderId != null) {
     const f = readChinaItemFieldsFromForm();
     if (!f.item && !f.chinaCode) { showToast('품명이나 중국품번 중 하나는 입력해주세요'); return; }
     const o = chinaOrders.find(x => x.id === _editingChinaOrderId);
     if (!o) return;
-    const before = { date: o.date, chinaCode: o.chinaCode, item: o.item, color: o.color, qty: o.qty, urgent: o.urgent, note: o.note };
-    o.date = date; o.chinaCode = f.chinaCode; o.item = f.item; o.color = f.color; o.qty = f.qty; o.urgent = f.urgent; o.note = f.note;
+    const before = { date: o.date, arrivalDate: o.arrivalDate, chinaCode: o.chinaCode, item: o.item, color: o.color, qty: o.qty, urgent: o.urgent, note: o.note };
+    o.date = date; o.arrivalDate = arrivalDate; o.chinaCode = f.chinaCode; o.item = f.item; o.color = f.color; o.qty = f.qty; o.urgent = f.urgent; o.note = f.note;
     const saved = await persistChinaOrders();
     if (saved === false) {
       Object.assign(o, before); // 저장 실패했으면 화면에 보이는 값도 원래대로 되돌림 (안 그러면 실제로는 안 바뀐 게 바뀐 것처럼 보임)
@@ -8507,7 +8609,7 @@ async function saveChinaOrderModal() {
   const newOrders = [];
   const newMappings = [];
   for (const f of itemsToSave) {
-    const entry = { id: nextChinaOrderId++, date, chinaCode: f.chinaCode, item: f.item, color: f.color, qty: f.qty, urgent: f.urgent, note: f.note, status: 'waiting' };
+    const entry = { id: nextChinaOrderId++, date, arrivalDate, chinaCode: f.chinaCode, item: f.item, color: f.color, qty: f.qty, urgent: f.urgent, note: f.note, status: 'waiting' };
     newOrders.push(entry);
     if (f.chinaCode && f.item && !chinaProductMap.some(m => String(m.chinaCode).trim() === f.chinaCode) && !newMappings.some(m => m.chinaCode === f.chinaCode)) {
       newMappings.push({ id: nextChinaProductMapId++, chinaCode: f.chinaCode, itemName: f.item });
