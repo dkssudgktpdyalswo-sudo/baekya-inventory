@@ -1036,7 +1036,7 @@
 const PASSWORD = "3059";
 const ADMIN_PASSWORD = "9503"; // 매출/미수금 탭 전용 - 필요하면 이 값만 바꿔서 변경 가능
 const DATA_VERSION = "2026-08-03-v4"; // 재고/이월장부 씨앗 데이터를 바꿀 때마다 이 값을 새로 바꿔주세요
-const APP_CODE_VERSION = "2026-09-19-s"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
+const APP_CODE_VERSION = "2026-09-19-t"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
 const SCHEMA_STAMP = 2; // 서버 저장규칙이 확인하는 "최신 앱 도장" - 절대 자주 바꾸지 않음(이 값을 아는 코드만 저장 가능하게 서버에서 막을 때 씀)
 const CONFIRMED_EMPTY = '__CONFIRMED_EMPTY__'; // "서버가 확실하게 문서가 없다고 확인해줬다"는 걸 표시하는 특수값
                                                  // (한번도 확인 안 한 null과 구분해서, 그 사이 다른 사람이 첫 데이터를 만들었으면 충돌로 감지하기 위함)
@@ -5673,13 +5673,14 @@ function renderPaymentLedgerView() {
 
   if (payments.length === 0) { list.innerHTML += '<div class="empty">입금 기록이 없습니다</div>'; return; }
 
-  // 거래처별 현재 남은 미수금(오늘 기준 최신 상태) 미리 계산
+  // 거래처별 현재 남은 미수금(오늘 기준 최신 상태) 미리 계산 - 전체 흐름 누적계산으로 초과입금/미수금 상쇄까지 정확히 반영
   const unpaidByCustomer = new Map();
+  const custNamesForUnpaid = new Set();
   for (const e of shipmentLog) {
     if (!e.customer || e.saleAmount == null) continue;
-    const k = String(e.customer).trim();
-    unpaidByCustomer.set(k, Math.round(((unpaidByCustomer.get(k) || 0) + getRemaining(e)) * 100) / 100);
+    custNamesForUnpaid.add(String(e.customer).trim());
   }
+  for (const k of custNamesForUnpaid) unpaidByCustomer.set(k, getCustomerTrueUnpaid(k));
 
   const byDate = new Map();
   for (const p of payments) {
@@ -7264,12 +7265,14 @@ function buildMonthlyReportHTML(monthKey, prevMonthKey, year, monthNum) {
   const profitPct = prevProfit > 0 ? Math.round(((netProfit - prevProfit) / prevProfit) * 1000) / 10 : null;
 
   // 미수금 총액 (현재 기준 - 이번달이 이번 달일 때만 "현재"라는 의미가 정확함)
-  let totalUnpaid = 0;
+  // 거래처별로 먼저 정확하게(전체 흐름 누적) 계산한 다음 합산해야, 한 거래처 안에서 초과입금/미수금이 상쇄되는 게 정확히 반영됨
+  const custNamesForTotalUnpaid = new Set();
   for (const e of shipmentLog) {
-    if (e.saleAmount != null) totalUnpaid += getRemaining(e);
-    else if ((e.isReturn || e.isDefect) && e.deductAmount != null) totalUnpaid -= e.deductAmount;
+    if (e.customer) custNamesForTotalUnpaid.add(String(e.customer).trim());
   }
-  totalUnpaid = Math.max(0, Math.round(totalUnpaid));
+  let totalUnpaid = 0;
+  for (const k of custNamesForTotalUnpaid) totalUnpaid += getCustomerTrueUnpaid(k);
+  totalUnpaid = Math.round(totalUnpaid);
 
   const topItems = Array.from(itemQty.entries()).sort((a, b) => b[1] - a[1]).slice(0, 3);
   const fmtPct = (p) => p == null ? '' : ` (전월 ${p >= 0 ? '▲' : '▼'}${Math.abs(p)}%)`;
@@ -8017,7 +8020,7 @@ function renderSales() {
         if (e.isReturn) return s;
         return s + (e._profit != null ? e._profit : 0);
       }, 0);
-      const custUnpaid = Math.max(0, entries.reduce((s, e) => s + (e.saleAmount != null ? getRemaining(e) : 0), 0) - custReturnDefect);
+      const custUnpaid = getCustomerTrueUnpaid(k); // 전체 흐름 누적계산 - 초과입금/미수금이 서로 상쇄되는 것까지 정확히 반영 (버튼 표시여부를 실제 입금처리 금액과 똑같은 기준으로 맞춤)
       const isMainGroup = entries.every(e => printSelectedIds.has(e.id));
       const custGroupKey = `sales:${period}:${k}`;
       const custOpen = openGroups.has(custGroupKey);
