@@ -1036,8 +1036,10 @@
 const PASSWORD = "3059";
 const ADMIN_PASSWORD = "9503"; // 매출/미수금 탭 전용 - 필요하면 이 값만 바꿔서 변경 가능
 const DATA_VERSION = "2026-08-03-v4"; // 재고/이월장부 씨앗 데이터를 바꿀 때마다 이 값을 새로 바꿔주세요
-const APP_CODE_VERSION = "2026-09-19-p"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
+const APP_CODE_VERSION = "2026-09-19-q"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
 const SCHEMA_STAMP = 2; // 서버 저장규칙이 확인하는 "최신 앱 도장" - 절대 자주 바꾸지 않음(이 값을 아는 코드만 저장 가능하게 서버에서 막을 때 씀)
+const CONFIRMED_EMPTY = '__CONFIRMED_EMPTY__'; // "서버가 확실하게 문서가 없다고 확인해줬다"는 걸 표시하는 특수값
+                                                 // (한번도 확인 안 한 null과 구분해서, 그 사이 다른 사람이 첫 데이터를 만들었으면 충돌로 감지하기 위함)
 
 const firebaseConfig = {
   apiKey: "AIzaSyA4Qrz16VpQuBVxTzGMyoAD9BtzIgXV0cQ",
@@ -1279,7 +1281,7 @@ async function loadAll() {
           // 화면엔 임시로 기본값을 보여주되, 서버에 자동 저장은 하지 않음 (안 그러면 캐시 문제로 실제 데이터가 기본값에 덮어써질 위험이 있음 - 데이터 초기화 사고의 원인이었음)
           rolls = DEFAULT_ROLLS.map(([cat, item, color, tang, qty]) => ({ id: nextId++, cat, item, color, tang, qty }));
           // 서버에서 확실하게 "문서가 없다"고 확인해준 거면(캐시 응답이 아니면) 진짜 최초 설치인 거니 안전하게 저장을 허용함
-          if (!doc.metadata.fromCache) rollsFirstLoadDone = true;
+          if (!doc.metadata.fromCache) { rollsFirstLoadDone = true; lastSnapshotJSON.rolls = CONFIRMED_EMPTY; }
           else console.warn('rolls 문서를 못 찾았어요 - 아직 서버 확인 전이라 잠시 기다립니다');
         }
         loaded.rolls = true; render(); checkDone();
@@ -1300,7 +1302,7 @@ async function loadAll() {
           costsFirstLoadDone = true;
         } else if (!loaded.costs) {
           costs = DEFAULT_COSTS.map(([cat, item, type, price]) => ({ id: nextCostId++, cat, item, type, price }));
-          if (!doc.metadata.fromCache) costsFirstLoadDone = true;
+          if (!doc.metadata.fromCache) { costsFirstLoadDone = true; lastSnapshotJSON.costs = CONFIRMED_EMPTY; }
           else console.warn('costs 문서를 못 찾았어요 - 아직 서버 확인 전이라 잠시 기다립니다');
         }
         loaded.costs = true; render(); checkDone();
@@ -1321,7 +1323,7 @@ async function loadAll() {
         } else if (!loaded.settings) {
           // 문서를 못 찾은 경우 - 진짜 최초 설치인지 확인해서, 서버에서 확실하게 확인된 거면 저장 허용
           settings = { ...DEFAULT_SETTINGS };
-          if (!doc.metadata.fromCache) settingsFirstLoadDone = true;
+          if (!doc.metadata.fromCache) { settingsFirstLoadDone = true; lastSnapshotJSON.settings = CONFIRMED_EMPTY; }
           else console.warn('settings 문서를 못 찾았어요 - 아직 서버 확인 전이라 잠시 기다립니다');
         }
         loaded.settings = true; updateRateBar(); render(); checkDone();
@@ -1338,7 +1340,7 @@ async function loadAll() {
         } else if (!loaded.orders) {
           orders = DEFAULT_ORDERS.map(([date, customer, factory, item, color, orderQty, unit, received, note]) =>
             ({ id: genUniqueId(), date, customer, factory, item, color, orderQty, unit: unit || 'y', received, note, done: false }));
-          if (!doc.metadata.fromCache) ordersFirstLoadDone = true;
+          if (!doc.metadata.fromCache) { ordersFirstLoadDone = true; lastSnapshotJSON.orders = CONFIRMED_EMPTY; }
           else console.warn('orders 문서를 못 찾았어요 - 아직 서버 확인 전이라 잠시 기다립니다');
         }
         loaded.orders = true; render(); checkDone();
@@ -1356,7 +1358,7 @@ async function loadAll() {
           chinaOrders = [];
           // 서버에서 확실하게 "문서가 없다"고 확인해준 거면(캐시 응답이 아니면) 진짜 최초 설치인 거니 안전하게 저장을 허용함
           // (로컬 캐시 응답이면 아직 서버 확인 전이라 불확실하니 그대로 기다림)
-          if (!doc.metadata.fromCache) chinaOrdersFirstLoadDone = true;
+          if (!doc.metadata.fromCache) { chinaOrdersFirstLoadDone = true; lastSnapshotJSON.chinaOrders = CONFIRMED_EMPTY; }
           else console.warn('chinaOrders 문서를 못 찾았어요 - 아직 서버 확인 전이라 잠시 기다립니다');
         }
         loaded.chinaOrders = true; render(); checkDone();
@@ -1372,7 +1374,7 @@ async function loadAll() {
           chinaProductMapFirstLoadDone = true;
         } else if (!loaded.chinaMap) {
           chinaProductMap = [];
-          if (!doc.metadata.fromCache) chinaProductMapFirstLoadDone = true;
+          if (!doc.metadata.fromCache) { chinaProductMapFirstLoadDone = true; lastSnapshotJSON.chinaProductMap = CONFIRMED_EMPTY; }
           else console.warn('chinaProductMap 문서를 못 찾았어요 - 아직 서버 확인 전이라 잠시 기다립니다');
         }
         loaded.chinaMap = true; render(); checkDone();
@@ -1386,6 +1388,7 @@ async function loadAll() {
           swatchInfoFirstLoadDone = true;
         } else if (!loaded.swatch && !doc.metadata.fromCache) {
           swatchInfoFirstLoadDone = true;
+          lastSnapshotJSON.swatchInfo = CONFIRMED_EMPTY;
         }
         loaded.swatch = true; render(); checkDone();
       });
@@ -1400,6 +1403,7 @@ async function loadAll() {
           shipmentLogFirstLoadDone = true;
         } else if (!loaded.log && !doc.metadata.fromCache) {
           shipmentLogFirstLoadDone = true;
+          lastSnapshotJSON.shipmentLog = CONFIRMED_EMPTY;
         }
         loaded.log = true; render(); checkDone();
       });
@@ -1412,6 +1416,7 @@ async function loadAll() {
           priceBookFirstLoadDone = true;
         } else if (!loaded.price && !doc.metadata.fromCache) {
           priceBookFirstLoadDone = true;
+          lastSnapshotJSON.priceBook = CONFIRMED_EMPTY;
         }
         loaded.price = true; render(); checkDone();
       });
@@ -1424,6 +1429,7 @@ async function loadAll() {
           depositMemosFirstLoadDone = true;
         } else if (!loaded.advance && !doc.metadata.fromCache) {
           depositMemosFirstLoadDone = true;
+          lastSnapshotJSON.depositMemos = CONFIRMED_EMPTY;
         }
         loaded.advance = true; render(); checkDone();
       });
@@ -1435,6 +1441,7 @@ async function loadAll() {
           customerNotesFirstLoadDone = true;
         } else if (!loaded.custNotes && !doc.metadata.fromCache) {
           customerNotesFirstLoadDone = true;
+          lastSnapshotJSON.customerNotes = CONFIRMED_EMPTY;
         }
         loaded.custNotes = true; render(); checkDone();
       });
@@ -1446,6 +1453,7 @@ async function loadAll() {
           customerListFirstLoadDone = true;
         } else if (!loaded.custList && !doc.metadata.fromCache) {
           customerListFirstLoadDone = true;
+          lastSnapshotJSON.customerList = CONFIRMED_EMPTY;
         }
         loaded.custList = true; render(); checkDone();
       });
@@ -1458,6 +1466,7 @@ async function loadAll() {
           expensesFirstLoadDone = true;
         } else if (!loaded.expenses && !doc.metadata.fromCache) {
           expensesFirstLoadDone = true;
+          lastSnapshotJSON.expenses = CONFIRMED_EMPTY;
         }
         loaded.expenses = true; render(); checkDone();
       });
@@ -1686,7 +1695,10 @@ async function persistGuarded(docId, key, dataArray) {
       const snap = await tx.get(ref);
       const currentJSON = (snap.exists && snap.data() && snap.data().data) ? snap.data().data : null;
       const known = lastSnapshotJSON[key];
-      if (known != null && currentJSON !== known) {
+      if (known === CONFIRMED_EMPTY) {
+        // 마지막으로 확인했을 때 서버에 확실히 문서가 없었는데, 지금 보니 생겼으면(다른 사람이 그 사이 먼저 만든 거니) 충돌
+        if (currentJSON !== null) throw new Error('STALE_WRITE');
+      } else if (known != null && currentJSON !== known) {
         throw new Error('STALE_WRITE');
       }
       const currentRev = (snap.exists && snap.data() && typeof snap.data().rev === 'number') ? snap.data().rev : 0;
@@ -1736,7 +1748,9 @@ async function persistSettings() {
       const snap = await tx.get(ref);
       const currentJSON = (snap.exists && snap.data() && snap.data().data) ? snap.data().data : null;
       const known = lastSnapshotJSON.settings;
-      if (known != null && currentJSON !== known) {
+      if (known === CONFIRMED_EMPTY) {
+        if (currentJSON !== null) throw new Error('STALE_WRITE');
+      } else if (known != null && currentJSON !== known) {
         throw new Error('STALE_WRITE');
       }
       const currentRev = (snap.exists && snap.data() && typeof snap.data().rev === 'number') ? snap.data().rev : 0;
