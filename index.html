@@ -1037,7 +1037,7 @@
 const PASSWORD = "3059";
 const ADMIN_PASSWORD = "9503"; // 매출/미수금 탭 전용 - 필요하면 이 값만 바꿔서 변경 가능
 const DATA_VERSION = "2026-08-03-v4"; // 재고/이월장부 씨앗 데이터를 바꿀 때마다 이 값을 새로 바꿔주세요
-const APP_CODE_VERSION = "2026-09-19-w"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
+const APP_CODE_VERSION = "2026-09-19-z"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
 const SCHEMA_STAMP = 2; // 서버 저장규칙이 확인하는 "최신 앱 도장" - 절대 자주 바꾸지 않음(이 값을 아는 코드만 저장 가능하게 서버에서 막을 때 씀)
 const CONFIRMED_EMPTY = '__CONFIRMED_EMPTY__'; // "서버가 확실하게 문서가 없다고 확인해줬다"는 걸 표시하는 특수값
                                                  // (한번도 확인 안 한 null과 구분해서, 그 사이 다른 사람이 첫 데이터를 만들었으면 충돌로 감지하기 위함)
@@ -8214,7 +8214,10 @@ function renderChinaOrders() {
     renderChinaOrdersByItem(filtered);
     return;
   }
-
+  renderChinaOrdersByArrival(filtered, t);
+}
+function renderChinaOrdersByArrival(filtered, t) {
+  const list = document.getElementById('list');
   // 검색 중이거나 "입고완료"만 볼 때는 도착일 그룹 없이 그냥 발주일 최신순으로 쭉 나열 (검색은 "이 컬러 이미 시켰나" 확인용이라 그룹핑이 오히려 방해됨)
   const shouldGroup = !t && chinaOrderFilter !== 'received';
   if (!shouldGroup) {
@@ -8275,6 +8278,28 @@ function renderChinaOrders() {
     for (const o of receivedOnes) list.appendChild(buildChinaOrderCard(o));
   }
 }
+function buildChinaOrderCard(o) {
+  const card = document.createElement('div');
+  card.style.cssText = 'background:#fff; border-radius:10px; border:1px solid var(--border); padding:10px 14px; margin-bottom:8px; cursor:pointer;';
+  card.onclick = () => openChinaOrderEditModal(o.id);
+  const isReceived = o.status === 'received';
+  const arrival = o.arrivalDate || getChinaOrderArrivalDate(o.date);
+  card.innerHTML = `
+    <div style="display:flex; justify-content:space-between; align-items:center;">
+      <div style="min-width:0;">
+        <div style="font-weight:700; font-size:14px;">${esc(o.item || '(품명 미정)')}${o.chinaCode ? ` <span style="font-size:11px; color:var(--muted); font-weight:400;">(${esc(o.chinaCode)})</span>` : ''}</div>
+        <div style="font-size:14px; font-weight:700; color:#1e4258; margin-top:3px;">${esc(o.color || '')}${o.color && o.qty ? ' · ' : ''}${esc(o.qty || '')}${o.urgent ? ' <span style="color:#c0392b;">· 급송</span>' : ''}</div>
+        <div style="font-size:11px; color:var(--muted); margin-top:2px;">발주 ${esc(o.date)}${arrival ? ` · 도착 ${esc(formatChinaArrivalLabel(arrival))}` : ''}</div>
+      </div>
+      <div style="display:flex; align-items:center; gap:6px; flex:none; margin-left:8px;">
+        <div style="font-size:11px; font-weight:700; padding:3px 8px; border-radius:6px; background:${isReceived ? '#eaf3ec' : '#fdecea'}; color:${isReceived ? '#2f6b46' : '#c0392b'};">${isReceived ? '입고완료' : '대기중'}</div>
+        <button onclick="event.stopPropagation(); ${isReceived ? `toggleChinaOrderStatus(${o.id})` : `openChinaReceiveModal(${o.id})`}" style="border:none;background:#eee;color:var(--text);border-radius:6px;padding:5px 8px;font-size:11px;">${isReceived ? '대기로' : '입고처리'}</button>
+      </div>
+    </div>
+    ${o.note ? `<div style="font-size:12px; color:#a15c1e; font-weight:700; margin-top:5px; background:#fff3d6; border-radius:5px; padding:4px 8px; display:inline-block;">📝 ${esc(o.note)}</div>` : ''}
+  `;
+  return card;
+}
 function renderChinaOrdersByItem(filtered) {
   const list = document.getElementById('list');
   const groups = new Map();
@@ -8311,14 +8336,21 @@ function renderChinaOrdersByItem(filtered) {
       rowsWrap.style.cssText = 'border-top:1px solid #f0eee8;';
       items.forEach((o, idx) => {
         const isReceived = o.status === 'received';
+        const arrival = o.arrivalDate || getChinaOrderArrivalDate(o.date);
         const row = document.createElement('div');
-        row.style.cssText = `padding:10px 14px; display:flex; justify-content:space-between; align-items:center; cursor:pointer;${idx < items.length - 1 ? ' border-bottom:1px solid #f5f3ee;' : ''}`;
+        row.style.cssText = `padding:10px 14px; cursor:pointer;${idx < items.length - 1 ? ' border-bottom:1px solid #f5f3ee;' : ''}`;
         row.innerHTML = `
-          <div style="min-width:0;">
-            <span style="font-weight:600; font-size:13px;">${esc(o.color || '(컬러 미정)')}</span>
-            <span style="font-size:11px; color:var(--muted); margin-left:6px;">${o.chinaCode ? `(${esc(o.chinaCode)}) · ` : ''}${esc(o.qty || '')}${o.urgent ? ' · 급송' : ''} · ${esc(o.date)}</span>
+          <div style="display:flex; justify-content:space-between; align-items:center;">
+            <div style="min-width:0;">
+              <span style="font-weight:700; font-size:14px; color:#1e4258;">${esc(o.color || '(컬러 미정)')}${o.color && o.qty ? ' · ' : ''}${esc(o.qty || '')}</span>${o.urgent ? ' <span style="color:#c0392b; font-weight:700; font-size:12px;">· 급송</span>' : ''}
+              <div style="font-size:11px; color:var(--muted); margin-top:2px;">${o.chinaCode ? `(${esc(o.chinaCode)}) · ` : ''}발주 ${esc(o.date)}${arrival ? ` · 도착 ${esc(formatChinaArrivalLabel(arrival))}` : ''}</div>
+            </div>
+            <div style="display:flex; align-items:center; gap:6px; flex:none; margin-left:8px;">
+              <div style="font-size:11px; font-weight:700; padding:3px 8px; border-radius:6px; background:${isReceived ? '#eaf3ec' : '#fdecea'}; color:${isReceived ? '#2f6b46' : '#c0392b'};">${isReceived ? '입고완료' : '대기중'}</div>
+              <button onclick="event.stopPropagation(); ${isReceived ? `toggleChinaOrderStatus(${o.id})` : `openChinaReceiveModal(${o.id})`}" style="border:none;background:#eee;color:var(--text);border-radius:6px;padding:5px 8px;font-size:11px;">${isReceived ? '대기로' : '입고처리'}</button>
+            </div>
           </div>
-          <div style="font-size:11px; font-weight:700; padding:3px 8px; border-radius:6px; flex:none; margin-left:8px; background:${isReceived ? '#eaf3ec' : '#fdecea'}; color:${isReceived ? '#2f6b46' : '#c0392b'};">${isReceived ? '입고완료' : '대기중'}</div>
+          ${o.note ? `<div style="font-size:12px; color:#a15c1e; font-weight:700; margin-top:5px; background:#fff3d6; border-radius:5px; padding:4px 8px; display:inline-block;">📝 ${esc(o.note)}</div>` : ''}
         `;
         row.onclick = () => openChinaOrderEditModal(o.id);
         rowsWrap.appendChild(row);
@@ -8327,26 +8359,6 @@ function renderChinaOrdersByItem(filtered) {
     }
     list.appendChild(card);
   }
-}
-function buildChinaOrderCard(o) {
-  const card = document.createElement('div');
-  card.className = 'group';
-  card.style.cssText = 'padding:10px 12px; margin-bottom:6px; display:flex; justify-content:space-between; align-items:center; cursor:pointer;';
-  card.onclick = () => openChinaOrderEditModal(o.id);
-  const isReceived = o.status === 'received';
-  card.innerHTML = `
-    <div style="min-width:0; flex:1;">
-      <div style="font-weight:700; font-size:14px;">${esc(o.item || '(품명 미정)')}${o.chinaCode ? ` <span style="font-size:11px; color:var(--muted); font-weight:400;">(${esc(o.chinaCode)})</span>` : ''}</div>
-      <div style="font-size:12px; color:var(--muted); margin-top:2px;">${esc(o.color || '')}${o.color ? ' · ' : ''}${esc(o.qty || '')}${o.urgent ? ' <span style="color:#c0392b; font-weight:600;">· 급송(A)</span>' : ''}</div>
-      <div style="font-size:11px; color:var(--muted); margin-top:2px;">발주일 ${esc(o.date)}</div>
-      ${o.note ? `<div style="font-size:12px; color:#a15c1e; font-weight:700; margin-top:3px; background:#fff3d6; border-radius:5px; padding:3px 7px; display:inline-block;">📝 ${esc(o.note)}</div>` : ''}
-    </div>
-    <div style="display:flex; align-items:center; gap:6px; flex:none;">
-      <div style="font-size:11px; font-weight:700; padding:3px 8px; border-radius:6px; background:${isReceived ? '#eaf3ec' : '#fdecea'}; color:${isReceived ? '#2f6b46' : '#c0392b'};">${isReceived ? '입고완료' : '대기중'}</div>
-      <button onclick="event.stopPropagation(); ${isReceived ? `toggleChinaOrderStatus(${o.id})` : `openChinaReceiveModal(${o.id})`}" style="border:none;background:#eee;color:var(--text);border-radius:6px;padding:5px 8px;font-size:11px;">${isReceived ? '대기로' : '입고처리'}</button>
-    </div>
-  `;
-  return card;
 }
 async function toggleChinaOrderStatus(id) {
   const o = chinaOrders.find(x => x.id === id);
