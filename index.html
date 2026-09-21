@@ -1036,7 +1036,7 @@
 const PASSWORD = "3059";
 const ADMIN_PASSWORD = "9503"; // 매출/미수금 탭 전용 - 필요하면 이 값만 바꿔서 변경 가능
 const DATA_VERSION = "2026-08-03-v4"; // 재고/이월장부 씨앗 데이터를 바꿀 때마다 이 값을 새로 바꿔주세요
-const APP_CODE_VERSION = "2026-09-19-n"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
+const APP_CODE_VERSION = "2026-09-19-o"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
 const SCHEMA_STAMP = 2; // 서버 저장규칙이 확인하는 "최신 앱 도장" - 절대 자주 바꾸지 않음(이 값을 아는 코드만 저장 가능하게 서버에서 막을 때 씀)
 
 const firebaseConfig = {
@@ -2841,7 +2841,13 @@ async function saveAdd() {
   }
   await persistSwatchInfo();
 
+  let chinaSyncFailed = false;
   if (chinaMatchDecisions.length > 0) {
+    const beforeStates = chinaMatchDecisions.map(d => {
+      const o = chinaOrders.find(x => x.id === d.order.id);
+      return o ? { id: o.id, qty: o.qty, status: o.status } : null;
+    });
+    const newCarryovers = [];
     for (const d of chinaMatchDecisions) {
       const o = chinaOrders.find(x => x.id === d.order.id);
       if (!o) continue;
@@ -2851,17 +2857,32 @@ async function saveAdd() {
       } else if (d.action === 'partial') {
         o.qty = d.receivedQty;
         o.status = 'received';
-        chinaOrders.push({
+        const carryover = {
           id: nextChinaOrderId++, date: o.date, chinaCode: o.chinaCode, item: o.item, color: o.color,
           qty: d.remainQty, urgent: o.urgent, note: `이전 발주(${o.date})에서 이월됨`, status: 'waiting'
-        });
+        };
+        chinaOrders.push(carryover);
+        newCarryovers.push(carryover);
       }
     }
-    await persistChinaOrders();
+    const saved = await persistChinaOrders();
+    if (saved === false) {
+      // 재고 등록 자체는 이미 성공했으니 되돌리지 않되, 중국발주 쪽 반영만 롤백하고 실패했다고 명확히 알림
+      chinaSyncFailed = true;
+      for (const b of beforeStates) {
+        if (!b) continue;
+        const o = chinaOrders.find(x => x.id === b.id);
+        if (o) { o.qty = b.qty; o.status = b.status; }
+      }
+      chinaOrders = chinaOrders.filter(o => !newCarryovers.includes(o));
+    }
   }
 
   closeAddModal(); render();
-  showToast(`입고 등록되었습니다 (컬러 ${totalColors}개, 탕 ${totalEntries}개)${chinaMatchDecisions.length > 0 ? ' · 중국발주도 같이 처리했어요' : ''}`);
+  if (chinaSyncFailed) {
+    alert('재고는 정상적으로 등록됐어요.\n다만 중국발주 상태 반영은 서버 연결 문제로 실패했어요 - 중국발주 탭에서 직접 처리해주세요.');
+  }
+  showToast(`입고 등록되었습니다 (컬러 ${totalColors}개, 탕 ${totalEntries}개)${chinaMatchDecisions.length > 0 && !chinaSyncFailed ? ' · 중국발주도 같이 처리했어요' : ''}`);
 }
 
 function openOutModal(id) {
@@ -8193,8 +8214,10 @@ function buildChinaOrderCard(o) {
 async function toggleChinaOrderStatus(id) {
   const o = chinaOrders.find(x => x.id === id);
   if (!o) return;
+  const before = o.status;
   o.status = o.status === 'received' ? 'waiting' : 'received';
-  await persistChinaOrders();
+  const saved = await persistChinaOrders();
+  if (saved === false) { o.status = before; render(); return; }
   render();
   showToast(o.status === 'received' ? '입고완료 처리했습니다' : '대기중으로 되돌렸습니다');
 }
@@ -8219,16 +8242,26 @@ async function confirmChinaReceive() {
   const remainQty = document.getElementById('china-receive-remain').value.trim();
   if (!receivedQty) { showToast('입고된 수량을 입력해주세요'); return; }
 
+  const before = { qty: o.qty, status: o.status };
   o.qty = receivedQty; // 발주수량이 아니라 실제로 온 만큼으로 기록을 정확하게 남김
   o.status = 'received';
+  let newCarryover = null;
   if (remainQty) {
     // 이월장부에서 부분출고 후 남은 만큼 발주가 계속 진행중으로 남는 것과 똑같이, 남은 수량을 새 대기건으로 만듦
-    chinaOrders.push({
+    newCarryover = {
       id: nextChinaOrderId++, date: o.date, chinaCode: o.chinaCode, item: o.item, color: o.color,
       qty: remainQty, urgent: o.urgent, note: `이전 발주(${o.date})에서 이월됨`, status: 'waiting'
-    });
+    };
+    chinaOrders.push(newCarryover);
   }
-  await persistChinaOrders();
+  const saved = await persistChinaOrders();
+  if (saved === false) {
+    // 저장 실패 - 원래 상태로 되돌리고(이월건도 생성됐었으면 제거), 모달은 열어둬서 바로 재시도할 수 있게 함
+    Object.assign(o, before);
+    if (newCarryover) chinaOrders = chinaOrders.filter(x => x !== newCarryover);
+    render();
+    return;
+  }
   closeChinaReceiveModal();
   render();
   showToast(remainQty ? `입고완료 처리했고, 남은 ${remainQty}은(는) 새 대기건으로 이월했어요` : '입고완료 처리했습니다');
@@ -8400,8 +8433,15 @@ async function saveChinaOrderModal() {
     const f = readChinaItemFieldsFromForm();
     if (!f.item && !f.chinaCode) { showToast('품명이나 중국품번 중 하나는 입력해주세요'); return; }
     const o = chinaOrders.find(x => x.id === _editingChinaOrderId);
-    if (o) { o.date = date; o.chinaCode = f.chinaCode; o.item = f.item; o.color = f.color; o.qty = f.qty; o.urgent = f.urgent; o.note = f.note; }
-    await persistChinaOrders();
+    if (!o) return;
+    const before = { date: o.date, chinaCode: o.chinaCode, item: o.item, color: o.color, qty: o.qty, urgent: o.urgent, note: o.note };
+    o.date = date; o.chinaCode = f.chinaCode; o.item = f.item; o.color = f.color; o.qty = f.qty; o.urgent = f.urgent; o.note = f.note;
+    const saved = await persistChinaOrders();
+    if (saved === false) {
+      Object.assign(o, before); // 저장 실패했으면 화면에 보이는 값도 원래대로 되돌림 (안 그러면 실제로는 안 바뀐 게 바뀐 것처럼 보임)
+      render();
+      return;
+    }
     closeChinaOrderModal();
     render();
     showToast('저장되었습니다');
@@ -8410,32 +8450,60 @@ async function saveChinaOrderModal() {
 
   // 지금 입력창에 뭔가 채워져 있으면, "+ 항목 추가"를 깜빡하셨어도 그대로 마지막 항목으로 같이 저장함
   const current = readChinaItemFieldsFromForm();
+  const itemsToSave = _chinaMultiAddItems.slice();
   if (current.item || current.chinaCode || current.color || current.qty) {
-    _chinaMultiAddItems.push(current);
+    itemsToSave.push(current);
   }
-  if (_chinaMultiAddItems.length === 0) { showToast('발주 항목을 하나 이상 입력해주세요'); return; }
+  if (itemsToSave.length === 0) { showToast('발주 항목을 하나 이상 입력해주세요'); return; }
 
-  let newMappingAdded = false;
-  for (const f of _chinaMultiAddItems) {
-    chinaOrders.push({ id: nextChinaOrderId++, date, chinaCode: f.chinaCode, item: f.item, color: f.color, qty: f.qty, urgent: f.urgent, note: f.note, status: 'waiting' });
-    // 중국품번-품명 매핑이 새로 등록된 거면 매핑표에도 같이 저장해서 다음부터 자동완성되게 함
-    if (f.chinaCode && f.item && !chinaProductMap.some(m => String(m.chinaCode).trim() === f.chinaCode)) {
-      chinaProductMap.push({ id: nextChinaProductMapId++, chinaCode: f.chinaCode, itemName: f.item });
-      newMappingAdded = true;
+  // 실제로 저장 성공했을 때만 반영되도록, 지금 새로 추가하는 항목들을 따로 기억해뒀다가 실패하면 그대로 롤백함
+  // (실패했는데도 로컬에 남아있으면, 사용자가 실패한 줄 알고 다시 입력했을 때 이전 것과 합쳐져서 중복 저장되는 사고가 있었음)
+  const newOrders = [];
+  const newMappings = [];
+  for (const f of itemsToSave) {
+    const entry = { id: nextChinaOrderId++, date, chinaCode: f.chinaCode, item: f.item, color: f.color, qty: f.qty, urgent: f.urgent, note: f.note, status: 'waiting' };
+    newOrders.push(entry);
+    if (f.chinaCode && f.item && !chinaProductMap.some(m => String(m.chinaCode).trim() === f.chinaCode) && !newMappings.some(m => m.chinaCode === f.chinaCode)) {
+      newMappings.push({ id: nextChinaProductMapId++, chinaCode: f.chinaCode, itemName: f.item });
     }
   }
-  const savedCount = _chinaMultiAddItems.length;
+  chinaOrders.push(...newOrders);
+  chinaProductMap.push(...newMappings);
+
+  let ok = true;
+  if (newMappings.length > 0) {
+    const mapSaved = await persistChinaProductMap();
+    if (mapSaved === false) ok = false;
+  }
+  if (ok) {
+    const ordersSaved = await persistChinaOrders();
+    if (ordersSaved === false) ok = false;
+  }
+
+  if (!ok) {
+    // 저장 실패 - 방금 로컬에 추가했던 것들을 다시 빼서 원래 상태로 되돌림 (모달은 열어둬서, 입력했던 내용 안 잃어버리고 바로 재시도 가능)
+    chinaOrders = chinaOrders.filter(o => !newOrders.includes(o));
+    chinaProductMap = chinaProductMap.filter(m => !newMappings.includes(m));
+    render();
+    return;
+  }
+
   _chinaMultiAddItems = [];
-  if (newMappingAdded) await persistChinaProductMap();
-  await persistChinaOrders();
+  const savedCount = newOrders.length;
   closeChinaOrderModal();
   render();
   showToast(savedCount > 1 ? `${savedCount}건 저장되었습니다` : '저장되었습니다');
 }
 async function deleteChinaOrder(id) {
   if (!confirm('이 발주 기록을 삭제하시겠습니까?')) return;
+  const removed = chinaOrders.find(x => x.id === id);
   chinaOrders = chinaOrders.filter(x => x.id !== id);
-  await persistChinaOrders();
+  const saved = await persistChinaOrders();
+  if (saved === false) {
+    if (removed) chinaOrders.push(removed); // 저장 실패했으면 지운 것도 되돌림
+    render();
+    return;
+  }
   closeChinaOrderModal();
   render();
   showToast('삭제되었습니다');
