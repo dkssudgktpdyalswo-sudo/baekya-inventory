@@ -1036,7 +1036,7 @@
 const PASSWORD = "3059";
 const ADMIN_PASSWORD = "9503"; // 매출/미수금 탭 전용 - 필요하면 이 값만 바꿔서 변경 가능
 const DATA_VERSION = "2026-08-03-v4"; // 재고/이월장부 씨앗 데이터를 바꿀 때마다 이 값을 새로 바꿔주세요
-const APP_CODE_VERSION = "2026-09-19-o"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
+const APP_CODE_VERSION = "2026-09-19-p"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
 const SCHEMA_STAMP = 2; // 서버 저장규칙이 확인하는 "최신 앱 도장" - 절대 자주 바꾸지 않음(이 값을 아는 코드만 저장 가능하게 서버에서 막을 때 씀)
 
 const firebaseConfig = {
@@ -1277,8 +1277,10 @@ async function loadAll() {
         } else if (!loaded.rolls) {
           // 문서가 안 보여도, 진짜 최초 설치인지 일시적으로 못 불러온 건지 구분이 안 되니
           // 화면엔 임시로 기본값을 보여주되, 서버에 자동 저장은 하지 않음 (안 그러면 캐시 문제로 실제 데이터가 기본값에 덮어써질 위험이 있음 - 데이터 초기화 사고의 원인이었음)
-          console.warn('rolls 문서를 못 찾았어요 - 일시적인 문제일 수 있어 자동 저장은 하지 않았습니다');
           rolls = DEFAULT_ROLLS.map(([cat, item, color, tang, qty]) => ({ id: nextId++, cat, item, color, tang, qty }));
+          // 서버에서 확실하게 "문서가 없다"고 확인해준 거면(캐시 응답이 아니면) 진짜 최초 설치인 거니 안전하게 저장을 허용함
+          if (!doc.metadata.fromCache) rollsFirstLoadDone = true;
+          else console.warn('rolls 문서를 못 찾았어요 - 아직 서버 확인 전이라 잠시 기다립니다');
         }
         loaded.rolls = true; render(); checkDone();
       }, (err) => { console.error(err); useFirebase = false; fallbackLoadAll().then(resolve); });
@@ -1297,8 +1299,9 @@ async function loadAll() {
           lastSnapshotJSON.costs = incomingJSON;
           costsFirstLoadDone = true;
         } else if (!loaded.costs) {
-          console.warn('costs 문서를 못 찾았어요 - 일시적인 문제일 수 있어 자동 저장은 하지 않았습니다');
           costs = DEFAULT_COSTS.map(([cat, item, type, price]) => ({ id: nextCostId++, cat, item, type, price }));
+          if (!doc.metadata.fromCache) costsFirstLoadDone = true;
+          else console.warn('costs 문서를 못 찾았어요 - 아직 서버 확인 전이라 잠시 기다립니다');
         }
         loaded.costs = true; render(); checkDone();
       });
@@ -1316,10 +1319,10 @@ async function loadAll() {
           settingsFirstLoadDone = true;
           persistSettings();
         } else if (!loaded.settings) {
-          // 문서를 못 찾은 경우 - 진짜 데이터가 아니니 settingsFirstLoadDone은 계속 false로 남겨둬서
-          // 혹시 이 상태에서 사용자가 뭔가 저장하려 해도 persistSettings의 안전장치가 막아주게 함
-          console.warn('settings 문서를 못 찾았어요 - 일시적인 문제일 수 있어 자동 저장은 하지 않았습니다');
+          // 문서를 못 찾은 경우 - 진짜 최초 설치인지 확인해서, 서버에서 확실하게 확인된 거면 저장 허용
           settings = { ...DEFAULT_SETTINGS };
+          if (!doc.metadata.fromCache) settingsFirstLoadDone = true;
+          else console.warn('settings 문서를 못 찾았어요 - 아직 서버 확인 전이라 잠시 기다립니다');
         }
         loaded.settings = true; updateRateBar(); render(); checkDone();
       });
@@ -1333,9 +1336,10 @@ async function loadAll() {
           lastSnapshotJSON.orders = doc.data().data;
           ordersFirstLoadDone = true;
         } else if (!loaded.orders) {
-          console.warn('orders 문서를 못 찾았어요 - 일시적인 문제일 수 있어 자동 저장은 하지 않았습니다');
           orders = DEFAULT_ORDERS.map(([date, customer, factory, item, color, orderQty, unit, received, note]) =>
             ({ id: genUniqueId(), date, customer, factory, item, color, orderQty, unit: unit || 'y', received, note, done: false }));
+          if (!doc.metadata.fromCache) ordersFirstLoadDone = true;
+          else console.warn('orders 문서를 못 찾았어요 - 아직 서버 확인 전이라 잠시 기다립니다');
         }
         loaded.orders = true; render(); checkDone();
       });
@@ -1349,8 +1353,11 @@ async function loadAll() {
           lastSnapshotJSON.chinaOrders = doc.data().data;
           chinaOrdersFirstLoadDone = true;
         } else if (!loaded.chinaOrders) {
-          console.warn('chinaOrders 문서를 못 찾았어요 - 일시적인 문제일 수 있어 자동 저장은 하지 않았습니다 (완전 신규라면 빈 목록으로 시작해요)');
           chinaOrders = [];
+          // 서버에서 확실하게 "문서가 없다"고 확인해준 거면(캐시 응답이 아니면) 진짜 최초 설치인 거니 안전하게 저장을 허용함
+          // (로컬 캐시 응답이면 아직 서버 확인 전이라 불확실하니 그대로 기다림)
+          if (!doc.metadata.fromCache) chinaOrdersFirstLoadDone = true;
+          else console.warn('chinaOrders 문서를 못 찾았어요 - 아직 서버 확인 전이라 잠시 기다립니다');
         }
         loaded.chinaOrders = true; render(); checkDone();
       });
@@ -1364,8 +1371,9 @@ async function loadAll() {
           lastSnapshotJSON.chinaProductMap = doc.data().data;
           chinaProductMapFirstLoadDone = true;
         } else if (!loaded.chinaMap) {
-          console.warn('chinaProductMap 문서를 못 찾았어요 - 일시적인 문제일 수 있어 자동 저장은 하지 않았습니다 (완전 신규라면 빈 목록으로 시작해요)');
           chinaProductMap = [];
+          if (!doc.metadata.fromCache) chinaProductMapFirstLoadDone = true;
+          else console.warn('chinaProductMap 문서를 못 찾았어요 - 아직 서버 확인 전이라 잠시 기다립니다');
         }
         loaded.chinaMap = true; render(); checkDone();
       });
@@ -1375,6 +1383,8 @@ async function loadAll() {
           swatchInfo = JSON.parse(doc.data().data);
           nextSwatchId = swatchInfo.reduce((m, r) => Math.max(m, r.id), 0) + 1;
           lastSnapshotJSON.swatchInfo = doc.data().data;
+          swatchInfoFirstLoadDone = true;
+        } else if (!loaded.swatch && !doc.metadata.fromCache) {
           swatchInfoFirstLoadDone = true;
         }
         loaded.swatch = true; render(); checkDone();
@@ -1388,6 +1398,8 @@ async function loadAll() {
           nextLogId = shipmentLog.reduce((m, r) => Math.max(m, r.id), 0) + 1;
           lastSnapshotJSON.shipmentLog = doc.data().data;
           shipmentLogFirstLoadDone = true;
+        } else if (!loaded.log && !doc.metadata.fromCache) {
+          shipmentLogFirstLoadDone = true;
         }
         loaded.log = true; render(); checkDone();
       });
@@ -1397,6 +1409,8 @@ async function loadAll() {
           priceBook = JSON.parse(doc.data().data);
           nextPriceId = priceBook.reduce((m, r) => Math.max(m, r.id), 0) + 1;
           lastSnapshotJSON.priceBook = doc.data().data;
+          priceBookFirstLoadDone = true;
+        } else if (!loaded.price && !doc.metadata.fromCache) {
           priceBookFirstLoadDone = true;
         }
         loaded.price = true; render(); checkDone();
@@ -1408,6 +1422,8 @@ async function loadAll() {
           nextMemoId = depositMemos.reduce((m, r) => Math.max(m, r.id), 0) + 1;
           lastSnapshotJSON.depositMemos = doc.data().data;
           depositMemosFirstLoadDone = true;
+        } else if (!loaded.advance && !doc.metadata.fromCache) {
+          depositMemosFirstLoadDone = true;
         }
         loaded.advance = true; render(); checkDone();
       });
@@ -1416,6 +1432,8 @@ async function loadAll() {
         if (doc.exists && doc.data().data) {
           customerNotes = JSON.parse(doc.data().data);
           lastSnapshotJSON.customerNotes = doc.data().data;
+          customerNotesFirstLoadDone = true;
+        } else if (!loaded.custNotes && !doc.metadata.fromCache) {
           customerNotesFirstLoadDone = true;
         }
         loaded.custNotes = true; render(); checkDone();
@@ -1426,6 +1444,8 @@ async function loadAll() {
           customerList = JSON.parse(doc.data().data);
           lastSnapshotJSON.customerList = doc.data().data;
           customerListFirstLoadDone = true;
+        } else if (!loaded.custList && !doc.metadata.fromCache) {
+          customerListFirstLoadDone = true;
         }
         loaded.custList = true; render(); checkDone();
       });
@@ -1435,6 +1455,8 @@ async function loadAll() {
           expenses = JSON.parse(doc.data().data);
           nextExpenseId = expenses.reduce((m, r) => Math.max(m, r.id), 0) + 1;
           lastSnapshotJSON.expenses = doc.data().data;
+          expensesFirstLoadDone = true;
+        } else if (!loaded.expenses && !doc.metadata.fromCache) {
           expensesFirstLoadDone = true;
         }
         loaded.expenses = true; render(); checkDone();
