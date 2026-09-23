@@ -246,7 +246,6 @@
     <button onclick="showCustomerPriceList()" style="border:none;background:#fdf0e0;color:#8a5a1e;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">💵 거래처 단가표</button>
   </div>
   <div id="sales-dd-manage" class="hidden" style="display:flex; gap:6px; margin-top:6px; flex-wrap:wrap; align-items:center; padding:8px; background:#f6f4f0; border-radius:10px;">
-    <button onclick="exportSalesLog()" style="border:none;background:#fff3d6;color:#a15c1e;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">📤 매출장부 내보내기</button>
     <button onclick="archiveOldSalesLog()" style="border:none;background:#fff3d6;color:#a15c1e;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">🗑 매출장부 내보내기+정리</button>
     <button onclick="openBizInfoModal()" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">사업자 정보 설정</button>
     <button onclick="showAvailableBackups()" style="border:none;background:#f1eee7;color:var(--muted);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">🗄 백업 목록/복구</button>
@@ -788,6 +787,32 @@
   </div>
 </div>
 
+<div class="modal-overlay" id="expenseEditModal">
+  <div class="modal">
+    <h3>지출/입금 수정</h3>
+    <div class="row2">
+      <div><label style="display:flex;align-items:center;gap:6px;font-size:14px;color:var(--text);"><input type="radio" name="expedit-type" value="expense" style="width:auto;"> 지출 (−)</label></div>
+      <div><label style="display:flex;align-items:center;gap:6px;font-size:14px;color:var(--text);"><input type="radio" name="expedit-type" value="income" style="width:auto;"> 입금 (+)</label></div>
+    </div>
+    <div class="row2">
+      <div><label style="display:flex;align-items:center;gap:6px;font-size:14px;color:var(--text);"><input type="radio" name="expedit-method" value="cash" style="width:auto;"> 현금</label></div>
+      <div><label style="display:flex;align-items:center;gap:6px;font-size:14px;color:var(--text);"><input type="radio" name="expedit-method" value="online" style="width:auto;"> 온라인</label></div>
+    </div>
+    <div class="row2">
+      <div><label>날짜</label><input id="expedit-date" type="date"></div>
+      <div><label>금액(원)</label><input id="expedit-amount" type="number" step="1"></div>
+    </div>
+    <label>항목</label>
+    <input id="expedit-title">
+    <label>비고(선택)</label>
+    <input id="expedit-note">
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="closeExpenseEditModal()">취소</button>
+      <button class="btn-save" onclick="saveExpenseEdit()">저장</button>
+    </div>
+  </div>
+</div>
+
 <!-- 거래처 미수금표 -->
 
 
@@ -1037,7 +1062,7 @@
 const PASSWORD = "3059";
 const ADMIN_PASSWORD = "9503"; // 매출/미수금 탭 전용 - 필요하면 이 값만 바꿔서 변경 가능
 const DATA_VERSION = "2026-08-03-v4"; // 재고/이월장부 씨앗 데이터를 바꿀 때마다 이 값을 새로 바꿔주세요
-const APP_CODE_VERSION = "2026-09-20-a"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
+const APP_CODE_VERSION = "2026-09-20-d"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
 const SCHEMA_STAMP = 2; // 서버 저장규칙이 확인하는 "최신 앱 도장" - 절대 자주 바꾸지 않음(이 값을 아는 코드만 저장 가능하게 서버에서 막을 때 씀)
 const CONFIRMED_EMPTY = '__CONFIRMED_EMPTY__'; // "서버가 확실하게 문서가 없다고 확인해줬다"는 걸 표시하는 특수값
                                                  // (한번도 확인 안 한 null과 구분해서, 그 사이 다른 사람이 첫 데이터를 만들었으면 충돌로 감지하기 위함)
@@ -1201,6 +1226,19 @@ let itemMonthlyArchivedCache = []; // 품목출고량 월별보기에서 쓰는 
 let salesDayArchivedCache = []; // 매출탭 날짜필터가 과거로 잡혔을 때, 그 기간의 보관함을 담아두는 캐시
 let salesDayArchivedCacheKey = ''; // 캐시가 어느 날짜범위 기준으로 채워졌는지 기억 (범위 안 바뀌었으면 다시 안 가져오게)
 let shipmentLogArchivedCache = []; // 이월장부의 "완료" 탭(실제로는 매출이력을 보여줌)에서 쓰는 보관함 전체 캐시
+let _shipmentLogArchivedCacheLoaded = false; // 위 캐시를 한번이라도 채운 적 있는지 - 매출탭 "전체보기"에서도 정확한 총매출 계산에 필요
+let _shipmentLogArchivedCacheLoading = false;
+async function ensureShipmentLogArchivedCacheLoaded() {
+  if (_shipmentLogArchivedCacheLoaded || _shipmentLogArchivedCacheLoading) return;
+  _shipmentLogArchivedCacheLoading = true;
+  try {
+    shipmentLogArchivedCache = await fetchAllArchivedEntries();
+    _shipmentLogArchivedCacheLoaded = true;
+    render();
+  } finally {
+    _shipmentLogArchivedCacheLoading = false;
+  }
+}
 async function refreshSalesDayArchivedCache() {
   const key = `${salesDayFilter || ''}~${salesDayFilterEnd || ''}`;
   if (key === salesDayArchivedCacheKey) return; // 이미 이 범위로 캐시돼있으면 다시 안 가져옴
@@ -3475,7 +3513,7 @@ function renderOrderChips() {
     chip.textContent = label;
     chip.onclick = async () => {
       orderStatusFilter = val;
-      if (val === 'done') shipmentLogArchivedCache = await fetchAllArchivedEntries();
+      if (val === 'done') { shipmentLogArchivedCache = await fetchAllArchivedEntries(); _shipmentLogArchivedCacheLoaded = true; }
       render();
     };
     row.appendChild(chip);
@@ -5241,8 +5279,12 @@ async function printCustomersStatements(customers, startDate, endDate) {
 
 async function printAllCustomersStatement(startDate, endDate) {
   const inRange = (d) => d && d >= startDate && d <= endDate;
+  // 선택한 기간이 이미 정리(보관함)된 과거일 수 있으니, 거래처 목록을 뽑을 때도 보관함까지 같이 확인함
+  // (라이브만 보면 그 기간 거래처가 통째로 빠져서 명세서 자체가 안 만들어지는 사고가 있었음)
+  const archivedAll = await fetchAllArchivedEntries();
+  const combined = shipmentLog.concat(archivedAll);
   const customers = Array.from(new Set(
-    shipmentLog.filter(e => e.customer && inRange(e.date)).map(e => String(e.customer).trim())
+    combined.filter(e => e.customer && inRange(e.date)).map(e => String(e.customer).trim())
   )).sort((a, b) => a.localeCompare(b, 'ko'));
   await printCustomersStatements(customers, startDate, endDate);
 }
@@ -5659,9 +5701,10 @@ function renderPaymentLedgerView() {
   backBtn.onclick = exitPaymentLedger;
   list.appendChild(backBtn);
 
-  // 모든 입금 기록을 하나로 모음 (날짜필터가 과거로 걸려있으면 보관함 캐시도 같이 봄 - 매출탭과 같은 캐시 공유)
+  // 모든 입금 기록을 하나로 모음 (날짜필터가 과거로 걸려있으면 그 기간 보관함 캐시를, 전체보기면 전체보관함 캐시를 같이 봄)
+  if (!salesDayFilter) ensureShipmentLogArchivedCacheLoaded();
   let payments = [];
-  for (const e of shipmentLog.concat(salesDayFilter ? salesDayArchivedCache : [])) {
+  for (const e of shipmentLog.concat(salesDayFilter ? salesDayArchivedCache : shipmentLogArchivedCache)) {
     (e.payments || []).forEach((p, idx) => {
       payments.push({
         date: p.date, amount: p.amount, method: p.method || 'cash',
@@ -6930,22 +6973,44 @@ async function addExpense() {
   renderExpenseList();
   showToast(type === 'income' ? '입금 등록했습니다' : '지출 등록했습니다');
 }
-async function editExpense(id) {
+let _editingExpenseId = null;
+function editExpense(id) {
   const e = expenses.find(x => x.id === id);
   if (!e) return;
-  const newTitle = prompt('항목', e.title);
-  if (newTitle === null) return;
-  const newAmountRaw = prompt('금액(원)', e.amount);
-  if (newAmountRaw === null) return;
-  const newAmount = parseFloat(newAmountRaw);
-  const newNote = prompt('메모 (없으면 비워두세요)', e.note || '');
-  if (newNote === null) return;
-  if (!newTitle.trim()) { showToast('항목을 적어주세요'); return; }
-  if (!newAmount || newAmount <= 0) { showToast('금액을 확인해주세요'); return; }
-  e.title = newTitle.trim();
-  e.amount = newAmount;
-  e.note = newNote.trim();
-  await persistExpenses();
+  _editingExpenseId = id;
+  document.querySelector(`input[name="expedit-type"][value="${e.type === 'income' ? 'income' : 'expense'}"]`).checked = true;
+  document.querySelector(`input[name="expedit-method"][value="${e.method === 'online' ? 'online' : 'cash'}"]`).checked = true;
+  document.getElementById('expedit-date').value = toDateInputValue(e.date);
+  document.getElementById('expedit-amount').value = e.amount;
+  document.getElementById('expedit-title').value = e.title;
+  document.getElementById('expedit-note').value = e.note || '';
+  document.getElementById('expenseEditModal').classList.add('open');
+}
+function closeExpenseEditModal() {
+  document.getElementById('expenseEditModal').classList.remove('open');
+  _editingExpenseId = null;
+}
+async function saveExpenseEdit() {
+  const e = expenses.find(x => x.id === _editingExpenseId);
+  if (!e) return;
+  const date = fromDateInputValue(document.getElementById('expedit-date').value) || e.date;
+  const amount = parseFloat(document.getElementById('expedit-amount').value);
+  const title = document.getElementById('expedit-title').value.trim();
+  const note = document.getElementById('expedit-note').value.trim();
+  const type = document.querySelector('input[name="expedit-type"]:checked').value;
+  const method = document.querySelector('input[name="expedit-method"]:checked').value;
+  if (!title) { showToast('항목을 적어주세요'); return; }
+  if (!amount || amount <= 0) { showToast('금액을 확인해주세요'); return; }
+  const before = { date: e.date, amount: e.amount, title: e.title, note: e.note, type: e.type, method: e.method };
+  e.date = date; e.amount = amount; e.title = title; e.note = note; e.type = type; e.method = method;
+  const saved = await persistExpenses();
+  if (saved === false) {
+    Object.assign(e, before); // 저장 실패했으면 원래대로 되돌림
+    renderExpenseCalendar();
+    renderExpenseList();
+    return;
+  }
+  closeExpenseEditModal();
   renderExpenseCalendar();
   renderExpenseList();
   showToast('수정했습니다');
@@ -7911,7 +7976,8 @@ function renderSales() {
     return;
   }
 
-  let sales = shipmentLog.concat(salesDayFilter ? salesDayArchivedCache : []).filter(e => (e.saleAmount != null || e.isReturn || e.isDefect) && e.item !== '이월 미수금');
+  if (!salesDayFilter) ensureShipmentLogArchivedCacheLoaded(); // 전체보기일 땐 보관함까지 합쳐야 총매출이 정확하니, 아직 못 불러왔으면 지금 불러옴
+  let sales = shipmentLog.concat(salesDayFilter ? salesDayArchivedCache : shipmentLogArchivedCache).filter(e => (e.saleAmount != null || e.isReturn || e.isDefect) && e.item !== '이월 미수금');
   if (searchTerm.trim()) {
     const t = searchTerm.trim().toLowerCase();
     sales = sales.filter(e => String(e.customer).toLowerCase().includes(t) || String(e.item).toLowerCase().includes(t));
@@ -10766,35 +10832,6 @@ async function archiveOldSalesLog() {
   } else {
     showToast(`${idsToRemove.size}건을 보관함으로 안전하게 옮기고 정리했어요 (필요하면 언제든 다시 불러올 수 있어요)`);
   }
-}
-async function exportSalesLog() {
-  const dateToKFormat = (d) => `${String(d.getFullYear()).slice(2)}.${String(d.getMonth() + 1).padStart(2, '0')}.${String(d.getDate()).padStart(2, '0')}`;
-  const defaultStartDate = new Date();
-  defaultStartDate.setFullYear(defaultStartDate.getFullYear() - 1);
-  const range = await openDateRangeArchiveModal('매출장부 내보내기', '이 기간의 매출 기록을 엑셀(CSV)로 내보내요. 사이트 데이터는 그대로 있어요', dateToKFormat(defaultStartDate), todayStr());
-  if (!range) return;
-  const { startDate, endDate } = range;
-
-  const target = shipmentLog.filter(e => e.date >= startDate && e.date <= endDate);
-  if (target.length === 0) { showToast('이 기간에 내보낼 매출 기록이 없습니다'); return; }
-
-  const headers = ['날짜', '거래처', '공장', '품목', '칼라', '수량', '단위', '단가', '공급가액', '세액', '매출액', '입금액', '미수금', '반품/불량', '비고'];
-  const rows = target.map(e => [
-    e.date, e.customer, e.factory, e.item, e.color,
-    e.isReturn || e.isDefect ? Math.abs(e.amount) : e.amount, e.unit || 'y',
-    e.unitPrice || '', e.supplyAmount || '', e.taxAmount || '',
-    e.isReturn || e.isDefect ? -(e.deductAmount || 0) : (e.saleAmount || ''),
-    getPaidAmount(e), e.saleAmount != null ? getRemaining(e) : '',
-    e.isDefect ? '불량' : (e.isReturn ? '반품' : ''), e.note || ''
-  ]);
-  const csv = [headers, ...rows].map(r => r.map(v => `"${String(v == null ? '' : v).replace(/"/g, '""')}"`).join(',')).join('\n');
-  const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url; a.download = `매출장부_내보내기_${todayStr()}.csv`;
-  document.body.appendChild(a); a.click(); document.body.removeChild(a);
-  URL.revokeObjectURL(url);
-  showToast(`${target.length}건 내보냈습니다 (사이트 데이터는 그대로 있어요)`);
 }
 async function repairInventoryFromShipmentLog() {
   const cutoff = prompt('언제 이후의 출고/반품 기록을 재고에 다시 반영할까요? (YYYY-MM-DD)', '2026-08-07');
