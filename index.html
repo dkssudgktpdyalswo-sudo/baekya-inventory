@@ -1062,7 +1062,7 @@
 const PASSWORD = "3059";
 const ADMIN_PASSWORD = "9503"; // 매출/미수금 탭 전용 - 필요하면 이 값만 바꿔서 변경 가능
 const DATA_VERSION = "2026-08-03-v4"; // 재고/이월장부 씨앗 데이터를 바꿀 때마다 이 값을 새로 바꿔주세요
-const APP_CODE_VERSION = "2026-09-20-d"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
+const APP_CODE_VERSION = "2026-09-20-e"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
 const SCHEMA_STAMP = 2; // 서버 저장규칙이 확인하는 "최신 앱 도장" - 절대 자주 바꾸지 않음(이 값을 아는 코드만 저장 가능하게 서버에서 막을 때 씀)
 const CONFIRMED_EMPTY = '__CONFIRMED_EMPTY__'; // "서버가 확실하게 문서가 없다고 확인해줬다"는 걸 표시하는 특수값
                                                  // (한번도 확인 안 한 null과 구분해서, 그 사이 다른 사람이 첫 데이터를 만들었으면 충돌로 감지하기 위함)
@@ -1232,7 +1232,14 @@ async function ensureShipmentLogArchivedCacheLoaded() {
   if (_shipmentLogArchivedCacheLoaded || _shipmentLogArchivedCacheLoading) return;
   _shipmentLogArchivedCacheLoading = true;
   try {
-    shipmentLogArchivedCache = await fetchAllArchivedEntries();
+    const result = await fetchAllArchivedEntries();
+    if (result === null) {
+      // 가져오기 자체가 실패한 거라, "보관함에 원래 아무것도 없다"고 착각하고 넘어가면 총매출이 계속 실제보다 적게 보일 수 있음
+      // - 로딩완료 표시는 안 하고 그대로 둬서, 다음에 매출탭 들어올 때 다시 시도되게 함
+      console.warn('보관함 데이터를 못 불러와서, 전체 매출 합계에 보관함분이 아직 반영 안 됐을 수 있어요');
+      return;
+    }
+    shipmentLogArchivedCache = result;
     _shipmentLogArchivedCacheLoaded = true;
     render();
   } finally {
@@ -3513,7 +3520,7 @@ function renderOrderChips() {
     chip.textContent = label;
     chip.onclick = async () => {
       orderStatusFilter = val;
-      if (val === 'done') { shipmentLogArchivedCache = await fetchAllArchivedEntries(); _shipmentLogArchivedCacheLoaded = true; }
+      if (val === 'done') { const r = await fetchAllArchivedEntries(); if (r !== null) { shipmentLogArchivedCache = r; _shipmentLogArchivedCacheLoaded = true; } else { showToast('보관함을 못 불러왔어요, 잠시 후 다시 시도해주세요'); } }
       render();
     };
     row.appendChild(chip);
@@ -5282,6 +5289,7 @@ async function printAllCustomersStatement(startDate, endDate) {
   // 선택한 기간이 이미 정리(보관함)된 과거일 수 있으니, 거래처 목록을 뽑을 때도 보관함까지 같이 확인함
   // (라이브만 보면 그 기간 거래처가 통째로 빠져서 명세서 자체가 안 만들어지는 사고가 있었음)
   const archivedAll = await fetchAllArchivedEntries();
+  if (archivedAll === null) { alert('보관함을 못 불러와서, 이 기간에 정리된 오래된 거래처가 명세서 대상에서 빠질 수 있어요.\n잠시 후 다시 시도해주세요.'); return; }
   const combined = shipmentLog.concat(archivedAll);
   const customers = Array.from(new Set(
     combined.filter(e => e.customer && inRange(e.date)).map(e => String(e.customer).trim())
@@ -5320,7 +5328,9 @@ async function showItemMonthlyStats() {
   salesSpecialView = 'itemMonthly';
   itemStatsPeriodIndex = 0;
   openGroups = new Set(); // 다른 화면으로 넘어갈 때 열려있던 카드들 접힌 상태로 초기화
-  itemMonthlyArchivedCache = await fetchAllArchivedEntries();
+  const r = await fetchAllArchivedEntries();
+  itemMonthlyArchivedCache = r === null ? [] : r;
+  if (r === null) showToast('보관함을 못 불러왔어요 - 최근 데이터만 보여요');
   render();
 }
 function exitItemMonthlyStats() {
@@ -6752,6 +6762,7 @@ async function fetchArchivedEntriesForMonth(monthKey) {
     if (joined == null) return [];
     return JSON.parse(joined);
   } catch (e) {
+    console.error(`보관함 월별 조회 실패 (${monthKey}):`, e);
     return [];
   }
 }
@@ -6798,7 +6809,8 @@ async function fetchAllArchivedEntries() {
     }
     return merged;
   } catch (e) {
-    return [];
+    console.error('보관함 전체 조회 실패 (inventory_archive 컬렉션 접근 문제일 수 있음):', e);
+    return null; // 빈 배열([])과 구분: null은 "진짜로 없음"이 아니라 "가져오기 자체가 실패함"을 의미
   }
 }
 async function fetchAllArchivedEntriesForCustomer(customer) {
@@ -6826,6 +6838,7 @@ async function fetchAllArchivedEntriesForCustomer(customer) {
     }
     return merged;
   } catch (e) {
+    console.error(`거래처별 보관함 조회 실패 (${t_c}):`, e);
     return [];
   }
 }
@@ -7454,7 +7467,8 @@ async function renderCustomerRankingView() {
   // "몇 달째 거래했는지"·"마지막 주문일"은 이번달/지난달만으론 안 되고 전체 과거가 필요하니, 보관함 전체를 잠깐 합쳐서 계산한 뒤 되돌림
   const archivedAll = await fetchAllArchivedEntries();
   const originalShipmentLog = shipmentLog;
-  if (archivedAll.length > 0) shipmentLog = shipmentLog.concat(archivedAll);
+  if (archivedAll === null) showToast('보관함을 못 불러왔어요 - 최근 데이터 기준으로만 보여요');
+  else if (archivedAll.length > 0) shipmentLog = shipmentLog.concat(archivedAll);
   const curSales = new Map(), prevSales = new Map(), lastOrderDate = new Map(), monthsWithOrders = new Map();
   try {
     for (const e of shipmentLog) {
@@ -11009,7 +11023,7 @@ async function applyCarryoverUnpaidIfNeeded() {
   // shipmentLog뿐 아니라 보관함(정리된 오래된 건들)까지 다 확인해서, 이미 있으면 절대 다시 안 만듦
   const archivedForCheck = await fetchAllArchivedEntries();
   const alreadyHave = new Set(
-    shipmentLog.concat(archivedForCheck).filter(e => e.item === '이월 미수금').map(e => String(e.customer || '').trim())
+    shipmentLog.concat(archivedForCheck === null ? [] : archivedForCheck).filter(e => e.item === '이월 미수금').map(e => String(e.customer || '').trim())
   );
   let addedCount = 0;
   for (const [customer, amount] of CARRYOVER_UNPAID) {
