@@ -199,6 +199,12 @@
   .tabs { overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
   .tabs::-webkit-scrollbar { display: none; }
   .tab-btn { flex: 1 0 auto; white-space: nowrap; padding: 10px 8px; }
+
+  /* ===== 버튼 색: 기본=연한 회색 / 중요(입고 등)=연한 푸른톤 / 삭제·반품·불량=빨강 ===== */
+  :root { --btn-neutral-bg: #eceff1; --btn-neutral-text: #3a3f45; --btn-key-bg: #dcebf8; --btn-key-text: #1c4f86; --btn-danger-bg: #fdecea; }
+  :is(#list, .controls, .rate-bar) button:is([style*="#dbe9f0"], [style*="rgb(219, 233, 240)"], [style*="#eaf3ec"], [style*="rgb(234, 243, 236)"], [style*="#fff3d6"], [style*="rgb(255, 243, 214)"], [style*="#e8edf5"], [style*="rgb(232, 237, 245)"], [style*="#e8f0fb"], [style*="rgb(232, 240, 251)"], [style*="#f1eee7"], [style*="rgb(241, 238, 231)"], [style*="#fce8d6"], [style*="rgb(252, 232, 214)"], [style*="#f0e6fa"], [style*="rgb(240, 230, 250)"], [style*="#e6f0fa"], [style*="rgb(230, 240, 250)"], [style*="#e6faf0"], [style*="rgb(230, 250, 240)"], [style*="#fdf0e0"], [style*="rgb(253, 240, 224)"], [style*="background:#eee"], [style*="background: #eee"], [style*="rgb(238, 238, 238)"]), :is(#list, .controls, .rate-bar) :is(.btn-out, .btn-receive, .btn-complete) { background: var(--btn-neutral-bg) !important; color: var(--btn-neutral-text) !important; }
+  :is(#list, .controls, .rate-bar) button.btn-key { background: var(--btn-key-bg) !important; color: var(--btn-key-text) !important; }
+  :is(#list, .controls, .rate-bar) button:is([style*="#fdecea"], [style*="rgb(253, 236, 234)"], .btn-del, .btn-danger) { background: var(--btn-danger-bg) !important; color: var(--danger) !important; box-shadow: none; }
 </style>
 </head>
 <body>
@@ -217,12 +223,12 @@
   <h1 id="page-title">원단 재고관리</h1>
   <div class="stats" id="stats">불러오는 중...</div>
   <div class="tabs">
-    <button class="tab-btn active" id="tab-today" onclick="switchTab('today')">오늘</button>
+    <button class="tab-btn active" id="tab-today" onclick="switchTab('today')">홈</button>
   <button class="tab-btn" id="tab-inv" onclick="switchTab('inv')">재고</button>
     <button class="tab-btn" id="tab-china" onclick="switchTab('china')">중국발주</button>
-    <button class="tab-btn" id="tab-cost" onclick="switchTab('cost')">원가표</button>
+    <button class="tab-btn" id="tab-cost" onclick="switchTab('cost')">원가</button>
     <button class="tab-btn" id="tab-order" onclick="switchTab('order')">이월장부</button>
-    <button class="tab-btn" id="tab-sales" onclick="switchTab('sales')">매출</button>
+    <button class="tab-btn" id="tab-sales" onclick="switchTab('sales')">매출·수금</button>
   </div>
 </header>
 
@@ -237,12 +243,12 @@
   <div class="chip-row" id="chipRow"></div>
   <div id="invTools" class="hidden" style="display:flex; gap:6px; margin-top:6px; flex-wrap:wrap;">
     <button id="sortToggleBtn" onclick="toggleSortMode()" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;"></button>
-    <button onclick="showStockCheck()" style="border:none;background:#fce8d6;color:#a15c1e;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">📋 재고 실사(오늘 출고분)</button>
+    <button onclick="showStockCheck()" style="border:none;background:#fce8d6;color:#a15c1e;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">재고 실사 (오늘 출고분)</button>
   </div>
   <div id="orderTools" class="hidden" style="display:flex; gap:6px; margin-top:6px; flex-wrap:wrap; align-items:center;">
     <button id="orderGroupToggleBtn" onclick="toggleOrderGroupMode()" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;"></button>
-    <button onclick="printOrderLedger()" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">🖨 이월장부 인쇄</button>
-    <button onclick="archiveOldCompleted()" style="border:none;background:#fff3d6;color:#a15c1e;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">오래된 완료건 내보내기+정리</button>
+    <button onclick="printOrderLedger()" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">이월장부 인쇄</button>
+    <button onclick="archiveOldCompleted()" style="border:none;background:#fff3d6;color:#a15c1e;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">오래된 완료건 내보내기 및 정리</button>
     <div style="width:100%; display:flex; gap:6px; align-items:center; margin-top:4px;">
       <span style="font-size:12px; color:var(--muted);">등록일:</span>
       <button onclick="shiftOrderDayFilter(-1)" style="border:none;background:#eee;color:#555;border-radius:8px;padding:6px 10px;font-size:12px;">◀</button>
@@ -259,29 +265,29 @@
     <input id="sales-day-picker-end" type="date" onchange="salesDayFilterEnd=fromDateInputValue(this.value); refreshSalesDayArchivedCache(); render();" style="padding:6px 8px; border:1px solid var(--border); border-radius:8px; font-size:12px; width:auto;">
     <button onclick="toggleAllMainFlags(true)" style="border:none;background:#eee;color:#555;border-radius:8px;padding:7px 12px;font-size:12px;">전체 선택</button>
     <button onclick="toggleAllMainFlags(false)" style="border:none;background:#eee;color:#555;border-radius:8px;padding:7px 12px;font-size:12px;">전체 해제</button>
-    <button onclick="printSelectedMainStatements()" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">🖨 선택 인쇄 (메인 체크)</button>
-    <button onclick="openExpenseModal()" style="border:none;background:#fdecea;color:var(--danger);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">💰 지출/입금내역</button>
-    <button onclick="toggleSalesDropdown('sales-dd-reports')" style="border:none;background:#f0e6fa;color:#6b3fa0;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">📊 조회/리포트 ▾</button>
-    <button onclick="toggleSalesDropdown('sales-dd-manage')" style="border:none;background:#f1eee7;color:var(--muted);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">⚙️ 관리 ▾</button>
+    <button onclick="printSelectedMainStatements()" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">선택 인쇄 (메인 체크)</button>
+    <button onclick="openExpenseModal()" style="border:none;background:#fdecea;color:var(--danger);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">지출·입금 내역</button>
+    <button onclick="toggleSalesDropdown('sales-dd-reports')" style="border:none;background:#f0e6fa;color:#6b3fa0;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">조회·리포트 ▾</button>
+    <button onclick="toggleSalesDropdown('sales-dd-manage')" style="border:none;background:#f1eee7;color:var(--muted);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">관리 ▾</button>
   </div>
   <div id="sales-dd-reports" class="hidden" style="display:flex; gap:6px; margin-top:6px; flex-wrap:wrap; align-items:center; padding:8px; background:#faf6ff; border-radius:10px;">
     <button onclick="addCustomerName()" style="border:none;background:#eaf3ec;color:#2f6b46;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">+ 거래처 추가</button>
-    <button onclick="openSaleAddModal('')" style="border:none;background:#fff3d6;color:#a15c1e;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">+ 새 매출 등록</button>
+    <button class="btn-key" onclick="openSaleAddModal('')" style="border:none;background:#fff3d6;color:#a15c1e;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">+ 새 매출 등록</button>
     <button onclick="openDefectReturnForCustomer('')" style="border:none;background:#fdecea;color:var(--danger);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">+ 반품/불량 등록</button>
-    <button onclick="showCustomerLedger()" style="border:none;background:#e8edf5;color:#3d4f6b;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">📒 거래처원장</button>
-    <button onclick="showPaymentLedger()" style="border:none;background:#e6f0fa;color:#1a56db;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">💰 입금장부</button>
-    <button onclick="showCustomerRanking()" style="border:none;background:#f0e6fa;color:#6b3fa0;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">📊 거래처 순위</button>
-    <button onclick="showReportMenu()" style="border:none;background:#e6faf0;color:#1a7a4a;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">📊 리포트</button>
-    <button onclick="showUnpaidSummary()" style="border:none;background:#fce8d6;color:#a15c1e;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">📋 거래처 미수금표</button>
-    <button onclick="showItemMonthlyStats()" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">📊 품목출고량</button>
-    <button onclick="showCustomerPriceList()" style="border:none;background:#fdf0e0;color:#8a5a1e;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">💵 거래처 단가표</button>
+    <button onclick="showCustomerLedger()" style="border:none;background:#e8edf5;color:#3d4f6b;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">거래처 원장</button>
+    <button onclick="showPaymentLedger()" style="border:none;background:#e6f0fa;color:#1a56db;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">입금 장부</button>
+    <button onclick="showCustomerRanking()" style="border:none;background:#f0e6fa;color:#6b3fa0;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">거래처 순위</button>
+    <button onclick="showReportMenu()" style="border:none;background:#e6faf0;color:#1a7a4a;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">리포트</button>
+    <button onclick="showUnpaidSummary()" style="border:none;background:#fce8d6;color:#a15c1e;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">미수금 현황</button>
+    <button onclick="showItemMonthlyStats()" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">품목별 출고량</button>
+    <button onclick="showCustomerPriceList()" style="border:none;background:#fdf0e0;color:#8a5a1e;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">거래처 단가표</button>
   </div>
   <div id="sales-dd-manage" class="hidden" style="display:flex; gap:6px; margin-top:6px; flex-wrap:wrap; align-items:center; padding:8px; background:#f6f4f0; border-radius:10px;">
-    <button onclick="archiveOldSalesLog()" style="border:none;background:#fff3d6;color:#a15c1e;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">🗑 매출장부 내보내기+정리</button>
+    <button onclick="archiveOldSalesLog()" style="border:none;background:#fff3d6;color:#a15c1e;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">매출장부 내보내기 및 정리</button>
     <button onclick="openBizInfoModal()" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">사업자 정보 설정</button>
-    <button onclick="showAvailableBackups()" style="border:none;background:#f1eee7;color:var(--muted);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">🗄 백업 목록/복구</button>
-    <button onclick="showDuplicateCheck()" style="border:none;background:#f1eee7;color:var(--muted);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">🔍 중복 데이터 점검</button>
-    <button onclick="manualBackupNow()" style="border:none;background:#eaf3ec;color:#2f6b46;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">📸 지금 이 순간 백업하기</button>
+    <button onclick="showAvailableBackups()" style="border:none;background:#f1eee7;color:var(--muted);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">백업 · 복구</button>
+    <button onclick="showDuplicateCheck()" style="border:none;background:#f1eee7;color:var(--muted);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">중복 점검</button>
+    <button onclick="manualBackupNow()" style="border:none;background:#eaf3ec;color:#2f6b46;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">지금 백업</button>
   </div>
 </div>
 
@@ -473,7 +479,7 @@
 
 <div class="modal-overlay" id="chinaMatchModal">
   <div class="modal">
-    <h3>🚢 대기중인 중국발주가 있어요</h3>
+    <h3>대기 중인 중국발주</h3>
     <p id="china-match-desc" style="font-size:13px;margin-top:-6px;"></p>
     <p id="china-match-detail" style="font-size:13px;color:var(--muted);margin-top:-6px;"></p>
     <div class="modal-actions" id="china-match-actions" style="flex-direction:column; gap:8px;"></div>
@@ -519,7 +525,7 @@
     <label>거래처</label>
     <div style="display:flex; gap:6px; align-items:center;">
       <input id="o-customer" placeholder="예: 클래식" autocomplete="off" oninput="showCustomerSuggestions(this)" onfocus="showCustomerSuggestions(this)" onblur="hideItemSuggestionsDelayed()" style="flex:1;">
-      <button type="button" onclick="openCustomerPicker('o-customer')" style="border:none;background:#e8edf5;color:#3d4f6b;border-radius:8px;padding:0 10px;height:38px;font-size:12px;flex:none;">📋 목록</button>
+      <button type="button" onclick="openCustomerPicker('o-customer')" style="border:none;background:#e8edf5;color:#3d4f6b;border-radius:8px;padding:0 10px;height:38px;font-size:12px;flex:none;">목록</button>
     </div>
 
     <div id="o-multi-wrap">
@@ -672,7 +678,7 @@
     <label>거래처</label>
     <div style="display:flex; gap:6px; align-items:center;">
       <input id="ret-customer" placeholder="예: 메이원" autocomplete="off" oninput="showCustomerSuggestions(this)" onfocus="showCustomerSuggestions(this)" onblur="hideItemSuggestionsDelayed()" style="flex:1;">
-      <button type="button" onclick="openCustomerPicker('ret-customer')" style="border:none;background:#e8edf5;color:#3d4f6b;border-radius:8px;padding:0 10px;height:38px;font-size:12px;flex:none;">📋 목록</button>
+      <button type="button" onclick="openCustomerPicker('ret-customer')" style="border:none;background:#e8edf5;color:#3d4f6b;border-radius:8px;padding:0 10px;height:38px;font-size:12px;flex:none;">목록</button>
     </div>
 
     <div id="ret-multi-wrap">
@@ -770,7 +776,7 @@
 <!-- 가공 종류 관리 -->
 <div class="modal-overlay" id="processingTypeModal">
   <div class="modal" style="max-width:420px;">
-    <h3>⚙️ 가공 종류 관리</h3>
+    <h3>가공 종류 관리</h3>
     <p style="font-size:12px;color:var(--muted);margin-top:-6px;">컬러 이름에 이 단어가 들어있으면, 어느 품목이든 자동으로 이 비용이 원가에 더해져요.</p>
     <div class="row2">
       <div><label>키워드</label><input id="pt-keyword" placeholder="예: 기모"></div>
@@ -786,7 +792,7 @@
 
 <div class="modal-overlay" id="fixedCostModal">
   <div class="modal" style="max-width:420px;">
-    <h3>🔒 고정비 관리</h3>
+    <h3>고정비 관리</h3>
     <p style="font-size:12px;color:var(--muted);margin-top:-6px;">직원 월급, 임대료 등 매달 나가는 고정비예요. 월간 리포트의 "진짜 순이익"에 매달 반영돼요.</p>
     <div class="row2">
       <div><label>항목</label><input id="fixed-cost-label" placeholder="예: 직원 월급"></div>
@@ -802,7 +808,7 @@
 
 <div class="modal-overlay" id="expenseModal">
   <div class="modal" style="max-width:480px;">
-    <h3>💰 지출/입금내역</h3>
+    <h3>지출·입금 내역</h3>
     <p style="font-size:12px;color:var(--muted);margin-top:-6px;">그날그날 매장에서 쓰거나 받은 현금을 한 곳에서 관리해요.</p>
     <div class="row2">
       <div><label style="display:flex;align-items:center;gap:6px;font-size:14px;color:var(--text);"><input type="radio" name="exp-type" value="expense" checked style="width:auto;"> 지출 (−)</label></div>
@@ -866,7 +872,7 @@
     <label>거래처 (비워두면 그 기간 거래한 모든 거래처를 한 번에 각 1장씩 인쇄)</label>
     <div style="display:flex; gap:6px; align-items:center;">
       <input id="stmt-customer" placeholder="비워두면 전체 거래처" autocomplete="off" oninput="showCustomerSuggestions(this)" onfocus="showCustomerSuggestions(this)" onblur="hideItemSuggestionsDelayed()" style="flex:1;">
-      <button type="button" onclick="openCustomerPicker('stmt-customer')" style="border:none;background:#e8edf5;color:#3d4f6b;border-radius:8px;padding:0 10px;height:38px;font-size:12px;flex:none;">📋 목록</button>
+      <button type="button" onclick="openCustomerPicker('stmt-customer')" style="border:none;background:#e8edf5;color:#3d4f6b;border-radius:8px;padding:0 10px;height:38px;font-size:12px;flex:none;">목록</button>
     </div>
     <div class="row2">
       <div><label>시작일</label><input id="stmt-start" type="date"></div>
@@ -906,7 +912,7 @@
     </div>
     <div class="modal-actions">
       <button class="btn-cancel" onclick="closePreShipmentModal()">취소</button>
-      <button class="btn-save" onclick="printPreShipmentFromModal()">🖨 인쇄</button>
+      <button class="btn-save" onclick="printPreShipmentFromModal()">인쇄</button>
     </div>
   </div>
 </div>
@@ -918,7 +924,7 @@
     <label>거래처</label>
     <div style="display:flex; gap:6px; align-items:center;">
       <input id="sale-edit-customer" placeholder="예: 맥가이버2" autocomplete="off" oninput="showCustomerSuggestions(this)" onfocus="showCustomerSuggestions(this)" onblur="hideItemSuggestionsDelayed()" style="flex:1;">
-      <button type="button" onclick="openCustomerPicker('sale-edit-customer')" style="border:none;background:#e8edf5;color:#3d4f6b;border-radius:8px;padding:0 10px;height:38px;font-size:12px;flex:none;">📋 목록</button>
+      <button type="button" onclick="openCustomerPicker('sale-edit-customer')" style="border:none;background:#e8edf5;color:#3d4f6b;border-radius:8px;padding:0 10px;height:38px;font-size:12px;flex:none;">목록</button>
     </div>
     <label>날짜</label>
     <input id="sale-edit-date" type="date">
@@ -1105,7 +1111,7 @@
 const PASSWORD = "3059";
 const ADMIN_PASSWORD = "9503"; // 매출/미수금 탭 전용 - 필요하면 이 값만 바꿔서 변경 가능
 const DATA_VERSION = "2026-08-03-v4"; // 재고/이월장부 씨앗 데이터를 바꿀 때마다 이 값을 새로 바꿔주세요
-const APP_CODE_VERSION = "2026-09-28-s"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
+const APP_CODE_VERSION = "2026-09-28-v"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
 const SCHEMA_STAMP = 2; // 서버 저장규칙이 확인하는 "최신 앱 도장" - 절대 자주 바꾸지 않음(이 값을 아는 코드만 저장 가능하게 서버에서 막을 때 씀)
 const CONFIRMED_EMPTY = '__CONFIRMED_EMPTY__'; // "서버가 확실하게 문서가 없다고 확인해줬다"는 걸 표시하는 특수값
                                                  // (한번도 확인 안 한 null과 구분해서, 그 사이 다른 사람이 첫 데이터를 만들었으면 충돌로 감지하기 위함)
@@ -1806,7 +1812,7 @@ async function persistGuarded(docId, key, dataArray) {
   const FIRESTORE_DOC_LIMIT = 1048576;
   if (newJSON.length > FIRESTORE_DOC_LIMIT * 0.85 && !_sizeWarnedDocs.has(docId)) {
     _sizeWarnedDocs.add(docId); // 같은 항목으로 매번 반복해서 경고하지 않게, 이 화면을 켜놓은 동안엔 한 번만 알림
-    alert(`⚠️ "${docId}" 데이터양이 저장 한도에 가까워지고 있어요 (${Math.round(newJSON.length / 1024)}KB / ${Math.round(FIRESTORE_DOC_LIMIT / 1024)}KB).\n계속 쌓이면 어느 순간 저장 자체가 안 될 수 있어요.\n매출장부라면 "내보내기+정리" 기능으로 오래된 건들을 정리해주세요.`);
+    alert(`⚠️ "${docId}" 데이터양이 저장 한도에 가까워지고 있어요 (${Math.round(newJSON.length / 1024)}KB / ${Math.round(FIRESTORE_DOC_LIMIT / 1024)}KB).\n계속 쌓이면 어느 순간 저장 자체가 안 될 수 있어요.\n매출장부라면 "내보내기 및 정리" 기능으로 오래된 건들을 정리해주세요.`);
   }
   const ref = db.collection('inventory').doc(docId);
   beginWrite();
@@ -2012,7 +2018,7 @@ function updateRateBar() {
 // ---------- 탭 ----------
 function applyTabChrome(tab) {
   for (const t of ['today', 'inv', 'china', 'cost', 'order', 'sales']) document.getElementById('tab-' + t).classList.toggle('active', tab === t);
-  const titles = { today: '오늘', inv: '원단 재고관리', cost: '원단 원가표', order: '이월장부(발주현황)', sales: '매출/미수금 (관리자)', china: '중국원단발주' };
+  const titles = { today: '홈', inv: '원단 재고관리', cost: '원단 원가표', order: '이월장부(발주현황)', sales: '매출/미수금 (관리자)', china: '중국원단발주' };
   const placeholders = { today: '', inv: '품번(품목) 또는 칼라 검색', cost: '품목(품번) 검색', order: '거래처 또는 품목 검색', sales: '거래처 또는 품목 검색', china: '품명, 중국품번, 컬러 검색' };
   const fabLabels = { today: '', inv: '+ 입고', cost: '+ 원가 등록', order: '+ 발주 등록', sales: '', china: '+ 발주추가' };
   document.getElementById('page-title').textContent = titles[tab];
@@ -2164,7 +2170,7 @@ function renderToday() {
   const adminTag = '<span style="font-size:11px; background:#eaf3ec; color:#2f6b46; border-radius:4px; padding:1px 6px; margin-left:4px; font-weight:600;">관리자만</span>';
   const head = (title, extra) => `<div style="display:flex; align-items:center; gap:6px; margin-bottom:6px;"><span style="font-size:15px; font-weight:700;">${title}</span>${extra || ''}</div>`;
   const row = (left, right) => `<div style="display:flex; justify-content:space-between; align-items:center; gap:8px; padding:8px 0; border-top:1px solid var(--border);">${left}${right}</div>`;
-  const bigBtn = (label, onclick, bg, fg) => `<button onclick="${onclick}" style="flex:1; border:none; background:${bg}; color:${fg}; border-radius:10px; padding:11px 6px; font-size:14px; font-weight:700; cursor:pointer;">${label}</button>`;
+  const bigBtn = (label, onclick, bg, fg, cls) => `<button class="${cls || ''}" onclick="${onclick}" style="flex:1; border:none; background:${bg}; color:${fg}; border-radius:10px; padding:11px 6px; font-size:14px; font-weight:700; cursor:pointer;">${label}</button>`;
   let html = '';
 
   // 위쪽 요약 칸 (수량까지는 직원도 봄)
@@ -2182,23 +2188,23 @@ function renderToday() {
 
   // 도착하는 중국발주
   const arrivals = s.arrivingToday.concat(s.overdue);
-  html += `<div style="${card}">${head('🚚 도착하는 중국발주', `<span style="${muted}">${arrivals.length}건</span>`)}`;
+  html += `<div style="${card}">${head('도착 예정 발주', `<span style="${muted}">${arrivals.length}건</span>`)}`;
   if (arrivals.length === 0) html += `<div style="${muted} padding:4px 0;">오늘 도착 예정이거나 지연된 발주가 없어요</div>`;
   for (const o of arrivals) {
     const late = o.arrivalDate < s.today;
     html += row(`<div style="min-width:0;"><div style="font-size:14px; font-weight:600;">${esc(o.item)} ${esc(o.color || '')}</div><div style="${muted}">${esc(o.qty)}${o.urgent ? ' · <b style="color:var(--danger);">급송</b>' : ''}${late ? ` · <span style="color:var(--danger); font-weight:700;">${formatChinaArrivalLabel(o.arrivalDate)} 도착 예정이었어요</span>` : ''}</div></div>`,
-      `<button onclick="openChinaReceiveModal(${o.id})" style="flex:none; border:none; background:#dbe9f0; color:var(--primary-dark); border-radius:8px; padding:8px 12px; font-size:13px; font-weight:700;">입고 처리</button>`);
+      `<button class="btn-key" onclick="openChinaReceiveModal(${o.id})" style="flex:none; border:none; background:#dbe9f0; color:var(--primary-dark); border-radius:8px; padding:8px 12px; font-size:13px; font-weight:700;">입고 처리</button>`);
   }
   html += `</div>`;
 
   // 재고 부족
   const alerts = getLowStockAlerts().slice().sort((a, b) => ((a.pending && a.pending.length) ? 1 : 0) - ((b.pending && b.pending.length) ? 1 : 0) || a.qty - b.qty);
   const notOrdered = alerts.filter(a => !(a.pending && a.pending.length)).length;
-  html += `<div style="${card}">${head('⚠️ 재고 부족', `<span style="${muted}">${alerts.length}건${alerts.length > 0 ? ` · 미발주 ${notOrdered}건` : ''}</span>`)}`;
+  html += `<div style="${card}">${head('재고 부족', `<span style="${muted}">${alerts.length}건${alerts.length > 0 ? ` · 미발주 ${notOrdered}건` : ''}</span>`)}`;
   if (alerts.length === 0) html += `<div style="${muted} padding:4px 0;">재고가 부족한 컬러가 없어요</div>`;
   for (const a of alerts.slice(0, 5)) {
     const pend = a.pending && a.pending.length > 0;
-    html += row(`<div style="min-width:0;"><div style="font-size:14px; font-weight:600;">${esc(a.item)} ${esc(a.color)} <span style="color:${a.qty < 50 ? 'var(--danger)' : '#a15c1e'}; font-weight:800;">${a.qty}y${a.qty < 50 ? ' 위험' : ''}</span></div><div style="${muted}">최근 30일 ${a.shippedRecently}y 나감${pend ? ` · <span style="color:#2f6b46; font-weight:700;">🚚 발주중 ${esc(a.pending[0].qty)}${a.pending[0].arrivalDate ? ` (${formatChinaArrivalLabel(a.pending[0].arrivalDate)} 도착)` : ''}</span>` : ''}</div></div>`,
+    html += row(`<div style="min-width:0;"><div style="font-size:14px; font-weight:600;">${esc(a.item)} ${esc(a.color)} <span style="color:${a.qty < 50 ? 'var(--danger)' : '#a15c1e'}; font-weight:800;">${a.qty}y${a.qty < 50 ? ' 위험' : ''}</span></div><div style="${muted}">최근 30일 ${a.shippedRecently}y 나감${pend ? ` · <span style="color:#2f6b46; font-weight:700;">발주중 ${esc(a.pending[0].qty)}${a.pending[0].arrivalDate ? ` (${formatChinaArrivalLabel(a.pending[0].arrivalDate)} 도착)` : ''}</span>` : ''}</div></div>`,
       `<button onclick="openChinaOrderAddModalFor('${escAttr(a.item)}','${escAttr(a.color)}')" style="flex:none; border:none; background:${pend ? '#eee' : '#fff3d6'}; color:${pend ? '#555' : '#a15c1e'}; border-radius:8px; padding:8px 12px; font-size:13px; font-weight:700;">${pend ? '추가 발주' : '발주하기'}</button>`);
   }
   if (alerts.length > 5) html += `<div onclick="todayGoLowStock()" style="${muted} padding-top:8px; border-top:1px solid var(--border); cursor:pointer;">전체 ${alerts.length}건 보기 ▸</div>`;
@@ -2207,7 +2213,7 @@ function renderToday() {
   // 관리자 전용: 수금할 거래처 / 직원에게는 잠금 안내만
   if (salesAdminUnlocked) {
     const rows = getTodayCollectList();
-    html += `<div style="${card}">${head('💰 수금이 필요한 거래처', `${adminTag}<span style="${muted}">마지막 입금이 오래된 순</span>`)}`;
+    html += `<div style="${card}">${head('수금 필요 거래처', `${adminTag}<span style="${muted}">마지막 입금이 오래된 순</span>`)}`;
     if (rows.length === 0) html += `<div style="${muted} padding:4px 0;">미수금이 남은 거래처가 없어요</div>`;
     for (const r of rows.slice(0, 5)) {
       const dcolor = r.days != null && r.days >= 30 ? 'var(--danger)' : (r.days != null && r.days >= 14 ? '#a15c1e' : 'var(--muted)');
@@ -2218,16 +2224,16 @@ function renderToday() {
     if (rows.length > 5) html += `<div onclick="todayGoUnpaid()" style="${muted} padding-top:8px; border-top:1px solid var(--border); cursor:pointer;">전체 ${rows.length}곳 보기 ▸</div>`;
     html += `</div>`;
   } else {
-    html += `<div style="${card} display:flex; align-items:center; justify-content:space-between; gap:10px;"><div style="${muted}">🔒 매출, 입금, 수금 정보는 관리자만 볼 수 있어요</div><button onclick="unlockTodayAdmin()" style="flex:none; border:1px solid var(--border); background:#fff; color:var(--text); border-radius:8px; padding:8px 12px; font-size:13px; font-weight:700;">관리자 정보 보기</button></div>`;
+    html += `<div style="${card} display:flex; align-items:center; justify-content:space-between; gap:10px;"><div style="${muted}">매출, 입금, 수금 정보는 관리자만 볼 수 있어요</div><button onclick="unlockTodayAdmin()" style="flex:none; border:1px solid var(--border); background:#fff; color:var(--text); border-radius:8px; padding:8px 12px; font-size:13px; font-weight:700;">관리자 정보 보기</button></div>`;
   }
 
   // 빠른 작업
   html += `<div style="display:flex; gap:8px; margin-bottom:10px;">
-    ${bigBtn('+ 입고 등록', 'todayGoInv()', 'var(--primary-dark)', '#fff')}
+    ${bigBtn('+ 입고 등록', 'todayGoInv()', 'var(--primary-dark)', '#fff', 'btn-key')}
     ${bigBtn('+ 중국발주 등록', 'openChinaOrderAddModal()', '#dbe9f0', 'var(--primary-dark)')}
-    ${salesAdminUnlocked ? bigBtn('+ 새 매출', 'todayGoSales()', '#eaf3ec', '#2f6b46') : ''}
+    ${salesAdminUnlocked ? bigBtn('+ 새 매출', 'todayGoSales()', '#eaf3ec', '#2f6b46', 'btn-key') : ''}
   </div>`;
-  if (salesAdminUnlocked) html += `<div style="text-align:center; margin-bottom:14px;"><button onclick="lockTodayAdmin()" style="border:none; background:none; color:var(--muted); font-size:12px; text-decoration:underline; cursor:pointer;">🔒 관리자 정보 다시 잠그기</button></div>`;
+  if (salesAdminUnlocked) html += `<div style="text-align:center; margin-bottom:14px;"><button onclick="lockTodayAdmin()" style="border:none; background:none; color:var(--muted); font-size:12px; text-decoration:underline; cursor:pointer;">관리자 잠금</button></div>`;
   list.innerHTML = html;
 }
 function render() {
@@ -2630,7 +2636,7 @@ function renderLowStockAlerts(list) {
   banner.style.cssText = 'background:#fff3d6; border:1px solid #e8c98a; border-radius:10px; padding:10px 12px; margin-bottom:10px;';
   banner.innerHTML = `
     <div onclick="toggleGroup('${gk}')" style="display:flex; justify-content:space-between; align-items:center; cursor:pointer;">
-      <div style="font-weight:700; font-size:13px; color:#a15c1e;">⚠️ 재고 부족 알림 (${alerts.length}건${notOrdered < alerts.length ? ` · 미발주 ${notOrdered}건` : ''})</div>
+      <div style="font-weight:700; font-size:13px; color:#a15c1e;">재고 부족 알림 (${alerts.length}건${notOrdered < alerts.length ? ` · 미발주 ${notOrdered}건` : ''})</div>
       <div style="font-size:12px; color:#a15c1e;">${isOpen ? '접기 ▲' : '펼치기 ▼'}</div>
     </div>
     ${isOpen ? `
@@ -2647,7 +2653,7 @@ function renderLowStockAlerts(list) {
                 <div style="cursor:pointer; flex:1;" onclick="event.stopPropagation();goToLowStockItem('${escAttr(a.item)}','${escAttr(a.color)}')">
                   <div style="font-size:13px; font-weight:600;">${esc(a.color)}${a.swOrder != null ? ` <span style="font-weight:400; color:var(--muted);">(${a.swOrder}번)</span>` : ''}</div>
                   <div style="font-size:11px; color:var(--muted); margin-top:1px;">최근 30일 ${a.shippedRecently}y 나감</div>
-                  ${a.pending && a.pending.length > 0 ? `<div style="font-size:11px; color:#2f6b46; font-weight:600; margin-top:2px;">🚚 발주중 ${a.pending.slice(0, 2).map(o => `${esc(o.qty)}${o.arrivalDate ? ` (${formatChinaArrivalLabel(o.arrivalDate)} 도착)` : ''}`).join(' · ')}${a.pending.length > 2 ? ` 외 ${a.pending.length - 2}건` : ''}</div>` : ''}
+                  ${a.pending && a.pending.length > 0 ? `<div style="font-size:11px; color:#2f6b46; font-weight:600; margin-top:2px;">발주중 ${a.pending.slice(0, 2).map(o => `${esc(o.qty)}${o.arrivalDate ? ` (${formatChinaArrivalLabel(o.arrivalDate)} 도착)` : ''}`).join(' · ')}${a.pending.length > 2 ? ` 외 ${a.pending.length - 2}건` : ''}</div>` : ''}
                   <div style="margin-top:4px;"><button onclick="event.stopPropagation();openChinaOrderAddModalFor('${escAttr(a.item)}','${escAttr(a.color)}')" style="border:none;background:#eaf3ec;color:#2f6b46;border-radius:6px;padding:3px 8px;font-size:11px;font-weight:600;">${a.pending && a.pending.length > 0 ? '추가 발주' : '발주하기'}</button></div>
                 </div>
                 <div style="text-align:right; margin-right:8px;">
@@ -2808,8 +2814,8 @@ function renderInv() {
             <div class="sub">${total > 0 ? `롤 ${normalRolls.length}개` : '재고 없음'}${defectiveTotal > 0 ? ` · <span style="color:var(--danger);font-weight:700;">불량 ${defectiveTotal.toLocaleString()}y</span>` : ''}</div>
             <div style="margin-top:4px; display:flex; gap:4px; flex-wrap:wrap;">
               <button onclick="event.stopPropagation(); openSwatchEditModal('${escAttr(g.cat)}','${escAttr(g.item)}','${escAttr(g.color)}')" style="border:none;background:#f1eee7;color:var(--muted);border-radius:6px;padding:3px 8px;font-size:11px;">스왓치·중국품번 수정</button>
-              <button onclick="event.stopPropagation(); openRollAddModalFor('${escAttr(g.item)}', '${escAttr(g.color)}')" style="border:none;background:#eaf3ec;color:#2f6b46;border-radius:6px;padding:3px 8px;font-size:11px;">입고</button>
-              <button onclick="event.stopPropagation(); deleteAllRollsForColor('${escAttr(g.item)}', '${escAttr(g.color)}')" style="border:none;background:#fdecea;color:var(--danger);border-radius:6px;padding:3px 8px;font-size:11px;">이 컬러 전체 삭제</button>
+              <button class="btn-key" onclick="event.stopPropagation(); openRollAddModalFor('${escAttr(g.item)}', '${escAttr(g.color)}')" style="border:none;background:#eaf3ec;color:#2f6b46;border-radius:6px;padding:3px 8px;font-size:11px;">입고</button>
+              <button onclick="event.stopPropagation(); deleteAllRollsForColor('${escAttr(g.item)}', '${escAttr(g.color)}')" style="border:none;background:#fdecea;color:var(--danger);border-radius:6px;padding:3px 8px;font-size:11px;">컬러 전체 삭제</button>
             </div>
           </div>
           <div class="total">
@@ -2870,11 +2876,11 @@ function renderInv() {
                   <div>롤 <span class="yd">${r.qty}y</span>${r.inDate ? `<span style="font-size:11px;color:var(--muted);margin-left:6px;">${esc(r.inDate)} 입고</span>` : ''}${r.rollNote ? `<div style="margin-top:3px;display:inline-block;background:#e8f0fb;color:var(--primary-dark);font-weight:600;border-radius:5px;padding:2px 7px;font-size:12px;">📌 ${esc(r.rollNote)}</div>` : ''}</div>
                 </div>
                 <div class="btns">
-                  <button class="btn-out" style="background:#eaf3ec;color:#2f6b46;" onclick="event.stopPropagation(); openRollAddModalFor('${escAttr(r.item)}', '${escAttr(r.color)}')">입고</button>
+                  <button class="btn-out btn-key" onclick="event.stopPropagation(); openRollAddModalFor('${escAttr(r.item)}', '${escAttr(r.color)}')">입고</button>
                   <button class="btn-out" onclick="event.stopPropagation(); openOutModal(${r.id})">출고</button>
                   <button class="btn-out" style="background:#e8f0fb;color:var(--primary-dark);" onclick="event.stopPropagation(); openRollNoteModal(${r.id})">메모</button>
                   <button class="btn-out" style="background:#eee;color:var(--text);" onclick="event.stopPropagation(); openRollEditModal(${r.id})">수정</button>
-                  <button class="btn-out" style="background:#fdecea;color:var(--danger);" onclick="event.stopPropagation(); markRollDefective(${r.id})">불량</button>
+                  <button class="btn-out btn-danger" onclick="event.stopPropagation(); markRollDefective(${r.id})">불량</button>
                   <button class="btn-del" onclick="event.stopPropagation(); deleteRoll(${r.id})">삭제</button>
                 </div>`;
             }
@@ -3640,7 +3646,7 @@ function renderCost() {
   const list = document.getElementById('list');
   list.innerHTML = '';
   const ptBtn = document.createElement('button');
-  ptBtn.textContent = '⚙️ 가공 종류 관리 (기모/가공/방전처리 등)';
+  ptBtn.textContent = '가공 종류 관리 (기모/가공/방전처리 등)';
   ptBtn.style.cssText = 'border:none;background:#fff3d6;color:#a15c1e;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;margin-bottom:10px;';
   ptBtn.onclick = openProcessingTypeModal;
   list.appendChild(ptBtn);
@@ -5322,7 +5328,7 @@ function openPreShipmentModal(customerName, orderIds) {
   const pastWrap = document.getElementById('pre-ship-past-wrap');
   if (pastUnpaid.length > 0) {
     pastWrap.innerHTML = `
-      <div style="font-size:12px; font-weight:700; color:#a15c1e; margin-bottom:4px;">📋 미수금 항목 (체크한 것만 이 명세서에 포함돼요 - 오늘 등록한 건 기본 체크)</div>
+      <div style="font-size:12px; font-weight:700; color:#a15c1e; margin-bottom:4px;">미수금 항목 (체크한 것만 이 명세서에 포함돼요 - 오늘 등록한 건 기본 체크)</div>
       ${pastUnpaid.map(e => `
         <label style="display:flex; align-items:center; gap:6px; padding:4px 0; font-size:12px;">
           <input type="checkbox" class="pre-ship-past-check" data-entry-id="${e.id}" ${e.date === todayStr() ? 'checked' : ''} style="width:auto;">
@@ -6244,7 +6250,7 @@ function renderCustomerLedgerView() {
       <label>거래처</label>
       <div style="display:flex; gap:6px; align-items:center;">
         <input id="ledger-customer" placeholder="예: 클래식" autocomplete="off" value="${escAttr(ledgerCustomer || '')}" oninput="showCustomerSuggestions(this)" onfocus="showCustomerSuggestions(this)" onblur="hideItemSuggestionsDelayed()" style="flex:1;">
-        <button type="button" onclick="openCustomerPicker('ledger-customer')" style="border:none;background:#e8edf5;color:#3d4f6b;border-radius:8px;padding:0 10px;height:38px;font-size:12px;flex:none;">📋 목록</button>
+        <button type="button" onclick="openCustomerPicker('ledger-customer')" style="border:none;background:#e8edf5;color:#3d4f6b;border-radius:8px;padding:0 10px;height:38px;font-size:12px;flex:none;">목록</button>
       </div>
     </div>
     <div>
@@ -6256,9 +6262,9 @@ function renderCustomerLedgerView() {
       <input id="ledger-end" type="date">
     </div>
     <button onclick="ledgerCustomer=document.getElementById('ledger-customer').value.trim(); ledgerStartDate=document.getElementById('ledger-start').value; ledgerEndDate=document.getElementById('ledger-end').value; renderCustomerLedgerTable();" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:8px;padding:10px 16px;font-size:13px;font-weight:600;height:38px;">조회</button>
-    <button onclick="printCurrentLedgerStatement()" style="border:none;background:#eaf3ec;color:#2f6b46;border-radius:8px;padding:10px 16px;font-size:13px;font-weight:600;height:38px;">🖨 명세서 인쇄</button>
-    <button onclick="if(ledgerCustomer) payCustomerUnpaid(ledgerCustomer)" style="border:none;background:#eaf3ec;color:#2f6b46;border-radius:8px;padding:10px 16px;font-size:13px;font-weight:600;height:38px;">입금 처리</button>
-    <button onclick="printLedgerPeriod()" style="border:none;background:#e8edf5;color:#3d4f6b;border-radius:8px;padding:10px 16px;font-size:13px;font-weight:600;height:38px;">🖨 기간별 원장 인쇄</button>
+    <button onclick="printCurrentLedgerStatement()" style="border:none;background:#eaf3ec;color:#2f6b46;border-radius:8px;padding:10px 16px;font-size:13px;font-weight:600;height:38px;">명세서 인쇄</button>
+    <button class="btn-key" onclick="if(ledgerCustomer) payCustomerUnpaid(ledgerCustomer)" style="border:none;background:#eaf3ec;color:#2f6b46;border-radius:8px;padding:10px 16px;font-size:13px;font-weight:600;height:38px;">입금 처리</button>
+    <button onclick="printLedgerPeriod()" style="border:none;background:#e8edf5;color:#3d4f6b;border-radius:8px;padding:10px 16px;font-size:13px;font-weight:600;height:38px;">기간별 원장 인쇄</button>
     <button onclick="if(ledgerCustomer) renameCustomer(ledgerCustomer)" style="border:none;background:#eee;color:#555;border-radius:8px;padding:10px 12px;font-size:12px;height:38px;">이름 수정</button>
     <button onclick="document.querySelectorAll('.ledger-print-check').forEach(cb=>cb.checked=true)" style="border:none;background:#eee;color:#555;border-radius:8px;padding:10px 12px;font-size:12px;height:38px;">전체 선택</button>
     <button onclick="document.querySelectorAll('.ledger-print-check').forEach(cb=>cb.checked=false)" style="border:none;background:#eee;color:#555;border-radius:8px;padding:10px 12px;font-size:12px;height:38px;">전체 해제</button>
@@ -6645,7 +6651,7 @@ async function printLedgerPeriod() {
 
   const html = `
     <div class="ledger-print" style="padding:14mm 12mm; font-family:-apple-system,'Malgun Gothic',sans-serif;">
-      <h2 style="margin:0 0 4px;">거래처원장 - ${esc(customer)}</h2>
+      <h2 style="margin:0 0 4px;">거래처 원장 - ${esc(customer)}</h2>
       <div style="color:#555; margin-bottom:10px; font-size:13px;">기간: ${esc(startDate || '')} ~ ${esc(endDate || '')} · 발행일: ${todayStr()}</div>
       <table style="width:100%; border-collapse:collapse; table-layout:fixed;">
         <thead>
@@ -6782,7 +6788,7 @@ function renderCustomerProfileSummary(t_c) {
   wrap.innerHTML = `
     <div style="background:var(--primary-dark); border-radius:10px 10px 0 0; padding:10px 14px; color:#fff; font-weight:700; font-size:14px; display:flex; justify-content:space-between; align-items:center;">
       <span>${esc(t_c)}</span>
-      <button onclick="editCustomerNote('${escAttr(t_c)}')" style="border:none;background:rgba(255,255,255,0.15);color:#fff;border-radius:6px;padding:4px 8px;font-size:11px;">📌 메모 수정</button>
+      <button onclick="editCustomerNote('${escAttr(t_c)}')" style="border:none;background:rgba(255,255,255,0.15);color:#fff;border-radius:6px;padding:4px 8px;font-size:11px;">메모 수정</button>
     </div>
     ${customerNotes[t_c] ? `
       <div style="background:#fff; border:1px solid var(--border); border-top:none; padding:10px 14px; display:flex; gap:10px; align-items:flex-start;">
@@ -7060,7 +7066,7 @@ async function renderBackupManagerList() {
   backBtn.onclick = exitBackupManager;
   topBar.appendChild(backBtn);
   const nowBtn = document.createElement('button');
-  nowBtn.textContent = '📸 지금 이 순간 백업하기 (재고+이월+매출 한번에)';
+  nowBtn.textContent = '지금 백업 (재고+이월+매출 한번에)';
   nowBtn.style.cssText = 'border:none;background:#eaf3ec;color:#2f6b46;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;';
   nowBtn.onclick = async () => { await manualBackupNow(); await renderBackupManagerList(); };
   topBar.appendChild(nowBtn);
@@ -7075,7 +7081,7 @@ async function renderBackupManagerList() {
   selNoneBtn.onclick = () => document.querySelectorAll('.backup-check').forEach(cb => cb.checked = false);
   topBar.appendChild(selNoneBtn);
   const delSelBtn = document.createElement('button');
-  delSelBtn.textContent = '🗑 선택한 백업 한번에 삭제';
+  delSelBtn.textContent = '선택한 백업 한번에 삭제';
   delSelBtn.style.cssText = 'border:none;background:#fdecea;color:var(--danger);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;';
   delSelBtn.onclick = deleteSelectedBackups;
   topBar.appendChild(delSelBtn);
@@ -7085,7 +7091,7 @@ async function renderBackupManagerList() {
   if (shipLogSize > 700000) {
     const warnBanner = document.createElement('div');
     warnBanner.style.cssText = 'background:#fdecea; border:1px solid #f0b8b8; border-radius:10px; padding:10px 12px; margin-bottom:10px; font-size:13px; color:var(--danger);';
-    warnBanner.innerHTML = `⚠️ 매출장부 용량이 커지고 있어요 (${Math.round(shipLogSize / 1024)}KB). 지금은 자동으로 여러 조각으로 나눠서 안전하게 백업되고 있지만, 계속 커지면 화면 로딩이 느려질 수 있어요. "관리" 메뉴의 "매출장부 내보내기+정리"로 오래되고 정산 끝난 건들을 정리해주시는 걸 추천드려요.`;
+    warnBanner.innerHTML = `⚠️ 매출장부 용량이 커지고 있어요 (${Math.round(shipLogSize / 1024)}KB). 지금은 자동으로 여러 조각으로 나눠서 안전하게 백업되고 있지만, 계속 커지면 화면 로딩이 느려질 수 있어요. "관리" 메뉴의 "매출장부 내보내기 및 정리"로 오래되고 정산 끝난 건들을 정리해주시는 걸 추천드려요.`;
     list.appendChild(warnBanner);
   }
 
@@ -7689,9 +7695,9 @@ function renderReportMenuView() {
   list.appendChild(backBtn);
 
   const items = [
-    ['📅 월간 리포트', '이번달/지난달 매출·순이익 비교', showMonthlyReport],
-    ['📆 연간 리포트', '올해 전체 매출·순이익 흐름', showYearlyReport],
-    ['📁 회계장부(고정비)', '직원 월급, 임대료 등 고정비 관리', openFixedCostModal],
+    ['월간 리포트', '이번달/지난달 매출·순이익 비교', showMonthlyReport],
+    ['연간 리포트', '올해 전체 매출·순이익 흐름', showYearlyReport],
+    ['회계장부 (고정비)', '직원 월급, 임대료 등 고정비 관리', openFixedCostModal],
   ];
   for (const [title, desc, fn] of items) {
     const card = document.createElement('div');
@@ -7829,12 +7835,12 @@ async function renderMonthlyReportView() {
   nextBtn.onclick = () => shiftMonthlyReport(1);
   topBar.appendChild(nextBtn);
   const printBtn = document.createElement('button');
-  printBtn.textContent = '🖨 이 리포트 인쇄';
+  printBtn.textContent = '이 리포트 인쇄';
   printBtn.style.cssText = 'border:none;background:#e6faf0;color:#1a7a4a;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;';
   printBtn.onclick = printMonthlyReport;
   topBar.appendChild(printBtn);
   const fixedCostBtn = document.createElement('button');
-  fixedCostBtn.textContent = '📁 회계장부';
+  fixedCostBtn.textContent = '회계장부';
   fixedCostBtn.style.cssText = 'border:none;background:#f1eee7;color:var(--muted);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;';
   fixedCostBtn.onclick = openFixedCostModal;
   topBar.appendChild(fixedCostBtn);
@@ -7951,7 +7957,7 @@ function buildMonthlyReportHTML(monthKey, prevMonthKey, year, monthNum) {
 
   return `
     <div class="group" style="padding:16px;">
-      <div style="font-weight:700; font-size:16px; margin-bottom:12px;">📅 ${year}년 ${monthNum}월 요약</div>
+      <div style="font-weight:700; font-size:16px; margin-bottom:12px;">${year}년 ${monthNum}월 요약</div>
       <table style="width:100%; font-size:14px; border-collapse:collapse;">
         <tr><td style="padding:6px 0;">총매출 <span style="font-size:10px; color:var(--muted); font-weight:400;">(세금 별도)</span></td><td style="text-align:right; font-weight:700;">${Math.round(totalSale).toLocaleString()}원${fmtPct(salePct)}</td></tr>
         <tr><td style="padding:6px 0;">총순이익</td><td style="text-align:right; font-weight:700; color:#1a7a4a;">${Math.round(netProfit).toLocaleString()}원${fmtPct(profitPct)}</td></tr>
@@ -7960,7 +7966,7 @@ function buildMonthlyReportHTML(monthKey, prevMonthKey, year, monthNum) {
       </table>
       ${reportUnlocked ? `
         <div style="border-top:1px dashed var(--border); margin:10px 0;"></div>
-        <div style="font-weight:600; font-size:13px; margin-bottom:6px; color:#a15c1e;">🔒 고정비</div>
+        <div style="font-weight:600; font-size:13px; margin-bottom:6px; color:#a15c1e;">고정비</div>
         <table style="width:100%; font-size:13px; border-collapse:collapse;">
           ${fixedCostItems.map(c => `<tr><td style="padding:3px 0;">${esc(c.label)}</td><td style="text-align:right; color:var(--danger);">-${c.amount.toLocaleString()}원</td></tr>`).join('')}
           <tr><td style="padding:6px 0; font-weight:700;">진짜 순이익 (고정비 반영)</td><td style="text-align:right; font-weight:700; color:${trueNetProfit >= 0 ? '#1a7a4a' : 'var(--danger)'};">${Math.round(trueNetProfit).toLocaleString()}원</td></tr>
@@ -8018,7 +8024,7 @@ async function renderYearlyReportView() {
   nextBtn.onclick = () => shiftYearlyReport(1);
   topBar.appendChild(nextBtn);
   const printBtn = document.createElement('button');
-  printBtn.textContent = '🖨 이 리포트 인쇄';
+  printBtn.textContent = '이 리포트 인쇄';
   printBtn.style.cssText = 'border:none;background:#e6faf0;color:#1a7a4a;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;';
   printBtn.onclick = printYearlyReport;
   topBar.appendChild(printBtn);
@@ -8131,7 +8137,7 @@ function buildYearlyReportHTML(yearKey, prevYearKey, year) {
 
   return `
     <div class="group" style="padding:16px;">
-      <div style="font-weight:700; font-size:16px; margin-bottom:12px;">📆 ${year}년 요약</div>
+      <div style="font-weight:700; font-size:16px; margin-bottom:12px;">${year}년 요약</div>
       <table style="width:100%; font-size:14px; border-collapse:collapse;">
         <tr><td style="padding:6px 0;">총매출 <span style="font-size:10px; color:var(--muted); font-weight:400;">(세금 별도)</span></td><td style="text-align:right; font-weight:700;">${Math.round(totalSale).toLocaleString()}원${fmtPct(salePct)}</td></tr>
         <tr><td style="padding:6px 0;">총순이익</td><td style="text-align:right; font-weight:700; color:#1a7a4a;">${Math.round(netProfit).toLocaleString()}원${fmtPct(profitPct)}</td></tr>
@@ -8140,7 +8146,7 @@ function buildYearlyReportHTML(yearKey, prevYearKey, year) {
       </table>
       ${reportUnlocked ? `
         <div style="border-top:1px dashed var(--border); margin:10px 0;"></div>
-        <div style="font-weight:600; font-size:13px; margin-bottom:6px; color:#a15c1e;">🔒 고정비 (월 고정비 × 12개월 환산)</div>
+        <div style="font-weight:600; font-size:13px; margin-bottom:6px; color:#a15c1e;">고정비 (월 고정비 × 12개월 환산)</div>
         <table style="width:100%; font-size:13px; border-collapse:collapse;">
           ${fixedCostItems.map(c => `<tr><td style="padding:3px 0;">${esc(c.label)}</td><td style="text-align:right; color:var(--danger);">-${(c.amount * 12).toLocaleString()}원</td></tr>`).join('')}
           <tr><td style="padding:6px 0; font-weight:700;">진짜 순이익 (고정비 반영)</td><td style="text-align:right; font-weight:700; color:${trueNetProfit >= 0 ? '#1a7a4a' : 'var(--danger)'};">${Math.round(trueNetProfit).toLocaleString()}원</td></tr>
@@ -8278,7 +8284,7 @@ async function renderCustomerRankingView() {
   const wrap = document.createElement('div');
   wrap.innerHTML = `
     <div class="group" style="margin-bottom:12px;">
-      <div style="padding:10px 12px; font-weight:700; font-size:14px; border-bottom:1px solid var(--border);">📊 거래처 순위 (${curMonthKey} 기준, 지난달 대비)</div>
+      <div style="padding:10px 12px; font-weight:700; font-size:14px; border-bottom:1px solid var(--border);">거래처 순위 (${curMonthKey} 기준, 지난달 대비)</div>
       ${rows.length === 0 ? '<div class="empty">이번 달 매출 기록이 없습니다</div>' : rows.map((r, i) => `
         <div style="display:flex; justify-content:space-between; align-items:center; padding:10px 12px; border-bottom:1px dashed var(--border);">
           <div style="display:flex; align-items:center; gap:8px;">
@@ -8296,7 +8302,7 @@ async function renderCustomerRankingView() {
     </div>
     ${quiet.length > 0 ? `
       <div class="group">
-        <div style="padding:10px 12px; font-weight:700; font-size:14px; color:#a15c1e; border-bottom:1px solid var(--border);">⚠️ 최근 뜸해진 거래처</div>
+        <div style="padding:10px 12px; font-weight:700; font-size:14px; color:#a15c1e; border-bottom:1px solid var(--border);">최근 뜸해진 거래처</div>
         ${quiet.map(q => `
           <div style="padding:8px 12px; border-bottom:1px dashed var(--border); font-size:13px;">
             <b style="cursor:pointer; " onclick="showCustomerLedger('${escAttr(q.cust)}')">${esc(q.cust)}</b> - ${q.daysSince}일째 주문 없음 <span style="color:var(--muted); font-size:11px;">(마지막 주문: ${esc(q.last)})</span>
@@ -8386,7 +8392,7 @@ function renderUnpaidSummaryList() {
   const memoSection = `
     <div style="padding:8px 4px; border-bottom:1px solid var(--border); margin-bottom:6px;">
       <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
-        <div style="font-weight:700; font-size:13px; color:#a15c1e;">📝 선수금·기타 메모</div>
+        <div style="font-weight:700; font-size:13px; color:#a15c1e;">선수금·기타 메모</div>
         <button onclick="const c=prompt('어느 거래처 메모인가요?'); if(c) addDepositMemo(c.trim());" style="border:none;background:#fff3d6;color:#a15c1e;border-radius:6px;padding:4px 8px;font-size:11px;">+ 메모 추가</button>
       </div>
       ${depositMemos.length === 0 ? '<div style="font-size:12px;color:var(--muted);">아직 메모가 없어요</div>' : depositMemos.slice().reverse().map(m => `
@@ -8399,7 +8405,7 @@ function renderUnpaidSummaryList() {
   `;
   const inactiveBanner = inactiveRows.length === 0 ? '' : `
     <div style="background:#fdf0e0; border:1px solid #e8c98a; border-radius:10px; padding:10px 12px; margin-bottom:10px;">
-      <div style="font-weight:700; font-size:13px; color:#a15c1e; margin-bottom:6px;">🕐 미수금 있는데 최근 거래가 뜸한 거래처 (${inactiveRows.length}건)</div>
+      <div style="font-weight:700; font-size:13px; color:#a15c1e; margin-bottom:6px;">미수금 있는데 최근 거래가 뜸한 거래처 (${inactiveRows.length}건)</div>
       ${inactiveRows.map(r => `
         <div style="display:flex; justify-content:space-between; align-items:center; padding:5px 0; font-size:12px;">
           <div style="cursor:pointer;" onclick="showCustomerLedger('${escAttr(r.customer)}')">${esc(r.customer)} <span style="color:var(--muted);">· 마지막 거래 ${esc(r.lastDate)} (${r.days}일 전)</span></div>
@@ -8420,7 +8426,7 @@ function renderUnpaidSummaryList() {
           <div style="font-size:15px; font-weight:600; cursor:pointer; " onclick="showCustomerLedger('${escAttr(r.customer)}')">${esc(r.customer)}</div>
           <div style="display:flex; align-items:center; gap:10px;">
             <span style="font-weight:700; font-size:15px; color:var(--danger);">${r.unpaid.toLocaleString()}원</span>
-            <button onclick="payCustomerUnpaid('${escAttr(r.customer)}')" style="border:none;background:#eaf3ec;color:#2f6b46;border-radius:6px;padding:6px 10px;font-size:12px;">입금 처리</button>
+            <button class="btn-key" onclick="payCustomerUnpaid('${escAttr(r.customer)}')" style="border:none;background:#eaf3ec;color:#2f6b46;border-radius:6px;padding:6px 10px;font-size:12px;">입금 처리</button>
             <button onclick="editCarryoverBalance('${escAttr(r.customer)}', ${r.carryoverId != null ? r.carryoverId : 'null'})" style="border:none;background:#eee;color:var(--text);border-radius:6px;padding:6px 10px;font-size:12px;">직접 수정</button>
           </div>
         </div>
@@ -8824,7 +8830,7 @@ function renderSales() {
           <div class="sub">거래 기록이 아직 없어요</div>
           <div style="margin-top:4px;">
             <button onclick="openSaleAddModal('${escAttr(name)}')" style="border:none;background:#eaf3ec;color:#2f6b46;border-radius:6px;padding:5px 10px;font-size:12px;">+ 품목 추가</button>
-            <button onclick="showCustomerLedger('${escAttr(name)}')" style="border:none;background:#e8edf5;color:#3d4f6b;border-radius:6px;padding:5px 10px;font-size:12px;margin-left:6px;">📒 원장</button>
+            <button onclick="showCustomerLedger('${escAttr(name)}')" style="border:none;background:#e8edf5;color:#3d4f6b;border-radius:6px;padding:5px 10px;font-size:12px;margin-left:6px;">원장</button>
             <button onclick="renameCustomer('${escAttr(name)}')" style="border:none;background:#eee;color:#555;border-radius:6px;padding:5px 10px;font-size:12px;margin-left:6px;">이름 수정</button>
           </div>
         </div>
@@ -8915,7 +8921,7 @@ function renderSales() {
               ${entries.some(e => getPaidAmount(e) > 0) ? `<button onclick="resetGroupPayment([${entries.map(e => e.id).join(',')}])" style="border:none;background:#f1eee7;color:var(--muted);border-radius:6px;padding:5px 10px;font-size:12px;margin-left:6px;">입금 취소</button>` : ''}
               <button onclick="openSaleAddModal('${escAttr(k)}')" style="border:none;background:#eaf3ec;color:#2f6b46;border-radius:6px;padding:5px 10px;font-size:12px;margin-left:6px;">+ 품목 추가</button>
               <button onclick="openDefectReturnForCustomer('${escAttr(k)}')" style="border:none;background:#fdecea;color:var(--danger);border-radius:6px;padding:5px 10px;font-size:12px;margin-left:6px;">반품/불량/추가금</button>
-              <button onclick="showCustomerLedger('${escAttr(k)}')" style="border:none;background:#e8edf5;color:#3d4f6b;border-radius:6px;padding:5px 10px;font-size:12px;margin-left:6px;">📒 원장</button>
+              <button onclick="showCustomerLedger('${escAttr(k)}')" style="border:none;background:#e8edf5;color:#3d4f6b;border-radius:6px;padding:5px 10px;font-size:12px;margin-left:6px;">원장</button>
               <button onclick="renameCustomer('${escAttr(k)}')" style="border:none;background:#eee;color:#555;border-radius:6px;padding:5px 10px;font-size:12px;margin-left:6px;">이름 수정</button>
             </div>
           </div>
@@ -8987,7 +8993,7 @@ function renderSales() {
               <div class="order-status ${statusClassFee}">${statusLabelFee}</div>
             </div>
             <div class="order-btns">
-              ${remainingFee > 0 ? `<button onclick="recordPayment(${e.id})" style="border:none;background:#eaf3ec;color:#2f6b46;border-radius:6px;padding:4px 8px;font-size:11px;">입금 처리</button>` : ''}
+              ${remainingFee > 0 ? `<button class="btn-key" onclick="recordPayment(${e.id})" style="border:none;background:#eaf3ec;color:#2f6b46;border-radius:6px;padding:4px 8px;font-size:11px;">입금 처리</button>` : ''}
               ${paidAmtFee > 0 ? `<button onclick="resetPayment(${e.id})" style="border:none;background:#f1eee7;color:var(--muted);border-radius:6px;padding:4px 8px;font-size:11px;">입금 취소</button>` : ''}
               <button onclick="openSaleEditModal(${e.id})" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:6px;padding:4px 8px;font-size:11px;">수정</button>
             </div>
@@ -9010,7 +9016,7 @@ function renderSales() {
           </div>
           ${e.defectYards > 0 ? `<div style="color:var(--danger);font-weight:700;font-size:13px;">불량 ${e.defectYards}y 차감됨${e.defectNote ? ` (${esc(e.defectNote)})` : ''}</div>` : ''}
           <div class="order-btns">
-            ${remaining > 0 ? `<button onclick="recordPayment(${e.id})" style="border:none;background:#eaf3ec;color:#2f6b46;border-radius:6px;padding:4px 8px;font-size:11px;">입금 처리</button>` : ''}
+            ${remaining > 0 ? `<button class="btn-key" onclick="recordPayment(${e.id})" style="border:none;background:#eaf3ec;color:#2f6b46;border-radius:6px;padding:4px 8px;font-size:11px;">입금 처리</button>` : ''}
             ${paidAmt > 0 ? `<button onclick="resetPayment(${e.id})" style="border:none;background:#f1eee7;color:var(--muted);border-radius:6px;padding:4px 8px;font-size:11px;">입금 취소</button>` : ''}
             <button onclick="${e.item === '이월 미수금' ? `editCarryoverBalance('${escAttr(e.customer || '')}', ${e.id})` : `openSaleEditModal(${e.id})`}" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:6px;padding:4px 8px;font-size:11px;">${e.item === '이월 미수금' ? '이월 미수금 수정' : '매출 수정'}</button>
           </div>
@@ -9135,7 +9141,7 @@ function renderChinaOrdersByArrival(filtered, t) {
     const header = document.createElement('div');
     header.style.cssText = 'font-size:12px; font-weight:700; color:#a15c1e; margin-bottom:8px;';
     const selLabel = chinaOrderSelectedArrivalDate === '미정' ? '도착일 미정' : `${formatChinaArrivalLabel(chinaOrderSelectedArrivalDate)} 도착 예정`;
-    header.textContent = `🚢 ${selLabel} · ${items.length}건`;
+    header.textContent = `${selLabel} · ${items.length}건`;
     list.appendChild(header);
     items.sort((a, b) => String(a.item).localeCompare(String(b.item), 'ko'));
     for (const o of items) list.appendChild(buildChinaOrderCard(o));
@@ -9297,14 +9303,14 @@ function openChinaMatchConfirm(order, enteredInfo) {
     if (remaining > 0.001) {
       const remainingText = `${remaining}${enteredInfo.unit}`;
       document.getElementById('china-match-detail').textContent = `지금 ${enteredInfo.enteredValue}${enteredInfo.unit} 입력하셨어요 → ${remainingText} 부족해요`;
-      html += `<button onclick='resolveChinaMatch({action:"partial", receivedQty:"${enteredInfo.enteredValue}${enteredInfo.unit}", remainQty:"${remainingText}"})' style="border:none;background:var(--primary-dark);color:#fff;border-radius:8px;padding:10px;font-size:14px;font-weight:700;">✓ 맞아요, ${remainingText} 이월 처리</button>`;
+      html += `<button onclick='resolveChinaMatch({action:"partial", receivedQty:"${enteredInfo.enteredValue}${enteredInfo.unit}", remainQty:"${remainingText}"})' style="border:none;background:var(--primary-dark);color:#fff;border-radius:8px;padding:10px;font-size:14px;font-weight:700;">${remainingText} 이월 처리</button>`;
     } else {
       document.getElementById('china-match-detail').textContent = `지금 ${enteredInfo.enteredValue}${enteredInfo.unit} 입력하셨어요 → 발주량만큼 다 왔어요`;
-      html += `<button onclick='resolveChinaMatch({action:"full", receivedQty:"${enteredInfo.enteredValue}${enteredInfo.unit}"})' style="border:none;background:var(--primary-dark);color:#fff;border-radius:8px;padding:10px;font-size:14px;font-weight:700;">✓ 발주 다 왔어요 (완료처리)</button>`;
+      html += `<button onclick='resolveChinaMatch({action:"full", receivedQty:"${enteredInfo.enteredValue}${enteredInfo.unit}"})' style="border:none;background:var(--primary-dark);color:#fff;border-radius:8px;padding:10px;font-size:14px;font-weight:700;">입고 완료 처리</button>`;
     }
   } else {
     document.getElementById('china-match-detail').textContent = '';
-    html += `<button onclick='resolveChinaMatch({action:"full"})' style="border:none;background:var(--primary-dark);color:#fff;border-radius:8px;padding:10px;font-size:14px;font-weight:700;">발주 다 왔어요 (완료처리)</button>`;
+    html += `<button onclick='resolveChinaMatch({action:"full"})' style="border:none;background:var(--primary-dark);color:#fff;border-radius:8px;padding:10px;font-size:14px;font-weight:700;">입고 완료 처리</button>`;
   }
   html += `<button onclick='resolveChinaMatch({action:"none"})' style="border:none;background:none;color:var(--muted);padding:6px;font-size:13px;">이 발주랑 상관없음</button>`;
   actions.innerHTML = html;
@@ -9715,7 +9721,7 @@ function renderCustomerBuckets(list2) {
     groupDiv.innerHTML = `
       <div class="group-head" onclick="toggleGroup('${escAttr(k)}')">
         <div class="info">
-          <div class="name">${esc(cust)} <button onclick="event.stopPropagation();printPreShipmentSelected('${escAttr(cust)}')" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:6px;padding:3px 9px;font-size:11px;font-weight:600;margin-left:6px;">🖨 선수금용 명세서(체크한 것만)</button> ${pendingCount > 0 ? `<button onclick="event.stopPropagation();openCustomerShipList('${escAttr(cust)}')" style="border:none;background:#eaf3ec;color:#2f6b46;border-radius:6px;padding:3px 9px;font-size:11px;font-weight:600;margin-left:6px;">📦 출고 처리</button>` : ''}</div>
+          <div class="name">${esc(cust)} <button onclick="event.stopPropagation();printPreShipmentSelected('${escAttr(cust)}')" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:6px;padding:3px 9px;font-size:11px;font-weight:600;margin-left:6px;">선수금 명세서 (선택 건)</button> ${pendingCount > 0 ? `<button onclick="event.stopPropagation();openCustomerShipList('${escAttr(cust)}')" style="border:none;background:#eaf3ec;color:#2f6b46;border-radius:6px;padding:3px 9px;font-size:11px;font-weight:600;margin-left:6px;">출고 처리</button>` : ''}</div>
           <div class="sub">전체 ${items.length}건 · 진행중 ${pendingCount}건${remainLabel ? ` · ${remainLabel} 남음` : ` · ${qtyLabel}`}</div>
         </div>
         <div class="total"><div class="cnt">${isOpen ? '접기 ▲' : '펼치기 ▼'}</div></div>
