@@ -169,6 +169,34 @@
     #printArea .ledger-print th { background: #eee !important; color: #000 !important; }
     #printArea th { color: #1a5f8a; }
   }
+
+  /* ===== 모바일에서 보기/누르기 편하게 ===== */
+  html { -webkit-text-size-adjust: 100%; }
+  * { -webkit-tap-highlight-color: transparent; }
+  button, input, select, textarea, .group-head, .chip { touch-action: manipulation; } /* 누를 때 지연/더블탭 확대 방지 */
+  @media (pointer: coarse) {
+    /* 아이폰은 입력칸 글자가 16px보다 작으면 칸을 누를 때 화면이 확대돼버림 */
+    input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=file]), select, textarea { font-size: 16px !important; }
+    .btns button, .roll-row .btns button { padding: 8px 12px; font-size: 13px; min-height: 34px; margin-left: 0; }
+    .btns { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; }
+    .group-head .info button, .group-head .btns button { padding: 7px 11px !important; font-size: 12px !important; min-height: 32px; }
+  }
+  @media (max-width: 480px) {
+    .roll-row { flex-wrap: wrap; row-gap: 6px; }
+    .roll-row .btns { flex: 1 1 100%; justify-content: flex-start; margin-top: 0; }
+    .roll-row .btns button { flex: 1 1 auto; }
+    .group-head .name { font-size: 16px; }
+  }
+
+  /* 재고부족알림 칸 배치: 폰/태블릿은 1칸, 큰 화면은 2칸, 아주 넓은 화면은 3칸 (예전엔 폭에 맞춰 칸이 8-9개까지 늘어나서 보기 불편했음) */
+  .low-alert-grid { margin-top: 8px; display: grid; grid-template-columns: 1fr; gap: 8px; max-height: 320px; overflow-y: auto; padding-right: 2px; align-items: start; }
+  @media (min-width: 900px) { .low-alert-grid { grid-template-columns: 1fr 1fr; max-height: 460px; } }
+  @media (min-width: 1200px) { .low-alert-grid { grid-template-columns: 1fr 1fr 1fr; } } /* 아주 넓은 화면은 3칸 */
+
+  /* 탭이 6개라 폰에서 좁으면 글자가 잘리지 않게 옆으로 밀리게 함 */
+  .tabs { overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
+  .tabs::-webkit-scrollbar { display: none; }
+  .tab-btn { flex: 1 0 auto; white-space: nowrap; padding: 10px 8px; }
 </style>
 </head>
 <body>
@@ -187,7 +215,8 @@
   <h1 id="page-title">원단 재고관리</h1>
   <div class="stats" id="stats">불러오는 중...</div>
   <div class="tabs">
-    <button class="tab-btn active" id="tab-inv" onclick="switchTab('inv')">재고</button>
+    <button class="tab-btn active" id="tab-today" onclick="switchTab('today')">오늘</button>
+  <button class="tab-btn" id="tab-inv" onclick="switchTab('inv')">재고</button>
     <button class="tab-btn" id="tab-china" onclick="switchTab('china')">중국발주</button>
     <button class="tab-btn" id="tab-cost" onclick="switchTab('cost')">원가표</button>
     <button class="tab-btn" id="tab-order" onclick="switchTab('order')">이월장부</button>
@@ -1074,7 +1103,7 @@
 const PASSWORD = "3059";
 const ADMIN_PASSWORD = "9503"; // 매출/미수금 탭 전용 - 필요하면 이 값만 바꿔서 변경 가능
 const DATA_VERSION = "2026-08-03-v4"; // 재고/이월장부 씨앗 데이터를 바꿀 때마다 이 값을 새로 바꿔주세요
-const APP_CODE_VERSION = "2026-09-28-g"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
+const APP_CODE_VERSION = "2026-09-28-p"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
 const SCHEMA_STAMP = 2; // 서버 저장규칙이 확인하는 "최신 앱 도장" - 절대 자주 바꾸지 않음(이 값을 아는 코드만 저장 가능하게 서버에서 막을 때 씀)
 const CONFIRMED_EMPTY = '__CONFIRMED_EMPTY__'; // "서버가 확실하게 문서가 없다고 확인해줬다"는 걸 표시하는 특수값
                                                  // (한번도 확인 안 한 null과 구분해서, 그 사이 다른 사람이 첫 데이터를 만들었으면 충돌로 감지하기 위함)
@@ -1212,7 +1241,7 @@ let swatchInfo = []; // {id, cat, item, color, order, chinaCode}
 let nextSwatchId = 1;
 let invSortMode = 'swatch'; // name | swatch
 let editingSwatchKey = null;
-let currentTab = 'inv';
+let currentTab = 'today'; // 앱을 열면 "오늘" 화면부터 보임
 let activeCat = null;
 let orderStatusFilter = 'active'; // active | done
 let orderGroupMode = 'customer'; // customer | item
@@ -1372,7 +1401,7 @@ async function loadAll() {
           if (!doc.metadata.fromCache) { rollsFirstLoadDone = true; lastSnapshotJSON.rolls = CONFIRMED_EMPTY; }
           else console.warn('rolls 문서를 못 찾았어요 - 아직 서버 확인 전이라 잠시 기다립니다');
         }
-        loaded.rolls = true; render(); checkDone();
+        loaded.rolls = true; scheduleRender(); checkDone();
       }, (err) => { console.error(err); useFirebase = false; fallbackLoadAll().then(resolve); });
 
       db.collection('inventory').doc('costs').onSnapshot((doc) => {
@@ -1393,7 +1422,7 @@ async function loadAll() {
           if (!doc.metadata.fromCache) { costsFirstLoadDone = true; lastSnapshotJSON.costs = CONFIRMED_EMPTY; }
           else console.warn('costs 문서를 못 찾았어요 - 아직 서버 확인 전이라 잠시 기다립니다');
         }
-        loaded.costs = true; render(); checkDone();
+        loaded.costs = true; scheduleRender(); checkDone();
       });
 
       db.collection('inventory').doc('settings').onSnapshot((doc) => {
@@ -1414,7 +1443,7 @@ async function loadAll() {
           if (!doc.metadata.fromCache) { settingsFirstLoadDone = true; lastSnapshotJSON.settings = CONFIRMED_EMPTY; }
           else console.warn('settings 문서를 못 찾았어요 - 아직 서버 확인 전이라 잠시 기다립니다');
         }
-        loaded.settings = true; updateRateBar(); render(); checkDone();
+        loaded.settings = true; updateRateBar(); scheduleRender(); checkDone();
       });
 
       db.collection('inventory').doc('orders').onSnapshot((doc) => {
@@ -1431,7 +1460,7 @@ async function loadAll() {
           if (!doc.metadata.fromCache) { ordersFirstLoadDone = true; lastSnapshotJSON.orders = CONFIRMED_EMPTY; }
           else console.warn('orders 문서를 못 찾았어요 - 아직 서버 확인 전이라 잠시 기다립니다');
         }
-        loaded.orders = true; render(); checkDone();
+        loaded.orders = true; scheduleRender(); checkDone();
       });
 
       db.collection('inventory').doc('chinaOrders').onSnapshot((doc) => {
@@ -1449,7 +1478,7 @@ async function loadAll() {
           if (!doc.metadata.fromCache) { chinaOrdersFirstLoadDone = true; lastSnapshotJSON.chinaOrders = CONFIRMED_EMPTY; }
           else console.warn('chinaOrders 문서를 못 찾았어요 - 아직 서버 확인 전이라 잠시 기다립니다');
         }
-        loaded.chinaOrders = true; render(); checkDone();
+        loaded.chinaOrders = true; scheduleRender(); checkDone();
       });
 
       db.collection('inventory').doc('chinaProductMap').onSnapshot((doc) => {
@@ -1465,7 +1494,7 @@ async function loadAll() {
           if (!doc.metadata.fromCache) { chinaProductMapFirstLoadDone = true; lastSnapshotJSON.chinaProductMap = CONFIRMED_EMPTY; }
           else console.warn('chinaProductMap 문서를 못 찾았어요 - 아직 서버 확인 전이라 잠시 기다립니다');
         }
-        loaded.chinaMap = true; render(); checkDone();
+        loaded.chinaMap = true; scheduleRender(); checkDone();
       });
 
       db.collection('inventory').doc('swatchInfo').onSnapshot((doc) => {
@@ -1478,7 +1507,7 @@ async function loadAll() {
           swatchInfoFirstLoadDone = true;
           lastSnapshotJSON.swatchInfo = CONFIRMED_EMPTY;
         }
-        loaded.swatch = true; render(); checkDone();
+        loaded.swatch = true; scheduleRender(); checkDone();
       });
 
       db.collection('inventory').doc('shipmentLog').onSnapshot((doc) => {
@@ -1493,7 +1522,7 @@ async function loadAll() {
           shipmentLogFirstLoadDone = true;
           lastSnapshotJSON.shipmentLog = CONFIRMED_EMPTY;
         }
-        loaded.log = true; render(); checkDone();
+        loaded.log = true; scheduleRender(); checkDone();
       });
 
       db.collection('inventory').doc('priceBook').onSnapshot((doc) => {
@@ -1506,7 +1535,7 @@ async function loadAll() {
           priceBookFirstLoadDone = true;
           lastSnapshotJSON.priceBook = CONFIRMED_EMPTY;
         }
-        loaded.price = true; render(); checkDone();
+        loaded.price = true; scheduleRender(); checkDone();
       });
 
       db.collection('inventory').doc('depositMemos').onSnapshot((doc) => {
@@ -1519,7 +1548,7 @@ async function loadAll() {
           depositMemosFirstLoadDone = true;
           lastSnapshotJSON.depositMemos = CONFIRMED_EMPTY;
         }
-        loaded.advance = true; render(); checkDone();
+        loaded.advance = true; scheduleRender(); checkDone();
       });
 
       db.collection('inventory').doc('customerNotes').onSnapshot((doc) => {
@@ -1531,7 +1560,7 @@ async function loadAll() {
           customerNotesFirstLoadDone = true;
           lastSnapshotJSON.customerNotes = CONFIRMED_EMPTY;
         }
-        loaded.custNotes = true; render(); checkDone();
+        loaded.custNotes = true; scheduleRender(); checkDone();
       });
 
       db.collection('inventory').doc('customerList').onSnapshot((doc) => {
@@ -1543,7 +1572,7 @@ async function loadAll() {
           customerListFirstLoadDone = true;
           lastSnapshotJSON.customerList = CONFIRMED_EMPTY;
         }
-        loaded.custList = true; render(); checkDone();
+        loaded.custList = true; scheduleRender(); checkDone();
       });
 
       db.collection('inventory').doc('expenses').onSnapshot((doc) => {
@@ -1556,7 +1585,7 @@ async function loadAll() {
           expensesFirstLoadDone = true;
           lastSnapshotJSON.expenses = CONFIRMED_EMPTY;
         }
-        loaded.expenses = true; render(); checkDone();
+        loaded.expenses = true; scheduleRender(); checkDone();
       });
     });
   }
@@ -1967,6 +1996,19 @@ function updateRateBar() {
 }
 
 // ---------- 탭 ----------
+function applyTabChrome(tab) {
+  for (const t of ['today', 'inv', 'china', 'cost', 'order', 'sales']) document.getElementById('tab-' + t).classList.toggle('active', tab === t);
+  const titles = { today: '오늘', inv: '원단 재고관리', cost: '원단 원가표', order: '이월장부(발주현황)', sales: '매출/미수금 (관리자)', china: '중국원단발주' };
+  const placeholders = { today: '', inv: '품번(품목) 또는 칼라 검색', cost: '품목(품번) 검색', order: '거래처 또는 품목 검색', sales: '거래처 또는 품목 검색', china: '품명, 중국품번, 컬러 검색' };
+  const fabLabels = { today: '', inv: '+ 입고', cost: '+ 원가 등록', order: '+ 발주 등록', sales: '', china: '+ 발주추가' };
+  document.getElementById('page-title').textContent = titles[tab];
+  document.getElementById('search').placeholder = placeholders[tab];
+  document.getElementById('fabAdd').textContent = fabLabels[tab];
+  document.getElementById('fabAdd').style.display = (tab === 'sales' || tab === 'today') ? 'none' : '';
+  const controls = document.querySelector('.controls');
+  if (controls) controls.style.display = tab === 'today' ? 'none' : ''; // 오늘 화면엔 검색창/분류칩이 필요 없음
+}
+applyTabChrome('today');
 function switchTab(tab) {
   if (tab === 'sales' && !salesAdminUnlocked) {
     const pw = prompt('매출/미수금은 관리자 전용입니다. 관리자 비밀번호를 입력하세요.');
@@ -1983,18 +2025,7 @@ function switchTab(tab) {
   const ddManage = document.getElementById('sales-dd-manage');
   if (ddReports) ddReports.classList.add('hidden');
   if (ddManage) ddManage.classList.add('hidden');
-  document.getElementById('tab-inv').classList.toggle('active', tab === 'inv');
-  document.getElementById('tab-cost').classList.toggle('active', tab === 'cost');
-  document.getElementById('tab-order').classList.toggle('active', tab === 'order');
-  document.getElementById('tab-sales').classList.toggle('active', tab === 'sales');
-  document.getElementById('tab-china').classList.toggle('active', tab === 'china');
-  const titles = { inv: '원단 재고관리', cost: '원단 원가표', order: '이월장부(발주현황)', sales: '매출/미수금 (관리자)', china: '중국원단발주' };
-  const placeholders = { inv: '품번(품목) 또는 칼라 검색', cost: '품목(품번) 검색', order: '거래처 또는 품목 검색', sales: '거래처 또는 품목 검색', china: '품명, 중국품번, 컬러 검색' };
-  const fabLabels = { inv: '+ 입고', cost: '+ 원가 등록', order: '+ 발주 등록', sales: '', china: '+ 발주추가' };
-  document.getElementById('page-title').textContent = titles[tab];
-  document.getElementById('search').placeholder = placeholders[tab];
-  document.getElementById('fabAdd').textContent = fabLabels[tab];
-  document.getElementById('fabAdd').style.display = tab === 'sales' ? 'none' : '';
+  applyTabChrome(tab);
   activeCat = null;
   searchTerm = '';
   document.getElementById('search').value = '';
@@ -2012,7 +2043,8 @@ function esc(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').re
 function escAttr(s) { return String(s).replace(/'/g, "\\'"); }
 function escJsonAttr(obj) { return JSON.stringify(obj).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
 
-document.getElementById('search').addEventListener('input', e => { searchTerm = e.target.value; if (searchTerm.trim()) { activeCat = null; openGroups.delete('lowstock-alert'); } render(); showSearchSuggestions(e.target); });
+let _searchRenderTimer = null;
+document.getElementById('search').addEventListener('input', e => { searchTerm = e.target.value; if (searchTerm.trim()) { activeCat = null; openGroups.delete('lowstock-alert'); } clearTimeout(_searchRenderTimer); _searchRenderTimer = setTimeout(render, 150); showSearchSuggestions(e.target); }); // 글자 하나마다 화면 전체를 다시 그리지 않고, 타이핑이 잠깐 멈추면 한 번만 그림
 document.getElementById('search').addEventListener('focus', e => { showSearchSuggestions(e.target); });
 document.getElementById('search').addEventListener('blur', () => { hideItemSuggestionsDelayed(); });
 function showSearchSuggestions(inputEl) {
@@ -2030,9 +2062,164 @@ function showSearchSuggestions(inputEl) {
   showSuggestionsGeneric(inputEl, candidates);
 }
 
+let _renderTimer = null;
+function scheduleRender() {
+  // 데이터 리스너 14개가 시작할 때/저장할 때마다 각자 화면 전체를 다시 그리던 것을, 아주 짧은 시간 안에 여러 번 불리면 한 번만 그리게 묶음
+  if (_renderTimer) return;
+  _renderTimer = setTimeout(() => { _renderTimer = null; render(); }, 40);
+}
+
+// ===== 오늘 화면 (직원은 금액 없이, 관리자 잠금을 풀면 금액/수금 정보까지) =====
+function getTodaySummary() {
+  const today = todayStr();
+  const isShipment = e => !e.isReturn && !e.isDefect && !e.isFee && !e.manualClose && e.item !== '이월 미수금' && (e.yardsShipped || e.amount);
+  const ships = shipmentLog.filter(e => e.date === today && isShipment(e));
+  const shipQty = Math.round(ships.reduce((s, e) => s + (e.yardsShipped || e.amount || 0), 0) * 100) / 100;
+  const waiting = chinaOrders.filter(o => o.status !== 'received');
+  return {
+    today, shipCount: ships.length, shipQty,
+    arrivingToday: waiting.filter(o => o.arrivalDate === today),
+    overdue: waiting.filter(o => o.arrivalDate && o.arrivalDate < today).sort((a, b) => String(a.arrivalDate).localeCompare(String(b.arrivalDate)))
+  };
+}
+function getTodayMoney() {
+  // 관리자 전용 - 월간 리포트와 같은 기준(공급가액 - 공제 + 추가금, 반품/불량 차감)으로 오늘 매출/입금을 셈
+  const today = todayStr();
+  let sales = 0, cash = 0, online = 0;
+  for (const e of shipmentLog) {
+    if (e.item !== '이월 미수금' && e.date === today) {
+      if (e.saleAmount != null && !e.isReturn && !e.isDefect) sales += (e.supplyAmount != null ? e.supplyAmount : e.saleAmount) - (e.discount || 0) + (e.extraAmount || 0);
+      if ((e.isReturn || e.isDefect) && e.deductAmount != null) sales -= e.deductAmount;
+    }
+    for (const p of (e.payments || [])) {
+      if (p.date !== today) continue;
+      if ((p.method || 'cash') === 'cash') cash += p.amount; else online += p.amount;
+    }
+  }
+  return { sales, cash, online };
+}
+function getTodayCollectList() {
+  // 관리자 전용 - 미수금이 남은 거래처를 "마지막 입금이 오래된 순"으로. 정리(보관함)된 기록까지 합쳐서 계산함
+  return withFullArchiveMerged(() => {
+    const lastPay = new Map(), lastSale = new Map(), names = new Set();
+    for (const e of shipmentLog) {
+      if (!e.customer || e.isSample) continue;
+      const c = String(e.customer).trim();
+      names.add(c);
+      if (e.saleAmount != null && e.item !== '이월 미수금' && !e.isReturn && !e.isDefect && !(lastSale.get(c) >= e.date)) lastSale.set(c, e.date);
+      for (const p of (e.payments || [])) if (!(lastPay.get(c) >= p.date)) lastPay.set(c, p.date);
+    }
+    const now = new Date();
+    const today0 = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const daysSince = ds => { const d = ds ? parseKDate(ds) : null; return d ? Math.max(0, Math.round((today0 - d) / 86400000)) : null; };
+    const rows = [];
+    for (const c of names) {
+      const unpaid = getCustomerTrueUnpaid(c);
+      if (unpaid <= 0) continue;
+      const lp = lastPay.get(c) || null;
+      rows.push({ customer: c, unpaid, noPay: !lp, days: daysSince(lp || lastSale.get(c)) });
+    }
+    rows.sort((a, b) => (b.days == null ? -1 : b.days) - (a.days == null ? -1 : a.days) || b.unpaid - a.unpaid);
+    return rows;
+  });
+}
+function unlockTodayAdmin() {
+  if (!salesAdminUnlocked) {
+    const pw = prompt('매출/미수금은 관리자 전용입니다. 관리자 비밀번호를 입력하세요.');
+    if (pw !== ADMIN_PASSWORD) { if (pw !== null) showToast('비밀번호가 틀렸습니다'); return; }
+    salesAdminUnlocked = true;
+  }
+  render();
+}
+function lockTodayAdmin() { salesAdminUnlocked = false; render(); }
+function todayGoInv() { switchTab('inv'); openRollAddModal(); }
+function todayGoLowStock() { switchTab('inv'); openGroups.add('lowstock-alert'); render(); }
+function todayGoSales() { if (!salesAdminUnlocked) return; switchTab('sales'); openSaleAddModal(); }
+function todayGoUnpaid() { if (!salesAdminUnlocked) return; switchTab('sales'); showUnpaidSummary(); }
+function todayGoLedger(customer) { if (!salesAdminUnlocked) return; switchTab('sales'); showCustomerLedger(customer); }
+function renderToday() {
+  const list = document.getElementById('list');
+  document.getElementById('chipRow').innerHTML = '';
+  const s = getTodaySummary();
+  const parts = s.today.split('.');
+  const dateLabel = `${parseInt(parts[1])}/${parseInt(parts[2])}(${['일', '월', '화', '수', '목', '금', '토'][new Date().getDay()]})`;
+  document.getElementById('stats').innerHTML = `<span>${dateLabel}</span><span>오늘 출고 ${s.shipCount}건 · ${s.shipQty.toLocaleString()}y</span>`;
+  const card = 'background:#fff; border:1px solid var(--border); border-radius:12px; padding:12px 14px; margin-bottom:10px;';
+  const tile = 'flex:1; min-width:0; background:#fff; border:1px solid var(--border); border-radius:12px; padding:10px 12px;';
+  const muted = 'font-size:12px; color:var(--muted);';
+  const adminTag = '<span style="font-size:11px; background:#eaf3ec; color:#2f6b46; border-radius:4px; padding:1px 6px; margin-left:4px; font-weight:600;">관리자만</span>';
+  const head = (title, extra) => `<div style="display:flex; align-items:center; gap:6px; margin-bottom:6px;"><span style="font-size:15px; font-weight:700;">${title}</span>${extra || ''}</div>`;
+  const row = (left, right) => `<div style="display:flex; justify-content:space-between; align-items:center; gap:8px; padding:8px 0; border-top:1px solid var(--border);">${left}${right}</div>`;
+  const bigBtn = (label, onclick, bg, fg) => `<button onclick="${onclick}" style="flex:1; border:none; background:${bg}; color:${fg}; border-radius:10px; padding:11px 6px; font-size:14px; font-weight:700; cursor:pointer;">${label}</button>`;
+  let html = '';
+
+  // 위쪽 요약 칸 (수량까지는 직원도 봄)
+  html += `<div style="display:flex; gap:8px; margin-bottom:10px;">
+    <div style="${tile}"><div style="${muted}">오늘 출고</div><div style="font-size:19px; font-weight:800; margin-top:2px;">${s.shipCount}건</div><div style="${muted}">${s.shipQty.toLocaleString()}y</div></div>
+    <div style="${tile}"><div style="${muted}">도착 예정 발주</div><div style="font-size:19px; font-weight:800; margin-top:2px;">${s.arrivingToday.length}건</div><div style="${muted}">${s.overdue.length > 0 ? `<span style="color:var(--danger); font-weight:700;">지연 ${s.overdue.length}건</span>` : '지연 없음'}</div></div>
+  </div>`;
+  if (salesAdminUnlocked) {
+    const m = getTodayMoney();
+    html += `<div style="display:flex; gap:8px; margin-bottom:10px;">
+      <div style="${tile}"><div style="${muted}">오늘 매출${adminTag}</div><div style="font-size:17px; font-weight:800; margin-top:2px;">${Math.round(m.sales).toLocaleString()}원</div><div style="${muted}">세금 별도</div></div>
+      <div style="${tile}"><div style="${muted}">오늘 입금${adminTag}</div><div style="font-size:17px; font-weight:800; margin-top:2px;">${Math.round(m.cash + m.online).toLocaleString()}원</div><div style="${muted}">현금 ${Math.round(m.cash).toLocaleString()} · 온라인 ${Math.round(m.online).toLocaleString()}</div></div>
+    </div>`;
+  }
+
+  // 도착하는 중국발주
+  const arrivals = s.arrivingToday.concat(s.overdue);
+  html += `<div style="${card}">${head('🚚 도착하는 중국발주', `<span style="${muted}">${arrivals.length}건</span>`)}`;
+  if (arrivals.length === 0) html += `<div style="${muted} padding:4px 0;">오늘 도착 예정이거나 지연된 발주가 없어요</div>`;
+  for (const o of arrivals) {
+    const late = o.arrivalDate < s.today;
+    html += row(`<div style="min-width:0;"><div style="font-size:14px; font-weight:600;">${esc(o.item)} ${esc(o.color || '')}</div><div style="${muted}">${esc(o.qty)}${o.urgent ? ' · <b style="color:var(--danger);">급송</b>' : ''}${late ? ` · <span style="color:var(--danger); font-weight:700;">${formatChinaArrivalLabel(o.arrivalDate)} 도착 예정이었어요</span>` : ''}</div></div>`,
+      `<button onclick="openChinaReceiveModal(${o.id})" style="flex:none; border:none; background:#dbe9f0; color:var(--primary-dark); border-radius:8px; padding:8px 12px; font-size:13px; font-weight:700;">입고 처리</button>`);
+  }
+  html += `</div>`;
+
+  // 재고 부족
+  const alerts = getLowStockAlerts().slice().sort((a, b) => ((a.pending && a.pending.length) ? 1 : 0) - ((b.pending && b.pending.length) ? 1 : 0) || a.qty - b.qty);
+  const notOrdered = alerts.filter(a => !(a.pending && a.pending.length)).length;
+  html += `<div style="${card}">${head('⚠️ 재고 부족', `<span style="${muted}">${alerts.length}건${alerts.length > 0 ? ` · 미발주 ${notOrdered}건` : ''}</span>`)}`;
+  if (alerts.length === 0) html += `<div style="${muted} padding:4px 0;">재고가 부족한 컬러가 없어요</div>`;
+  for (const a of alerts.slice(0, 5)) {
+    const pend = a.pending && a.pending.length > 0;
+    html += row(`<div style="min-width:0;"><div style="font-size:14px; font-weight:600;">${esc(a.item)} ${esc(a.color)} <span style="color:${a.qty < 50 ? 'var(--danger)' : '#a15c1e'}; font-weight:800;">${a.qty}y${a.qty < 50 ? ' 위험' : ''}</span></div><div style="${muted}">최근 30일 ${a.shippedRecently}y 나감${pend ? ` · <span style="color:#2f6b46; font-weight:700;">🚚 발주중 ${esc(a.pending[0].qty)}${a.pending[0].arrivalDate ? ` (${formatChinaArrivalLabel(a.pending[0].arrivalDate)} 도착)` : ''}</span>` : ''}</div></div>`,
+      `<button onclick="openChinaOrderAddModalFor('${escAttr(a.item)}','${escAttr(a.color)}')" style="flex:none; border:none; background:${pend ? '#eee' : '#fff3d6'}; color:${pend ? '#555' : '#a15c1e'}; border-radius:8px; padding:8px 12px; font-size:13px; font-weight:700;">${pend ? '추가 발주' : '발주하기'}</button>`);
+  }
+  if (alerts.length > 5) html += `<div onclick="todayGoLowStock()" style="${muted} padding-top:8px; border-top:1px solid var(--border); cursor:pointer;">전체 ${alerts.length}건 보기 ▸</div>`;
+  html += `</div>`;
+
+  // 관리자 전용: 수금할 거래처 / 직원에게는 잠금 안내만
+  if (salesAdminUnlocked) {
+    const rows = getTodayCollectList();
+    html += `<div style="${card}">${head('💰 수금이 필요한 거래처', `${adminTag}<span style="${muted}">마지막 입금이 오래된 순</span>`)}`;
+    if (rows.length === 0) html += `<div style="${muted} padding:4px 0;">미수금이 남은 거래처가 없어요</div>`;
+    for (const r of rows.slice(0, 5)) {
+      const dcolor = r.days != null && r.days >= 30 ? 'var(--danger)' : (r.days != null && r.days >= 14 ? '#a15c1e' : 'var(--muted)');
+      const dtext = r.days == null ? '' : (r.noPay ? `입금 기록 없음 · 마지막 거래 ${r.days}일 전` : `마지막 입금 ${r.days}일 전`);
+      html += row(`<div onclick="todayGoLedger('${escAttr(r.customer)}')" style="min-width:0; cursor:pointer;"><div style="font-size:14px; font-weight:600;">${esc(r.customer)}</div><div style="font-size:12px; color:${dcolor};">${dtext}</div></div>`,
+        `<div style="flex:none; font-size:15px; font-weight:800;">${Math.round(r.unpaid).toLocaleString()}원</div>`);
+    }
+    if (rows.length > 5) html += `<div onclick="todayGoUnpaid()" style="${muted} padding-top:8px; border-top:1px solid var(--border); cursor:pointer;">전체 ${rows.length}곳 보기 ▸</div>`;
+    html += `</div>`;
+  } else {
+    html += `<div style="${card} display:flex; align-items:center; justify-content:space-between; gap:10px;"><div style="${muted}">🔒 매출, 입금, 수금 정보는 관리자만 볼 수 있어요</div><button onclick="unlockTodayAdmin()" style="flex:none; border:1px solid var(--border); background:#fff; color:var(--text); border-radius:8px; padding:8px 12px; font-size:13px; font-weight:700;">관리자 정보 보기</button></div>`;
+  }
+
+  // 빠른 작업
+  html += `<div style="display:flex; gap:8px; margin-bottom:10px;">
+    ${bigBtn('+ 입고 등록', 'todayGoInv()', 'var(--primary-dark)', '#fff')}
+    ${bigBtn('+ 중국발주 등록', 'openChinaOrderAddModal()', '#dbe9f0', 'var(--primary-dark)')}
+    ${salesAdminUnlocked ? bigBtn('+ 새 매출', 'todayGoSales()', '#eaf3ec', '#2f6b46') : ''}
+  </div>`;
+  if (salesAdminUnlocked) html += `<div style="text-align:center; margin-bottom:14px;"><button onclick="lockTodayAdmin()" style="border:none; background:none; color:var(--muted); font-size:12px; text-decoration:underline; cursor:pointer;">🔒 관리자 정보 다시 잠그기</button></div>`;
+  list.innerHTML = html;
+}
 function render() {
   updateItemNameList();
-  if (currentTab === 'inv') renderInv();
+  if (currentTab === 'today') renderToday();
+  else if (currentTab === 'inv') renderInv();
   else if (currentTab === 'cost') renderCost();
   else if (currentTab === 'order') renderOrders();
   else if (currentTab === 'china') renderChinaOrders();
@@ -2210,7 +2397,7 @@ function buildGroups() {
   // 재고(rolls)는 하나도 없지만, 스왓치 번호/중국품번이 등록된 컬러는 카드가 계속 보이게 빈 그룹으로 추가함
   // (재고 0y를 자리표시로 남기지 않는 대신, 이렇게 등록정보 기준으로 카드를 유지함)
   for (const s of swatchInfo) {
-    if (s.order == null && s.chinaCode == null) continue; // 번호도 품번도 없는 빈 스왓치 정보는 카드로 안 만듦
+    if (s.order == null && s.chinaCode == null && !s.keepCard) continue; // 번호도 품번도 카드유지 표시도 없는 빈 스왓치 정보는 카드로 안 만듦
     if (s.color == null || !s.item) continue;
     const k = (s.cat || '') + '|' + s.item + '|' + s.color;
     if (!map.has(k)) map.set(k, { cat: s.cat || '', item: s.item, color: s.color, rolls: [] });
@@ -2277,6 +2464,43 @@ function toggleSortMode() {
   render();
 }
 
+// 이미 컬러 이름이 바뀌어 있는 것들 - 재고부족알림이 예전 이름으로 찍힌 출고 기록을 새 이름 것으로 이어서 보게 함 (데이터는 안 건드리고 알림 계산에서만 이어줌)
+const KNOWN_COLOR_RENAMES = [
+  { from: '베리|#베이지', to: '베리|#1베이지' },
+  { from: '베리|#밤색', to: '베리|#2브라운' },
+  { from: '베리|#차콜', to: '베리|#3차콜' }
+];
+function recordColorRename(oldItem, oldColor, newItem, newColor) {
+  // 컬러 이름이 통째로 바뀐 걸 기록해둠 - 재고부족알림이 옛 이름으로 찍힌 출고 기록을 새 이름 것으로 이어서 세기 위해서
+  // (출고 기록 자체는 명세서에 찍힌 이름이 있으니 안 건드림)
+  const from = `${String(oldItem).trim()}|${String(oldColor).trim()}`;
+  const to = `${String(newItem).trim()}|${String(newColor).trim()}`;
+  if (from === to) return false;
+  let list = (settings.colorRenames || []).filter(r => r.from !== from && r.from !== to); // 같은 이름을 다시 바꾸거나 되돌린 경우 정리
+  list.push({ from, to });
+  if (list.length > 300) list = list.slice(-300);
+  const dis = (settings.dismissedLowStock || []).map(k => k === from ? to : k); // 이미 "알림 끄기" 해둔 컬러면 새 이름에도 그대로 이어짐
+  settings = { ...settings, colorRenames: list, dismissedLowStock: Array.from(new Set(dis)) };
+  return true;
+}
+function resolveRenamedKey(key, liveKeys) {
+  // 옛 이름 key를 지금 쓰는 이름으로 따라감 (여러 번 바뀌었어도 끝까지). 지금 재고가 있는 이름이면 거기서 멈춤(그 이름을 다시 쓰는 경우 섞이지 않게)
+  const map = new Map(KNOWN_COLOR_RENAMES.concat(settings.colorRenames || []).map(r => [r.from, r.to]));
+  let cur = key;
+  const seen = new Set();
+  while (map.has(cur) && !seen.has(cur) && !liveKeys.has(cur)) { seen.add(cur); cur = map.get(cur); }
+  return cur;
+}
+function migrateColorMeta(oldItem, oldColor, newItem, newColor) {
+  // 컬러 이름을 통째로 바꿨을 때 순번/중국품번(스왓치)과 단가표도 새 이름으로 따라가게 함. 새 이름 쪽에 이미 정보가 있으면 그쪽을 존중하고 안 건드림
+  const oi = String(oldItem).trim(), oc = String(oldColor).trim(), ni = String(newItem).trim(), nc = String(newColor).trim();
+  let swatchChanged = false, priceChanged = false;
+  const hasSw = swatchInfo.some(s => String(s.item).trim() === ni && s.color != null && String(s.color).trim() === nc);
+  if (!hasSw) for (const s of swatchInfo) if (String(s.item).trim() === oi && s.color != null && String(s.color).trim() === oc) { s.item = ni; s.color = nc; swatchChanged = true; }
+  const hasPb = priceBook.some(p => String(p.item).trim() === ni && String(p.color).trim() === nc);
+  if (!hasPb) for (const p of priceBook) if (String(p.item).trim() === oi && String(p.color).trim() === oc) { p.item = ni; p.color = nc; priceChanged = true; }
+  return { swatchChanged, priceChanged };
+}
 function getLowStockAlerts() {
   const LOW_STOCK_THRESHOLD = 200; // y 기준
   const RECENT_DAYS = 30;
@@ -2295,8 +2519,8 @@ function getLowStockAlerts() {
     if (!catMap.has(k)) catMap.set(k, r.cat);
   }
   // 최근 30일 출고 횟수(반품/불량/추가금 제외) + 출고량 합계
-  const shipCountMap = new Map();
-  const shipQtyMap = new Map();
+  let shipCountMap = new Map();
+  let shipQtyMap = new Map();
   for (const e of shipmentLog) {
     if (e.isReturn || e.isDefect || e.isFee || e.manualClose) continue;
     if (!e.date || e.date < cutoffStr) continue;
@@ -2304,6 +2528,11 @@ function getLowStockAlerts() {
     shipCountMap.set(k, (shipCountMap.get(k) || 0) + 1);
     shipQtyMap.set(k, (shipQtyMap.get(k) || 0) + (e.yardsShipped || e.amount || 0));
   }
+  // 컬러 이름이 바뀐 적이 있으면, 옛 이름으로 찍힌 출고 기록을 새 이름 것으로 이어서 셈 (안 그러면 새 이름은 출고 이력 0이라 알림이 안 뜨고, 옛 이름은 "완전품절"로 잘못 뜸)
+  const liveKeys = new Set(stockMap.keys());
+  const remapSum = (m) => { const out = new Map(); for (const [k, v] of m) { const nk = resolveRenamedKey(k, liveKeys); out.set(nk, (out.get(nk) || 0) + v); } return out; };
+  shipCountMap = remapSum(shipCountMap);
+  shipQtyMap = remapSum(shipQtyMap);
   // 재고가 완전히 다 소진되면 그 롤 자체가 정리(삭제)돼서 rolls에서 안 보이게 되는데,
   // 그러면 위 stockMap 순회에서 아예 빠져서 "제일 급한 완전품절" 상황을 알림에서 놓치게 됨 - 그래서 여기서 0으로 보정해 넣어줌
   for (const k of shipCountMap.keys()) {
@@ -2315,7 +2544,16 @@ function getLowStockAlerts() {
     }
   }
 
-  const dismissed = new Set(settings.dismissedLowStock || []);
+  const dismissed = new Set((settings.dismissedLowStock || []).map(k => resolveRenamedKey(k, liveKeys)));
+  // 아직 안 들어온(대기중) 중국발주를 컬러별로 모아둠 - 알림에 "이미 발주함"을 보여주려고. 컬러 이름이 바뀌었으면 새 이름 쪽으로 이어붙임
+  const pendingMap = new Map();
+  for (const o of chinaOrders) {
+    if (o.status === 'received') continue;
+    const rk = resolveRenamedKey(`${String(o.item).trim()}|${String(o.color).trim()}`, liveKeys);
+    if (!pendingMap.has(rk)) pendingMap.set(rk, []);
+    pendingMap.get(rk).push(o);
+  }
+  for (const arr of pendingMap.values()) arr.sort((a, b) => String(a.arrivalDate || '99.99.99').localeCompare(String(b.arrivalDate || '99.99.99')));
   const alerts = [];
   for (const [k, qty] of stockMap) {
     if (qty > LOW_STOCK_THRESHOLD) continue;
@@ -2323,7 +2561,7 @@ function getLowStockAlerts() {
     if (dismissed.has(k)) continue;
     const [item, color] = k.split('|');
     const sw = findSwatchFor(catMap.get(k), item, color);
-    alerts.push({ key: k, item, color, qty: Math.round(qty * 100) / 100, shippedRecently: Math.round((shipQtyMap.get(k) || 0) * 100) / 100, swOrder: sw && sw.order != null ? sw.order : null });
+    alerts.push({ key: k, item, color, qty: Math.round(qty * 100) / 100, shippedRecently: Math.round((shipQtyMap.get(k) || 0) * 100) / 100, swOrder: sw && sw.order != null ? sw.order : null, pending: pendingMap.get(k) || [] });
   }
   alerts.sort((a, b) => a.item.localeCompare(b.item, 'ko') || (a.swOrder ?? Infinity) - (b.swOrder ?? Infinity) || a.color.localeCompare(b.color, 'ko')); // 재고 탭이랑 같은 순서(품목명 가나다/숫자 순)
   return alerts;
@@ -2338,6 +2576,7 @@ function goToLowStockItem(item, color) {
 }
 function renderLowStockAlerts(list) {
   const alerts = getLowStockAlerts();
+  const notOrdered = alerts.filter(a => !(a.pending && a.pending.length)).length; // 아직 발주 안 한 것만 따로 셈
   const dismissedList = settings.dismissedLowStock || [];
   if (alerts.length === 0 && dismissedList.length === 0) return;
   const gk = 'lowstock-alert';
@@ -2359,11 +2598,11 @@ function renderLowStockAlerts(list) {
   banner.style.cssText = 'background:#fff3d6; border:1px solid #e8c98a; border-radius:10px; padding:10px 12px; margin-bottom:10px;';
   banner.innerHTML = `
     <div onclick="toggleGroup('${gk}')" style="display:flex; justify-content:space-between; align-items:center; cursor:pointer;">
-      <div style="font-weight:700; font-size:13px; color:#a15c1e;">⚠️ 재고 부족 알림 (${alerts.length}건)</div>
+      <div style="font-weight:700; font-size:13px; color:#a15c1e;">⚠️ 재고 부족 알림 (${alerts.length}건${notOrdered < alerts.length ? ` · 미발주 ${notOrdered}건` : ''})</div>
       <div style="font-size:12px; color:#a15c1e;">${isOpen ? '접기 ▲' : '펼치기 ▼'}</div>
     </div>
     ${isOpen ? `
-      <div style="margin-top:8px; display:grid; grid-template-columns:repeat(auto-fit, minmax(190px, 1fr)); gap:8px; max-height:320px; overflow-y:auto; padding-right:2px;">
+      <div class="low-alert-grid">
       ${itemGroupsSorted.map(g => `
         <div style="background:#fff; border-radius:8px; padding:8px 10px;">
           <div style="font-weight:700; font-size:14px; margin-bottom:4px;">${esc(g.item)}</div>
@@ -2376,6 +2615,8 @@ function renderLowStockAlerts(list) {
                 <div style="cursor:pointer; flex:1;" onclick="event.stopPropagation();goToLowStockItem('${escAttr(a.item)}','${escAttr(a.color)}')">
                   <div style="font-size:13px; font-weight:600;">${esc(a.color)}${a.swOrder != null ? ` <span style="font-weight:400; color:var(--muted);">(${a.swOrder}번)</span>` : ''}</div>
                   <div style="font-size:11px; color:var(--muted); margin-top:1px;">최근 30일 ${a.shippedRecently}y 나감</div>
+                  ${a.pending && a.pending.length > 0 ? `<div style="font-size:11px; color:#2f6b46; font-weight:600; margin-top:2px;">🚚 발주중 ${a.pending.slice(0, 2).map(o => `${esc(o.qty)}${o.arrivalDate ? ` (${formatChinaArrivalLabel(o.arrivalDate)} 도착)` : ''}`).join(' · ')}${a.pending.length > 2 ? ` 외 ${a.pending.length - 2}건` : ''}</div>` : ''}
+                  <div style="margin-top:4px;"><button onclick="event.stopPropagation();openChinaOrderAddModalFor('${escAttr(a.item)}','${escAttr(a.color)}')" style="border:none;background:#eaf3ec;color:#2f6b46;border-radius:6px;padding:3px 8px;font-size:11px;font-weight:600;">${a.pending && a.pending.length > 0 ? '추가 발주' : '발주하기'}</button></div>
                 </div>
                 <div style="text-align:right; margin-right:8px;">
                   <div style="font-size:16px; font-weight:800; color:${qtyColor};">${a.qty}y</div>
@@ -2447,7 +2688,7 @@ function renderInv() {
   if (activeCat !== null) groups = groups.filter(g => g.cat === activeCat);
   if (searchTerm.trim()) {
     const t = searchTerm.trim();
-    groups = groups.filter(g => matchesSearchWords(t, g.item, g.color, ...g.rolls.filter(r => !r.defective).map(r => r.note))); // 탕 메모 내용으로도 찾을 수 있게
+    groups = groups.filter(g => matchesSearchWords(t, g.item, g.color, ...g.rolls.filter(r => !r.defective).flatMap(r => [r.note, r.rollNote]))); // 탕 메모 내용으로도 찾을 수 있게
   }
   for (const g of groups) g._swatch = findSwatchFor(g.cat, g.item, g.color);
 
@@ -2497,7 +2738,6 @@ function renderInv() {
     const itemTotal = ig.colors.reduce((s, g) => s + g.rolls.reduce((s2, r) => s2 + (r.defective ? 0 : r.qty), 0), 0);
     const ik = 'item:' + ig.cat + '|' + ig.item;
     const itemOpen = openGroups.has(ik);
-    const costMatch = findCostFor(ig.item);
     const itemChina = findItemChinaCode(ig.cat, ig.item);
     const itemDiv = document.createElement('div');
     itemDiv.className = 'group';
@@ -2506,7 +2746,6 @@ function renderInv() {
         <div class="info">
           <div class="name">${esc(ig.item)}${itemChina ? ` <span style="font-weight:400;font-size:12px;color:var(--muted);">#${esc(itemChina)}</span>` : ''}</div>
           <div class="sub">분류 ${esc(ig.cat)} · 컬러 ${ig.colors.length}종</div>
-          ${costMatch ? `<div class="cost-badge">원가 ${Math.round(finalCost(costMatch)).toLocaleString()}원/y${costMatch.type === 'domestic' ? ' (국내산)' : ''}</div>` : ''}
           <div style="margin-top:4px; display:flex; gap:4px;"><button onclick="event.stopPropagation(); renameInventoryItem('${escAttr(ig.item)}')" style="border:none;background:#f1eee7;color:var(--muted);border-radius:6px;padding:3px 8px;font-size:11px;">품목 이름 수정</button><button onclick="event.stopPropagation(); deleteAllRollsForItem('${escAttr(ig.item)}')" style="border:none;background:#fdecea;color:var(--danger);border-radius:6px;padding:3px 8px;font-size:11px;">이 품목 전체 삭제</button></div>
         </div>
         <div class="total">
@@ -2519,7 +2758,7 @@ function renderInv() {
     list.appendChild(itemDiv);
     const itemInner = itemDiv.querySelector('.rolls');
 
-    for (const g of ig.colors) {
+    for (const g of (itemOpen ? ig.colors : [])) { // 접힌 품목은 컬러 카드를 안 만들고, 펼칠 때만 만듦 (예전엔 접혀 있어도 전부 만들어놓고 숨겨서 느렸음)
       const normalRolls = g.rolls.filter(r => !r.defective && r.qty > 0); // 재고가 0인 자리표시 롤은 "진짜 롤"로 안 세야 정확함
       const defectiveRolls = g.rolls.filter(r => r.defective);
       const total = normalRolls.reduce((s, r) => s + r.qty, 0);
@@ -2551,7 +2790,9 @@ function renderInv() {
       itemInner.appendChild(cdiv);
       const rollsDiv = cdiv.querySelector('.rolls');
 
-      if (total <= 0 && defectiveTotal <= 0) {
+      if (!isOpen) {
+        // 접힌 컬러는 롤 줄을 안 만들고, 펼칠 때만 만듦
+      } else if (total <= 0 && defectiveTotal <= 0) {
         const empty = document.createElement('div');
         empty.style.padding = '10px 14px';
         empty.style.fontSize = '13px';
@@ -2570,7 +2811,7 @@ function renderInv() {
           const tangTotal = tangRolls.reduce((s, r) => s + (r.defective ? 0 : r.qty), 0);
           const th = document.createElement('div');
           th.className = 'tang-head';
-          const tangNote = getTangNote(g.item, g.color, tn);
+          const tangNote = getTangNote(g.item, g.color, tn, g.rolls);
           th.innerHTML = `<div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
               <div>탕${tn} · ${tangTotal.toLocaleString()}y</div>
               <button class="btn-out" style="background:#fff3d6;color:#a15c1e;" onclick="event.stopPropagation(); openTangNoteModal('${escAttr(g.item)}','${escAttr(g.color)}',${tn})">메모</button>
@@ -2594,11 +2835,12 @@ function renderInv() {
               rr.innerHTML = `
                 <div style="display:flex; align-items:center; gap:8px;">
                   <input type="checkbox" class="roll-bulk-checkbox" data-roll-id="${r.id}" style="width:auto; margin:0;" onclick="event.stopPropagation();">
-                  <div>롤 <span class="yd">${r.qty}y</span>${r.inDate ? `<span style="font-size:11px;color:var(--muted);margin-left:6px;">${esc(r.inDate)} 입고</span>` : ''}</div>
+                  <div>롤 <span class="yd">${r.qty}y</span>${r.inDate ? `<span style="font-size:11px;color:var(--muted);margin-left:6px;">${esc(r.inDate)} 입고</span>` : ''}${r.rollNote ? `<div style="margin-top:3px;display:inline-block;background:#e8f0fb;color:var(--primary-dark);font-weight:600;border-radius:5px;padding:2px 7px;font-size:12px;">📌 ${esc(r.rollNote)}</div>` : ''}</div>
                 </div>
                 <div class="btns">
                   <button class="btn-out" style="background:#eaf3ec;color:#2f6b46;" onclick="event.stopPropagation(); openRollAddModalFor('${escAttr(r.item)}', '${escAttr(r.color)}')">입고</button>
                   <button class="btn-out" onclick="event.stopPropagation(); openOutModal(${r.id})">출고</button>
+                  <button class="btn-out" style="background:#e8f0fb;color:var(--primary-dark);" onclick="event.stopPropagation(); openRollNoteModal(${r.id})">메모</button>
                   <button class="btn-out" style="background:#eee;color:var(--text);" onclick="event.stopPropagation(); openRollEditModal(${r.id})">수정</button>
                   <button class="btn-out" style="background:#fdecea;color:var(--danger);" onclick="event.stopPropagation(); markRollDefective(${r.id})">불량</button>
                   <button class="btn-del" onclick="event.stopPropagation(); deleteRoll(${r.id})">삭제</button>
@@ -2726,7 +2968,7 @@ function renderStockCheckView() {
         <div style="margin-top:8px; padding-top:8px; border-top:1px dashed var(--border);">
           ${itemRolls.length === 0 ? '<div style="font-size:12px; color:var(--muted);">재고 없음</div>' : itemRolls.map(r => `
             <div style="display:flex; justify-content:space-between; align-items:center; padding:4px 0; font-size:13px;">
-              <div>탕${r.tang} · ${r.qty}y${getTangNote(r.item, r.color, r.tang) ? ` <span style="font-size:12px;color:#a15c1e;font-weight:600;background:#fff3d6;border-radius:5px;padding:1px 6px;">📝 ${esc(getTangNote(r.item, r.color, r.tang))}</span>` : ''}</div>
+              <div>탕${r.tang} · ${r.qty}y${getTangNote(r.item, r.color, r.tang) ? ` <span style="font-size:12px;color:#a15c1e;font-weight:600;background:#fff3d6;border-radius:5px;padding:1px 6px;">📝 ${esc(getTangNote(r.item, r.color, r.tang))}</span>` : ''}${r.rollNote ? ` <span style="font-size:12px;color:var(--primary-dark);font-weight:600;background:#e8f0fb;border-radius:5px;padding:1px 6px;">📌 ${esc(r.rollNote)}</span>` : ''}</div>
               <button onclick="event.stopPropagation(); openRollEditModal(${r.id})" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:6px;padding:3px 8px;font-size:11px;">수정</button>
             </div>
           `).join('')}
@@ -2862,7 +3104,8 @@ function addRollRowToBlock(elInBlock) {
       <button type="button" onclick="calcCnyForRollCost(this)" style="border:none;background:#eee;color:#555;border-radius:8px;padding:8px 10px;font-size:12px;flex:none;">위안화로 계산</button>
     </div>
     <div class="f-roll-note-wrap hidden" style="margin-top:6px;">
-      <input type="text" class="f-roll-note" maxlength="40" placeholder="이 탕 메모 (예: 색 살짝 진함)" style="width:100%; padding:8px; border:1px solid var(--border); border-radius:8px; font-size:13px;">
+      <input type="text" class="f-roll-note" maxlength="40" placeholder="탕 메모 - 이 탕 전체 (예: 색 살짝 진함)" style="width:100%; padding:8px; border:1px solid var(--border); border-radius:8px; font-size:13px;">
+      <input type="text" class="f-roll-own-note" maxlength="40" placeholder="절 메모 - 이 롤만 (예: 끝단 얼룩 10cm)" style="width:100%; margin-top:6px; padding:8px; border:1px solid var(--border); border-radius:8px; font-size:13px;">
     </div>
     <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:var(--text);margin:6px 0 0;">
       <input type="checkbox" class="f-roll-defective" style="width:auto;" onchange="this.closest('.f-roll-row').querySelector('.f-roll-reason-wrap').classList.toggle('hidden', !this.checked)"> 이 롤은 불량이에요
@@ -2940,7 +3183,9 @@ async function saveAdd() {
       const costPerY = costRaw ? parseFloat(costRaw) : null;
       const noteEl = rowEl.querySelector('.f-roll-note');
       const note = noteEl ? noteEl.value.trim() : '';
-      if (!isNaN(qty) && qty >= 0) entries.push({ tang, qty, defective, reason, costPerY, note });
+      const ownNoteEl = rowEl.querySelector('.f-roll-own-note');
+      const rollNote = ownNoteEl ? ownNoteEl.value.trim() : '';
+      if (!isNaN(qty) && qty >= 0) entries.push({ tang, qty, defective, reason, costPerY, note, rollNote });
     });
     if (entries.length === 0) continue;
     // 같은 탕 번호로 여러 줄 넣었을 때, 한 줄에만 메모를 적어도 그 탕의 다른 줄에도 같이 붙게 함 (탕 메모는 탕 전체에 붙는 거라)
@@ -2953,7 +3198,7 @@ async function saveAdd() {
     rolls = rolls.filter(r => !(String(r.item).trim() === item && String(r.color).trim() === color && r.qty === 0 && !r.defective));
     for (const en of entries) {
       // 같은 탕 번호로 여러 번 입고돼도 합치지 않고 각각 개별 항목으로 둠 (이미 재단되어 오는 원단이라 실제로는 서로 다른 물건이라서)
-      rolls.push({ id: nextId++, cat, item, color, tang: en.tang, qty: en.qty, defective: en.defective, defectReason: en.defective ? en.reason : '', inDate, costPerY: en.costPerY, note: en.note || '' });
+      rolls.push({ id: nextId++, cat, item, color, tang: en.tang, qty: en.qty, defective: en.defective, defectReason: en.defective ? en.reason : '', inDate, costPerY: en.costPerY, note: en.note || '', rollNote: en.rollNote || '' });
     }
     totalEntries += entries.length;
     totalColors++;
@@ -3038,7 +3283,7 @@ function openOutModal(id) {
   const r = rolls.find(x => x.id === id);
   if (!r) return;
   pendingOut = id;
-  document.getElementById('out-desc').textContent = `${r.item} · ${r.color} · 탕${r.tang} (현재 ${r.qty}y)${getTangNote(r.item, r.color, r.tang) ? ' · 📝 ' + getTangNote(r.item, r.color, r.tang) : ''}`;
+  document.getElementById('out-desc').textContent = `${r.item} · ${r.color} · 탕${r.tang} (현재 ${r.qty}y)${getTangNote(r.item, r.color, r.tang) ? ' · 📝 ' + getTangNote(r.item, r.color, r.tang) : ''}${r.rollNote ? ' · 📌 절: ' + r.rollNote : ''}`;
   document.getElementById('out-qty').value = '';
   document.getElementById('outModal').classList.add('open');
 }
@@ -3078,10 +3323,10 @@ async function saveNoteModal() {
   const ok = await h(document.getElementById('note-modal-input').value.trim());
   if (ok !== false) closeNoteModal();
 }
-function getTangNote(item, color, tang) {
+function getTangNote(item, color, tang, pool) {
   // 같은 품목·컬러·탕 번호인 롤들에 붙은 메모를 (서로 다르면 " · "로 이어서) 돌려줌
   const seen = [];
-  for (const r of rolls) {
+  for (const r of (pool || rolls)) {
     if (String(r.item).trim() === String(item).trim() && String(r.color).trim() === String(color).trim() && r.tang === tang && !r.defective && r.note && !seen.includes(r.note)) seen.push(r.note);
   }
   return seen.join(' · ');
@@ -3099,6 +3344,23 @@ async function saveTangNote(item, color, tang, v) {
 }
 function openTangNoteModal(item, color, tang) {
   openNoteModal('탕 메모', `${item} · ${color} · 탕${tang} (이 탕 전체에 붙는 메모예요. 이 탕이 다 나가면 같이 사라져요)`, getTangNote(item, color, tang), (v) => saveTangNote(item, color, tang, v));
+}
+async function saveRollNote(id, v) {
+  // 절(롤) 메모는 탕 메모(note)와 섞이지 않게 별도 항목(rollNote)에 저장 - 그 롤 하나에만 붙음
+  const r = rolls.find(x => x.id === id);
+  if (!r) return false;
+  const before = r.rollNote || '';
+  r.rollNote = v;
+  const ok = await persistRolls();
+  if (ok === false) { r.rollNote = before; render(); return false; } // 저장 실패하면 화면도 원래대로
+  render();
+  showToast(v ? '절 메모를 저장했어요' : '절 메모를 지웠어요');
+  return true;
+}
+function openRollNoteModal(id) {
+  const r = rolls.find(x => x.id === id);
+  if (!r) return;
+  openNoteModal('절 메모', `${r.item} · ${r.color} · 탕${r.tang} (${r.qty}y) - 이 롤 하나에만 붙는 메모예요`, r.rollNote || '', (v) => saveRollNote(id, v));
 }
 function toggleRollNote(btn) {
   const row = btn.closest('.f-roll-row');
@@ -3152,7 +3414,20 @@ async function saveRollEdit() {
     // 품번·컬러 자체를 바꾸면, 원래 있던 품번·컬러 쪽에서 이 롤이 빠지는 셈이니 그쪽 탕번호도 재정렬해줌
     compactTangsForItemColor(oldItem, oldColor);
   }
+  // 이 롤이 옛 컬러의 마지막 롤이었다면 컬러 이름을 통째로 바꾼 것으로 보고, 알림/순번/단가표가 새 이름으로 이어지게 함
+  let colorRenamedWhole = false, metaChanged = { swatchChanged: false, priceChanged: false };
+  if (movedToOtherGroup && r.qty > 0) {
+    const oi = String(oldItem).trim(), oc = String(oldColor).trim();
+    const oldStillHasRolls = rolls.some(x => String(x.item).trim() === oi && String(x.color).trim() === oc);
+    if (!oldStillHasRolls) {
+      colorRenamedWhole = recordColorRename(oldItem, oldColor, newItem, newColor);
+      metaChanged = migrateColorMeta(oldItem, oldColor, newItem, newColor);
+    }
+  }
   await persistRolls();
+  if (colorRenamedWhole) await persistSettings();
+  if (metaChanged.swatchChanged) await persistSwatchInfo();
+  if (metaChanged.priceChanged) await persistPriceBook();
   closeRollEditModal();
   render();
   showToast(r.qty === 0 ? '재고 없음으로 처리했습니다' : `${movedToOtherGroup ? `${newItem} ${newColor}(으)로 수정하고, ` : ''}마수를 ${r.qty}y로 수정했습니다`);
@@ -3193,11 +3468,7 @@ async function bulkDeleteSelectedRolls(rollsDiv) {
   // 선택한 걸 다 지워서 이 컬러의 마지막 재고까지 없어진 경우에도, 컬러 자체는 스왓치정보로 계속 남게 함 (재고소진 자동정리와 똑같은 안전장치)
   if (!colorExistsForItem(String(item).trim(), String(color).trim())) {
     const t_item = String(item).trim(), t_color = String(color).trim();
-    const baseColor = splitKimoColorName(t_color);
-    const baseSwatch = baseColor ? swatchInfo.find(s => String(s.item).trim() === t_item && String(s.color).trim() === baseColor && s.order != null) : null;
-    const order = baseSwatch ? baseSwatch.order : (swatchInfo.filter(s => String(s.item).trim() === t_item).reduce((m, s) => Math.max(m, s.order || 0), 0) + 1);
-    const exN2 = swatchInfo.find(s => String(s.item).trim() === t_item && s.color != null && String(s.color).trim() === t_color);
-    if (exN2) exN2.order = order; else swatchInfo.push({ id: nextSwatchId++, cat: targets[0].cat || '', item: t_item, color: t_color, order, chinaCode: null });
+    registerDepletedColorSwatch(t_item, t_color, targets[0].cat);
     await persistSwatchInfo();
   }
   await persistRolls();
@@ -9015,6 +9286,15 @@ function resolveChinaMatch(result) {
 let _editingChinaOrderId = null;
 let _chinaMultiAddItems = []; // 발주등록 화면에서 "+ 항목 추가"로 쌓인, 아직 저장 전인 항목들
 let _chinaArrivalManuallyEdited = false; // 도착예정일을 사용자가 직접 고쳤는지 - 고쳤으면 발주일이 바뀌어도 자동재계산 안 함
+function openChinaOrderAddModalFor(item, color) {
+  // 재고부족알림에서 바로 발주 - 품명/컬러(가능하면 중국품번도)를 미리 채워서 발주 등록 창을 엶. 수량만 넣고 저장하면 됨
+  openChinaOrderAddModal();
+  document.getElementById('china-item').value = item;
+  document.getElementById('china-color').value = color;
+  const matches = chinaProductMap.filter(m => String(m.itemName).trim() === String(item).trim());
+  if (matches.length === 1) document.getElementById('china-code').value = matches[0].chinaCode; // 품명에 연결된 중국품번이 딱 하나일 때만 자동으로 채움
+  setTimeout(() => document.getElementById('china-qty').focus(), 60);
+}
 function openChinaOrderAddModal() {
   _editingChinaOrderId = null;
   _chinaMultiAddItems = [];
@@ -9755,7 +10035,7 @@ function resolveInventoryItem(itemName) {
 function colorExistsForItem(t_item, t_color) {
   // 실제 재고(rolls)가 있거나, 재고는 없어도 스왓치·중국품번이 등록되어 있으면 "존재하는 컬러"로 인정함
   if (rolls.some(r => String(r.item).trim() === t_item && String(r.color).trim() === t_color)) return true;
-  if (swatchInfo.some(s => String(s.item).trim() === t_item && s.color != null && String(s.color).trim() === t_color && (s.order != null || s.chinaCode != null))) return true;
+  if (swatchInfo.some(s => String(s.item).trim() === t_item && s.color != null && String(s.color).trim() === t_color && (s.order != null || s.chinaCode != null || s.keepCard))) return true;
   return false;
 }
 function resolveInventoryColor(item, colorText) {
@@ -10096,6 +10376,32 @@ function closeOrderReceiveModal() {
     document.getElementById('customerShipListModal').classList.add('open');
   }
 }
+function registerDepletedColorSwatch(t_item, t_color, cat) {
+  // 재고가 다 빠진 컬러가 카드에서 안 사라지게 스왓치정보에 등록함.
+  // "OO기모" 컬러는 순번을 따로 안 매기고 카드만 유지함 - 화면 정렬은 기본 컬러("OO") 바로 밑으로 자동으로 붙음
+  // (예전엔 기본 컬러 순번을 물려받게 했더니 같은 번호가 두 번 보이는 문제가 있었음). 그 외 컬러는 새 순번을 매김
+  const exact = swatchInfo.find(s => String(s.item).trim() === t_item && s.color != null && String(s.color).trim() === t_color);
+  if (splitKimoColorName(t_color)) {
+    if (exact) exact.keepCard = true; else swatchInfo.push({ id: nextSwatchId++, cat: cat || '', item: t_item, color: t_color, order: null, chinaCode: null, keepCard: true });
+  } else {
+    const order = swatchInfo.filter(s => String(s.item).trim() === t_item).reduce((m, s) => Math.max(m, s.order || 0), 0) + 1;
+    if (exact) exact.order = order; else swatchInfo.push({ id: nextSwatchId++, cat: cat || '', item: t_item, color: t_color, order, chinaCode: null });
+  }
+}
+async function cleanupKimoInheritedOrders() {
+  // 예전 자동보호가 기모 컬러에 기본 컬러와 똑같은 순번을 붙여놨던 것을 정리함 - 순번은 비우고 카드만 유지, 정렬은 기본 컬러 바로 밑
+  // (기모 컬러에 기본 컬러와 다른 번호를 직접 매겨둔 건 그대로 둠)
+  let changed = false;
+  for (const s of swatchInfo) {
+    if (s.color == null || s.order == null) continue;
+    const base = splitKimoColorName(s.color);
+    if (!base) continue;
+    const baseSw = swatchInfo.find(b => String(b.item).trim() === String(s.item).trim() && b.color != null && String(b.color).trim() === base && b.order != null);
+    if (baseSw && baseSw.order === s.order) { s.order = null; s.keepCard = true; changed = true; }
+  }
+  if (changed) await persistSwatchInfo();
+  return changed;
+}
 async function cleanupDepletedRolls(item, color, touchedRollIds) {
   // 이번 거래로 재고 0이 된 롤들은 완전히 삭제함 (0y로 남겨두면 직원들이 헷갈리니까)
   // 컬러 카드 자체는 스왓치정보 기준으로 계속 보이니, 롤을 다 지워도 카드가 안 사라짐
@@ -10111,11 +10417,7 @@ async function cleanupDepletedRolls(item, color, touchedRollIds) {
     if (!colorExistsForItem(t_item, t_color)) {
       // "OO기모" 컬러는 기반 컬러("OO")의 순번을 그대로 물려받게 해서, 화면에서 계속 그 밑에 붙어보이게 함
       // (기반 컬러도 순번이 없으면 어쩔 수 없이 새 번호를 매김)
-      const baseColor = splitKimoColorName(t_color);
-      const baseSwatch = baseColor ? swatchInfo.find(s => String(s.item).trim() === t_item && String(s.color).trim() === baseColor && s.order != null) : null;
-      const order = baseSwatch ? baseSwatch.order : (swatchInfo.filter(s => String(s.item).trim() === t_item).reduce((m, s) => Math.max(m, s.order || 0), 0) + 1);
-      const exN = swatchInfo.find(s => String(s.item).trim() === t_item && s.color != null && String(s.color).trim() === t_color); // 메모만 있는 컬러정보가 이미 있으면 새로 또 만들지 않고 순번만 채움
-      if (exN) exN.order = order; else swatchInfo.push({ id: nextSwatchId++, cat: r.cat || '', item: t_item, color: t_color, order, chinaCode: null });
+      registerDepletedColorSwatch(t_item, t_color, r.cat);
       swatchChanged = true;
     }
   }
@@ -11152,6 +11454,7 @@ async function saveSwatchEdit() {
     for (const p of priceBook) {
       if (String(p.item).trim() === t_item && String(p.color).trim() === t_oldColor) p.color = newColorName;
     }
+    if (recordColorRename(item, color, item, newColorName)) await persistSettings(); // 알림이 옛 이름 출고 기록을 새 이름으로 이어보게
     await persistRolls();
     await persistPriceBook();
     color = newColorName;
@@ -11186,7 +11489,7 @@ async function saveSwatchEdit() {
   sw.order = order; sw.chinaCode = chinaCode;
   // 방금 수정한 이 컬러 자신이 순번도 중국품번도 다 비워졌으면 그 항목만 정리함
   // (전체 스왓치 목록에서 빈 항목을 다 지우면, 재고소진으로 자동보호 등록된 다른 컬러들까지 같이 삭제돼버리는 심각한 버그가 있었음)
-  if (sw.order == null && sw.chinaCode == null) {
+  if (sw.order == null && sw.chinaCode == null && !sw.keepCard) {
     swatchInfo = swatchInfo.filter(s => s !== sw);
   }
   await persistSwatchInfo(); closeSwatchEditModal(); render();
@@ -11647,6 +11950,7 @@ async function init() {
   await loadAll();
   await applyDataVersionIfNeeded();
   await applyCarryoverUnpaidIfNeeded();
+  await cleanupKimoInheritedOrders(); // 기모 컬러에 붙어있던 중복 순번 정리
   await fixLegacyFeeEntriesIfNeeded();
   render();
 }
