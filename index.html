@@ -177,15 +177,17 @@
   @media (pointer: coarse) {
     /* 아이폰은 입력칸 글자가 16px보다 작으면 칸을 누를 때 화면이 확대돼버림 */
     input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=file]), select, textarea { font-size: 16px !important; }
-    .btns button, .roll-row .btns button { padding: 8px 12px; font-size: 13px; min-height: 34px; margin-left: 0; }
-    .btns { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; }
-    .group-head .info button, .group-head .btns button { padding: 7px 11px !important; font-size: 12px !important; min-height: 32px; }
+  }
+  /* 모든 탭(재고/중국발주/원가표/이월장부/매출/오늘)의 버튼: 글자는 한 줄로, 한 줄에 다 안 들어가면 글자를 꺾지 않고 버튼째로 다음 줄로 내림 */
+  @media (max-width: 600px) {
+    #list button, .controls button, .rate-bar button { white-space: nowrap; }
+    #list :is(div, span):has(> button + button), .controls :is(div, span):has(> button + button) { flex-wrap: wrap; row-gap: 4px; }
+    .btns button, .order-btns button { margin-left: 0; }
+    .btns, .order-btns { display: flex; flex-wrap: wrap; gap: 5px; }
   }
   @media (max-width: 480px) {
     .roll-row { flex-wrap: wrap; row-gap: 6px; }
     .roll-row .btns { flex: 1 1 100%; justify-content: flex-start; margin-top: 0; }
-    .roll-row .btns button { flex: 1 1 auto; }
-    .group-head .name { font-size: 16px; }
   }
 
   /* 재고부족알림 칸 배치: 폰/태블릿은 1칸, 큰 화면은 2칸, 아주 넓은 화면은 3칸 (예전엔 폭에 맞춰 칸이 8-9개까지 늘어나서 보기 불편했음) */
@@ -1103,7 +1105,7 @@
 const PASSWORD = "3059";
 const ADMIN_PASSWORD = "9503"; // 매출/미수금 탭 전용 - 필요하면 이 값만 바꿔서 변경 가능
 const DATA_VERSION = "2026-08-03-v4"; // 재고/이월장부 씨앗 데이터를 바꿀 때마다 이 값을 새로 바꿔주세요
-const APP_CODE_VERSION = "2026-09-28-q"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
+const APP_CODE_VERSION = "2026-09-28-s"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
 const SCHEMA_STAMP = 2; // 서버 저장규칙이 확인하는 "최신 앱 도장" - 절대 자주 바꾸지 않음(이 값을 아는 코드만 저장 가능하게 서버에서 막을 때 씀)
 const CONFIRMED_EMPTY = '__CONFIRMED_EMPTY__'; // "서버가 확실하게 문서가 없다고 확인해줬다"는 걸 표시하는 특수값
                                                  // (한번도 확인 안 한 null과 구분해서, 그 사이 다른 사람이 첫 데이터를 만들었으면 충돌로 감지하기 위함)
@@ -1857,6 +1859,17 @@ async function persistSettings() {
     // 서버 데이터를 아직 한 번도 못 받아온 상태 - 이 상태로 저장하면 빈 값(기본값)으로 서버를 덮어쓸 위험이 있어서 막아둠
     alert('⚠️ 아직 서버 데이터를 불러오는 중이에요.\n잠시 후 다시 시도해주세요. (계속 뜨면 화면을 새로고침해주세요)');
     return false;
+  }
+  // 안전장치: 코드 실수로 설정 항목이 통째로 빠진 채 저장되는 걸 막음 - 마지막으로 서버에서 받은 설정에 있던 항목이 지금 저장할 값에 없으면 서버 값을 되살림
+  // (설정 항목을 일부러 지우는 기능은 없고, 비우는 건 빈 목록/빈 글자로 저장하니까 항목 자체는 항상 남아있음)
+  const knownSettingsStr = lastSnapshotJSON.settings;
+  if (typeof knownSettingsStr === 'string' && knownSettingsStr) {
+    try {
+      const knownSettings = JSON.parse(knownSettingsStr);
+      let restoredKeys = [];
+      for (const k of Object.keys(knownSettings)) if (!(k in settings)) { settings[k] = knownSettings[k]; restoredKeys.push(k); }
+      if (restoredKeys.length > 0) console.warn('설정 항목이 빠진 채 저장되려 해서 되살렸어요:', restoredKeys);
+    } catch (e) { /* 서버 값을 못 읽으면 그대로 진행 */ }
   }
   const newJSON = JSON.stringify(settings);
   const ref = db.collection('inventory').doc('settings');
@@ -11425,7 +11438,7 @@ async function saveRate() {
   const yard = parseFloat(document.getElementById('r-yard').value);
   const ship = parseFloat(document.getElementById('r-ship').value);
   if (!rate || !yard || isNaN(ship)) { showToast('값을 확인해주세요'); return; }
-  settings = { rate, yard, ship };
+  settings = { ...settings, rate, yard, ship }; // 예전엔 { rate, yard, ship }만 남겨서 사업자정보/고정비/가공종류 등 나머지 설정이 통째로 지워졌음
   await persistSettings();
   updateRateBar(); closeRateModal(); render();
   showToast('환율이 적용되어 전체 원가가 다시 계산되었습니다');
