@@ -1103,7 +1103,7 @@
 const PASSWORD = "3059";
 const ADMIN_PASSWORD = "9503"; // 매출/미수금 탭 전용 - 필요하면 이 값만 바꿔서 변경 가능
 const DATA_VERSION = "2026-08-03-v4"; // 재고/이월장부 씨앗 데이터를 바꿀 때마다 이 값을 새로 바꿔주세요
-const APP_CODE_VERSION = "2026-09-28-p"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
+const APP_CODE_VERSION = "2026-09-28-q"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
 const SCHEMA_STAMP = 2; // 서버 저장규칙이 확인하는 "최신 앱 도장" - 절대 자주 바꾸지 않음(이 값을 아는 코드만 저장 가능하게 서버에서 막을 때 씀)
 const CONFIRMED_EMPTY = '__CONFIRMED_EMPTY__'; // "서버가 확실하게 문서가 없다고 확인해줬다"는 걸 표시하는 특수값
                                                  // (한번도 확인 안 한 null과 구분해서, 그 사이 다른 사람이 첫 데이터를 만들었으면 충돌로 감지하기 위함)
@@ -1151,7 +1151,8 @@ function findWaitingChinaOrderMatch(item, color, excludeIds) {
   // 이 품목·컬러로 아직 대기중인 중국발주 중 제일 오래된 것 하나를 찾음 (여러개면 오래된 것부터 순서대로 처리하는 게 자연스러우니까)
   // excludeIds: 이번 재고등록 한 번 안에서 이미 다른 컬러블록이 처리를 결정한 발주 id들 - 같은 컬러를 실수로 여러 블록에 나눠 입력해도 같은 발주가 중복으로 안 걸리게 함
   const t_item = String(item).trim(), t_color = String(color).trim();
-  const matches = chinaOrders.filter(o => o.status !== 'received' && String(o.item).trim() === t_item && String(o.color).trim() === t_color && !(excludeIds && excludeIds.has(o.id)));
+  const targetKey = chinaOrderMatchKey(t_item, t_color); // # 유무/띄어쓰기/표기 차이가 있어도 같은 컬러로 찾음
+  const matches = chinaOrders.filter(o => o.status !== 'received' && !(excludeIds && excludeIds.has(o.id)) && ((String(o.item).trim() === t_item && String(o.color).trim() === t_color) || chinaOrderMatchKey(o.item, o.color) === targetKey));
   if (matches.length === 0) return null;
   matches.sort((a, b) => String(a.date).localeCompare(String(b.date)));
   return matches[0];
@@ -2464,6 +2465,16 @@ function toggleSortMode() {
   render();
 }
 
+function normalizeNameForMatch(s) {
+  // 비교용으로만 이름을 다듬음: 띄어쓰기 제거, 맨 앞 "#" 제거, 영문 대소문자 무시 (화면에 보이는 이름은 안 바꿈)
+  return String(s || '').replace(/\s+/g, '').replace(/^#/, '').toLowerCase();
+}
+function chinaOrderMatchKey(item, color) {
+  // 중국발주는 품명/컬러를 입력한 글자 그대로 저장하니, 재고와 비교할 땐 재고 쪽 이름 맞춤 규칙(품번 접두어, "5번" 같은 스왓치 순번 표기, 부분 일치)을 먼저 거친 다음 다듬어서 비교함
+  const it = resolveInventoryItem(item);
+  const co = resolveInventoryColor(it, color);
+  return normalizeNameForMatch(it) + '|' + normalizeNameForMatch(co);
+}
 // 이미 컬러 이름이 바뀌어 있는 것들 - 재고부족알림이 예전 이름으로 찍힌 출고 기록을 새 이름 것으로 이어서 보게 함 (데이터는 안 건드리고 알림 계산에서만 이어줌)
 const KNOWN_COLOR_RENAMES = [
   { from: '베리|#베이지', to: '베리|#1베이지' },
@@ -2546,12 +2557,20 @@ function getLowStockAlerts() {
 
   const dismissed = new Set((settings.dismissedLowStock || []).map(k => resolveRenamedKey(k, liveKeys)));
   // 아직 안 들어온(대기중) 중국발주를 컬러별로 모아둠 - 알림에 "이미 발주함"을 보여주려고. 컬러 이름이 바뀌었으면 새 이름 쪽으로 이어붙임
+  const normKey = (k) => { const [i, ...c] = String(k).split('|'); return normalizeNameForMatch(i) + '|' + normalizeNameForMatch(c.join('|')); };
+  const liveNormKeys = new Set(Array.from(liveKeys).map(normKey));
+  const normRename = new Map();
+  for (const r of KNOWN_COLOR_RENAMES.concat(settings.colorRenames || [])) normRename.set(normKey(r.from), normKey(r.to));
   const pendingMap = new Map();
   for (const o of chinaOrders) {
     if (o.status === 'received') continue;
-    const rk = resolveRenamedKey(`${String(o.item).trim()}|${String(o.color).trim()}`, liveKeys);
-    if (!pendingMap.has(rk)) pendingMap.set(rk, []);
-    pendingMap.get(rk).push(o);
+    const rk = resolveRenamedKey(`${String(o.item).trim()}|${String(o.color).trim()}`, liveKeys); // 컬러 이름이 바뀐 것 먼저 이어붙임
+    const [rItem, ...rRest] = rk.split('|');
+    let nk = chinaOrderMatchKey(rItem, rRest.join('|')); // 그다음 # 유무/띄어쓰기/품명 표기/"5번" 표기 차이를 맞춰서 비교
+    const seenNk = new Set();
+    while (normRename.has(nk) && !seenNk.has(nk) && !liveNormKeys.has(nk)) { seenNk.add(nk); nk = normRename.get(nk); } // 바뀐 이름도 다듬은 글자 기준으로 한 번 더 이어붙임
+    if (!pendingMap.has(nk)) pendingMap.set(nk, []);
+    pendingMap.get(nk).push(o);
   }
   for (const arr of pendingMap.values()) arr.sort((a, b) => String(a.arrivalDate || '99.99.99').localeCompare(String(b.arrivalDate || '99.99.99')));
   const alerts = [];
@@ -2561,7 +2580,7 @@ function getLowStockAlerts() {
     if (dismissed.has(k)) continue;
     const [item, color] = k.split('|');
     const sw = findSwatchFor(catMap.get(k), item, color);
-    alerts.push({ key: k, item, color, qty: Math.round(qty * 100) / 100, shippedRecently: Math.round((shipQtyMap.get(k) || 0) * 100) / 100, swOrder: sw && sw.order != null ? sw.order : null, pending: pendingMap.get(k) || [] });
+    alerts.push({ key: k, item, color, qty: Math.round(qty * 100) / 100, shippedRecently: Math.round((shipQtyMap.get(k) || 0) * 100) / 100, swOrder: sw && sw.order != null ? sw.order : null, pending: pendingMap.get(normKey(k)) || [] });
   }
   alerts.sort((a, b) => a.item.localeCompare(b.item, 'ko') || (a.swOrder ?? Infinity) - (b.swOrder ?? Infinity) || a.color.localeCompare(b.color, 'ko')); // 재고 탭이랑 같은 순서(품목명 가나다/숫자 순)
   return alerts;
