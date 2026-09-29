@@ -1111,7 +1111,7 @@
 const PASSWORD = "3059";
 const ADMIN_PASSWORD = "9503"; // 매출/미수금 탭 전용 - 필요하면 이 값만 바꿔서 변경 가능
 const DATA_VERSION = "2026-08-03-v4"; // 재고/이월장부 씨앗 데이터를 바꿀 때마다 이 값을 새로 바꿔주세요
-const APP_CODE_VERSION = "2026-09-28-v"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
+const APP_CODE_VERSION = "2026-09-28-x"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
 const SCHEMA_STAMP = 2; // 서버 저장규칙이 확인하는 "최신 앱 도장" - 절대 자주 바꾸지 않음(이 값을 아는 코드만 저장 가능하게 서버에서 막을 때 씀)
 const CONFIRMED_EMPTY = '__CONFIRMED_EMPTY__'; // "서버가 확실하게 문서가 없다고 확인해줬다"는 걸 표시하는 특수값
                                                  // (한번도 확인 안 한 null과 구분해서, 그 사이 다른 사람이 첫 데이터를 만들었으면 충돌로 감지하기 위함)
@@ -2157,6 +2157,16 @@ function todayGoLowStock() { switchTab('inv'); openGroups.add('lowstock-alert');
 function todayGoSales() { if (!salesAdminUnlocked) return; switchTab('sales'); openSaleAddModal(); }
 function todayGoUnpaid() { if (!salesAdminUnlocked) return; switchTab('sales'); showUnpaidSummary(); }
 function todayGoLedger(customer) { if (!salesAdminUnlocked) return; switchTab('sales'); showCustomerLedger(customer); }
+function todayGoLowStockItem(item, color) { switchTab('inv'); goToLowStockItem(item, color); } // 재고 탭으로 가서 그 품목/컬러만 검색해서 보여줌
+function todayGoChinaOrder(item, color) {
+  // 중국발주 탭으로 가서 그 품명으로 검색해서 보여줌 (여러 컬러가 섞여 나올 수 있음 - 재고부족알림과 같은 방식)
+  switchTab('china');
+  searchTerm = item;
+  chinaOrderFilter = 'waiting';
+  document.getElementById('search').value = item;
+  render();
+  showToast(`"${item}${color ? ' ' + color : ''}" 발주 내역으로 이동했어요`);
+}
 function renderToday() {
   const list = document.getElementById('list');
   document.getElementById('chipRow').innerHTML = '';
@@ -2192,19 +2202,19 @@ function renderToday() {
   if (arrivals.length === 0) html += `<div style="${muted} padding:4px 0;">오늘 도착 예정이거나 지연된 발주가 없어요</div>`;
   for (const o of arrivals) {
     const late = o.arrivalDate < s.today;
-    html += row(`<div style="min-width:0;"><div style="font-size:14px; font-weight:600;">${esc(o.item)} ${esc(o.color || '')}</div><div style="${muted}">${esc(o.qty)}${o.urgent ? ' · <b style="color:var(--danger);">급송</b>' : ''}${late ? ` · <span style="color:var(--danger); font-weight:700;">${formatChinaArrivalLabel(o.arrivalDate)} 도착 예정이었어요</span>` : ''}</div></div>`,
+    html += row(`<div onclick="todayGoChinaOrder('${escAttr(o.item)}','${escAttr(o.color || '')}')" style="min-width:0; cursor:pointer;"><div style="font-size:14px; font-weight:600;">${esc(o.item)} ${esc(o.color || '')}</div><div style="${muted}">${esc(o.qty)}${o.urgent ? ' · <b style="color:var(--danger);">급송</b>' : ''}${late ? ` · <span style="color:var(--danger); font-weight:700;">${formatChinaArrivalLabel(o.arrivalDate)} 도착 예정이었어요</span>` : ''}</div></div>`,
       `<button class="btn-key" onclick="openChinaReceiveModal(${o.id})" style="flex:none; border:none; background:#dbe9f0; color:var(--primary-dark); border-radius:8px; padding:8px 12px; font-size:13px; font-weight:700;">입고 처리</button>`);
   }
   html += `</div>`;
 
   // 재고 부족
-  const alerts = getLowStockAlerts().slice().sort((a, b) => ((a.pending && a.pending.length) ? 1 : 0) - ((b.pending && b.pending.length) ? 1 : 0) || a.qty - b.qty);
+  const alerts = getLowStockAlerts().slice().sort((a, b) => ((a.pending && a.pending.length) ? 1 : 0) - ((b.pending && b.pending.length) ? 1 : 0) || b.shippedRecently - a.shippedRecently); // 미발주 먼저, 그 안에서는 최근 30일 많이 나간 순
   const notOrdered = alerts.filter(a => !(a.pending && a.pending.length)).length;
   html += `<div style="${card}">${head('재고 부족', `<span style="${muted}">${alerts.length}건${alerts.length > 0 ? ` · 미발주 ${notOrdered}건` : ''}</span>`)}`;
   if (alerts.length === 0) html += `<div style="${muted} padding:4px 0;">재고가 부족한 컬러가 없어요</div>`;
   for (const a of alerts.slice(0, 5)) {
     const pend = a.pending && a.pending.length > 0;
-    html += row(`<div style="min-width:0;"><div style="font-size:14px; font-weight:600;">${esc(a.item)} ${esc(a.color)} <span style="color:${a.qty < 50 ? 'var(--danger)' : '#a15c1e'}; font-weight:800;">${a.qty}y${a.qty < 50 ? ' 위험' : ''}</span></div><div style="${muted}">최근 30일 ${a.shippedRecently}y 나감${pend ? ` · <span style="color:#2f6b46; font-weight:700;">발주중 ${esc(a.pending[0].qty)}${a.pending[0].arrivalDate ? ` (${formatChinaArrivalLabel(a.pending[0].arrivalDate)} 도착)` : ''}</span>` : ''}</div></div>`,
+    html += row(`<div onclick="todayGoLowStockItem('${escAttr(a.item)}','${escAttr(a.color)}')" style="min-width:0; cursor:pointer;"><div style="font-size:14px; font-weight:600;">${esc(a.item)} ${esc(a.color)} <span style="color:${a.qty < 50 ? 'var(--danger)' : '#a15c1e'}; font-weight:800;">${a.qty}y${a.qty < 50 ? ' 위험' : ''}</span></div><div style="${muted}">최근 30일 ${a.shippedRecently}y 나감${pend ? ` · <span style="color:#2f6b46; font-weight:700;">발주중 ${esc(a.pending[0].qty)}${a.pending[0].arrivalDate ? ` (${formatChinaArrivalLabel(a.pending[0].arrivalDate)} 도착)` : ''}</span>` : ''}</div></div>`,
       `<button onclick="openChinaOrderAddModalFor('${escAttr(a.item)}','${escAttr(a.color)}')" style="flex:none; border:none; background:${pend ? '#eee' : '#fff3d6'}; color:${pend ? '#555' : '#a15c1e'}; border-radius:8px; padding:8px 12px; font-size:13px; font-weight:700;">${pend ? '추가 발주' : '발주하기'}</button>`);
   }
   if (alerts.length > 5) html += `<div onclick="todayGoLowStock()" style="${muted} padding-top:8px; border-top:1px solid var(--border); cursor:pointer;">전체 ${alerts.length}건 보기 ▸</div>`;
