@@ -205,6 +205,9 @@
   :is(#list, .controls, .rate-bar) button:is([style*="#dbe9f0"], [style*="rgb(219, 233, 240)"], [style*="#eaf3ec"], [style*="rgb(234, 243, 236)"], [style*="#fff3d6"], [style*="rgb(255, 243, 214)"], [style*="#e8edf5"], [style*="rgb(232, 237, 245)"], [style*="#e8f0fb"], [style*="rgb(232, 240, 251)"], [style*="#f1eee7"], [style*="rgb(241, 238, 231)"], [style*="#fce8d6"], [style*="rgb(252, 232, 214)"], [style*="#f0e6fa"], [style*="rgb(240, 230, 250)"], [style*="#e6f0fa"], [style*="rgb(230, 240, 250)"], [style*="#e6faf0"], [style*="rgb(230, 250, 240)"], [style*="#fdf0e0"], [style*="rgb(253, 240, 224)"], [style*="background:#eee"], [style*="background: #eee"], [style*="rgb(238, 238, 238)"]), :is(#list, .controls, .rate-bar) :is(.btn-out, .btn-receive, .btn-complete) { background: var(--btn-neutral-bg) !important; color: var(--btn-neutral-text) !important; }
   :is(#list, .controls, .rate-bar) button.btn-key { background: var(--btn-key-bg) !important; color: var(--btn-key-text) !important; }
   :is(#list, .controls, .rate-bar) button:is([style*="#fdecea"], [style*="rgb(253, 236, 234)"], .btn-del, .btn-danger) { background: var(--btn-danger-bg) !important; color: var(--danger) !important; box-shadow: none; }
+
+  /* ===== 버튼은 각자 필요한 만큼만 차지(꽉 채우기 없음) - 화면이 넓으면 자연스럽게 한 줄에, 좁으면 줄만 늘어남 ===== */
+  /* 드롭다운(눌러야 나오는 팝업 메뉴)만 폭을 적당히 제한 - 이건 펼쳐지는 메뉴라 좁아도 자연스러움 */
 </style>
 </head>
 <body>
@@ -249,45 +252,51 @@
     <button id="orderGroupToggleBtn" onclick="toggleOrderGroupMode()" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;"></button>
     <button onclick="printOrderLedger()" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">이월장부 인쇄</button>
     <button onclick="archiveOldCompleted()" style="border:none;background:#fff3d6;color:#a15c1e;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">오래된 완료건 내보내기 및 정리</button>
-    <div style="width:100%; display:flex; gap:6px; align-items:center; margin-top:4px;">
-      <span style="font-size:12px; color:var(--muted);">등록일:</span>
-      <button onclick="shiftOrderDayFilter(-1)" style="border:none;background:#eee;color:#555;border-radius:8px;padding:6px 10px;font-size:12px;">◀</button>
-      <input id="order-day-picker" type="date" onchange="orderDayFilter=fromDateInputValue(this.value); orderDayFilterEnd=null; render();" style="padding:6px 8px; border:1px solid var(--border); border-radius:8px; font-size:12px; width:auto;">
-      <button onclick="shiftOrderDayFilter(1)" style="border:none;background:#eee;color:#555;border-radius:8px;padding:6px 10px;font-size:12px;">▶</button>
-      <button onclick="orderDayFilter=null; orderDayFilterEnd=null; render();" style="border:none;background:#eee;color:#555;border-radius:8px;padding:6px 10px;font-size:12px;">전체보기</button>
+    <div style="width:100%; display:flex; align-items:center; gap:6px; margin-top:4px;">
+      <span style="font-size:12px; color:var(--muted); flex:none;">등록일</span>
+      <button onclick="shiftOrderDayFilter(-1)" style="border:none;background:#eee;color:#555;border-radius:7px;padding:6px 10px;font-size:12px;flex:none;">◀</button>
+      <input id="order-day-picker" type="date" onchange="orderDayFilter=fromDateInputValue(this.value); orderDayFilterEnd=null; render();" style="flex:0 0 auto; width:150px; padding:6px 4px; border:1px solid var(--border); border-radius:7px; font-size:12px;">
+      <button onclick="shiftOrderDayFilter(1)" style="border:none;background:#eee;color:#555;border-radius:7px;padding:6px 10px;font-size:12px;flex:none;">▶</button>
+      <span onclick="orderDayFilter=null; orderDayFilterEnd=null; render();" style="font-size:11px; color:var(--muted); text-decoration:underline; cursor:pointer; flex:none;">전체보기</span>
     </div>
   </div>
-  <div id="salesTools" class="hidden" style="display:flex; gap:6px; margin-top:6px; flex-wrap:wrap; align-items:center;">
-    <button onclick="shiftSalesDayFilter(-1)" style="border:none;background:#eee;color:#555;border-radius:8px;padding:7px 10px;font-size:12px;">◀</button>
-    <input id="sales-day-picker" type="date" onchange="salesDayFilter=fromDateInputValue(this.value); salesDayFilterEnd=null; refreshSalesDayArchivedCache(); render();" style="padding:6px 8px; border:1px solid var(--border); border-radius:8px; font-size:12px; width:auto;">
-    <button onclick="shiftSalesDayFilter(1)" style="border:none;background:#eee;color:#555;border-radius:8px;padding:7px 10px;font-size:12px;">▶</button>
-    <span style="font-size:12px; color:var(--muted);">~</span>
-    <input id="sales-day-picker-end" type="date" onchange="salesDayFilterEnd=fromDateInputValue(this.value); refreshSalesDayArchivedCache(); render();" style="padding:6px 8px; border:1px solid var(--border); border-radius:8px; font-size:12px; width:auto;">
-    <button onclick="toggleAllMainFlags(true)" style="border:none;background:#eee;color:#555;border-radius:8px;padding:7px 12px;font-size:12px;">전체 선택</button>
-    <button onclick="toggleAllMainFlags(false)" style="border:none;background:#eee;color:#555;border-radius:8px;padding:7px 12px;font-size:12px;">전체 해제</button>
-    <button onclick="printSelectedMainStatements()" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">선택 인쇄 (메인 체크)</button>
-    <button onclick="openExpenseModal()" style="border:none;background:#fdecea;color:var(--danger);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">지출·입금 내역</button>
-    <button onclick="toggleSalesDropdown('sales-dd-reports')" style="border:none;background:#f0e6fa;color:#6b3fa0;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">조회·리포트 ▾</button>
-    <button onclick="toggleSalesDropdown('sales-dd-manage')" style="border:none;background:#f1eee7;color:var(--muted);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">관리 ▾</button>
+  <div id="salesTools" class="hidden" style="margin-top:6px;">
+    <div style="display:flex; align-items:center; gap:6px; margin-bottom:6px;">
+      <button onclick="shiftSalesDayFilter(-1)" style="border:none;background:#eee;color:#555;border-radius:7px;padding:7px 10px;font-size:12px;flex:none;">◀</button>
+      <input id="sales-day-picker" type="date" onchange="salesDayFilter=fromDateInputValue(this.value); salesDayFilterEnd=null; refreshSalesDayArchivedCache(); render();" style="flex:0 0 auto; width:150px; padding:6px 4px; border:1px solid var(--border); border-radius:7px; font-size:12px;">
+      <span style="font-size:12px; color:var(--muted); flex:none;">~</span>
+      <input id="sales-day-picker-end" type="date" onchange="salesDayFilterEnd=fromDateInputValue(this.value); refreshSalesDayArchivedCache(); render();" style="flex:0 0 auto; width:150px; padding:6px 4px; border:1px solid var(--border); border-radius:7px; font-size:12px;">
+      <button onclick="shiftSalesDayFilter(1)" style="border:none;background:#eee;color:#555;border-radius:7px;padding:7px 10px;font-size:12px;flex:none;">▶</button>
+    </div>
+    <div style="display:flex; gap:6px; flex-wrap:wrap;">
+      <button onclick="showCustomerLedger()" style="border:none;background:#e8edf5;color:#3d4f6b;border-radius:7px;padding:8px 12px;font-size:12px;font-weight:600;white-space:nowrap;">거래처 원장</button>
+      <button onclick="showUnpaidSummary()" style="border:none;background:#fce8d6;color:#a15c1e;border-radius:7px;padding:8px 12px;font-size:12px;font-weight:600;white-space:nowrap;">미수금 현황</button>
+      <button onclick="showCustomerPriceList()" style="border:none;background:#fdf0e0;color:#8a5a1e;border-radius:7px;padding:8px 12px;font-size:12px;font-weight:600;white-space:nowrap;">거래처 단가표</button>
+      <button onclick="openExpenseModal()" style="border:none;background:#fdecea;color:var(--danger);border-radius:7px;padding:8px 12px;font-size:12px;font-weight:600;white-space:nowrap;">지출·입금 내역</button>
+      <button onclick="toggleSalesDropdown('sales-dd-reports')" style="border:none;background:#f0e6fa;color:#6b3fa0;border-radius:7px;padding:8px 12px;font-size:12px;font-weight:600;white-space:nowrap;">조회·리포트 ▾</button>
+      <button onclick="toggleSalesDropdown('sales-dd-manage')" style="border:none;background:#f1eee7;color:var(--muted);border-radius:7px;padding:8px 12px;font-size:12px;font-weight:600;white-space:nowrap;">관리 ▾</button>
+    </div>
+    <div style="display:flex; gap:10px; font-size:11px; color:var(--muted); margin-top:8px;">
+      <span onclick="printSelectedMainStatements()" style="text-decoration:underline; cursor:pointer;">선택 인쇄 (메인 체크)</span>
+      <span onclick="toggleAllMainFlags(true)" style="text-decoration:underline; cursor:pointer;">전체 선택</span>
+      <span onclick="toggleAllMainFlags(false)" style="text-decoration:underline; cursor:pointer;">전체 해제</span>
+    </div>
   </div>
-  <div id="sales-dd-reports" class="hidden" style="display:flex; gap:6px; margin-top:6px; flex-wrap:wrap; align-items:center; padding:8px; background:#faf6ff; border-radius:10px;">
-    <button onclick="addCustomerName()" style="border:none;background:#eaf3ec;color:#2f6b46;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">+ 거래처 추가</button>
-    <button class="btn-key" onclick="openSaleAddModal('')" style="border:none;background:#fff3d6;color:#a15c1e;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">+ 새 매출 등록</button>
-    <button onclick="openDefectReturnForCustomer('')" style="border:none;background:#fdecea;color:var(--danger);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">+ 반품/불량 등록</button>
-    <button onclick="showCustomerLedger()" style="border:none;background:#e8edf5;color:#3d4f6b;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">거래처 원장</button>
-    <button onclick="showPaymentLedger()" style="border:none;background:#e6f0fa;color:#1a56db;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">입금 장부</button>
-    <button onclick="showCustomerRanking()" style="border:none;background:#f0e6fa;color:#6b3fa0;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">거래처 순위</button>
-    <button onclick="showReportMenu()" style="border:none;background:#e6faf0;color:#1a7a4a;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">리포트</button>
-    <button onclick="showUnpaidSummary()" style="border:none;background:#fce8d6;color:#a15c1e;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">미수금 현황</button>
-    <button onclick="showItemMonthlyStats()" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">품목별 출고량</button>
-    <button onclick="showCustomerPriceList()" style="border:none;background:#fdf0e0;color:#8a5a1e;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">거래처 단가표</button>
+  <div id="sales-dd-reports" class="hidden" style="display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-top:6px; padding:8px; background:#faf6ff; border-radius:10px; max-width:420px;">
+    <button onclick="addCustomerName()" style="border:none;background:#eaf3ec;color:#2f6b46;border-radius:8px;padding:7px 8px;font-size:12px;font-weight:600;">+ 거래처 추가</button>
+    <button class="btn-key" onclick="openSaleAddModal('')" style="border:none;background:#fff3d6;color:#a15c1e;border-radius:8px;padding:7px 8px;font-size:12px;font-weight:600;">+ 새 매출 등록</button>
+    <button onclick="openDefectReturnForCustomer('')" style="border:none;background:#fdecea;color:var(--danger);border-radius:8px;padding:7px 8px;font-size:12px;font-weight:600;">+ 반품/불량 등록</button>
+    <button onclick="showPaymentLedger()" style="border:none;background:#e6f0fa;color:#1a56db;border-radius:8px;padding:7px 8px;font-size:12px;font-weight:600;">입금 장부</button>
+    <button onclick="showCustomerRanking()" style="border:none;background:#f0e6fa;color:#6b3fa0;border-radius:8px;padding:7px 8px;font-size:12px;font-weight:600;">거래처 순위</button>
+    <button onclick="showReportMenu()" style="border:none;background:#e6faf0;color:#1a7a4a;border-radius:8px;padding:7px 8px;font-size:12px;font-weight:600;">리포트</button>
+    <button onclick="showItemMonthlyStats()" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:8px;padding:7px 8px;font-size:12px;font-weight:600;grid-column:1 / -1;">품목별 출고량</button>
   </div>
-  <div id="sales-dd-manage" class="hidden" style="display:flex; gap:6px; margin-top:6px; flex-wrap:wrap; align-items:center; padding:8px; background:#f6f4f0; border-radius:10px;">
-    <button onclick="archiveOldSalesLog()" style="border:none;background:#fff3d6;color:#a15c1e;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">매출장부 내보내기 및 정리</button>
-    <button onclick="openBizInfoModal()" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">사업자 정보 설정</button>
-    <button onclick="showAvailableBackups()" style="border:none;background:#f1eee7;color:var(--muted);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">백업 · 복구</button>
-    <button onclick="showDuplicateCheck()" style="border:none;background:#f1eee7;color:var(--muted);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">중복 점검</button>
-    <button onclick="manualBackupNow()" style="border:none;background:#eaf3ec;color:#2f6b46;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">지금 백업</button>
+  <div id="sales-dd-manage" class="hidden" style="display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-top:6px; padding:8px; background:#f6f4f0; border-radius:10px; max-width:420px;">
+    <button onclick="archiveOldSalesLog()" style="border:none;background:#fff3d6;color:#a15c1e;border-radius:8px;padding:7px 8px;font-size:12px;font-weight:600;">매출장부 내보내기 및 정리</button>
+    <button onclick="showAvailableBackups()" style="border:none;background:#f1eee7;color:var(--muted);border-radius:8px;padding:7px 8px;font-size:12px;font-weight:600;">백업 · 복구</button>
+    <button onclick="openBizInfoModal()" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:8px;padding:7px 8px;font-size:12px;font-weight:600;">사업자 정보 설정</button>
+    <button onclick="showDuplicateCheck()" style="border:none;background:#f1eee7;color:var(--muted);border-radius:8px;padding:7px 8px;font-size:12px;font-weight:600;">중복 점검</button>
+    <button onclick="manualBackupNow()" style="border:none;background:#eaf3ec;color:#2f6b46;border-radius:8px;padding:7px 8px;font-size:12px;font-weight:600;grid-column:1 / -1;">지금 백업</button>
   </div>
 </div>
 
@@ -361,7 +370,7 @@
     <input id="r-rate" type="number" step="0.1">
     <label>y 환산 계수</label>
     <input id="r-yard" type="number" step="0.0001">
-    <label>운임비 (원/y)</label>
+    <label>운임비</label>
     <input id="r-ship" type="number" step="1">
     <p style="font-size:12px;color:var(--muted);">여기서 바꾸면 원가표 전체 품목의 최종원가가 자동으로 다시 계산됩니다.</p>
     <div class="modal-actions">
@@ -409,7 +418,7 @@
     <input id="np-item" placeholder="예: 머플러" autocomplete="off" oninput="showItemSuggestions(this)" onfocus="showItemSuggestions(this)" onblur="hideItemSuggestionsDelayed()">
     <label>컬러 (비워두면 이 품목 전체 컬러에 같은 단가로 등록돼요)</label>
     <input id="np-color" placeholder="예: 검정 (비워도 됨)" autocomplete="off" oninput="showColorSuggestions(this,'np-item')" onfocus="showColorSuggestions(this,'np-item')" onblur="hideItemSuggestionsDelayed()">
-    <label>단가 (원/y)</label>
+    <label>단가</label>
     <input id="np-price" type="number" step="1" placeholder="예: 5500">
     <div class="modal-actions">
       <button class="btn-cancel" onclick="closeNewPriceModal()">취소</button>
@@ -486,7 +495,27 @@
   </div>
 </div>
 
-<div class="modal-overlay" id="noteModal">
+<div class="modal-overlay" id="costCalcModal">
+      <div class="modal">
+        <h3>원가 계산</h3>
+        <p id="cost-calc-context" style="font-size:12px;color:var(--muted);margin-top:-6px;"></p>
+        <p id="cost-calc-std" style="font-size:14px;font-weight:600;background:#f3f6f9;border-radius:8px;padding:8px 10px;margin:6px 0;"></p>
+        <label id="cost-calc-extra-label">추가 가공비</label>
+        <input id="cost-calc-extra" type="number" step="1" oninput="updateCostCalcPreview()">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px;font-size:14px;">
+          <span style="color:var(--muted);">계산 결과</span>
+          <span id="cost-calc-total" style="font-weight:700;color:var(--primary-dark);">-</span>
+        </div>
+        <div id="cost-calc-reset-row" class="hidden" style="margin-top:8px;">
+          <button type="button" onclick="resetTangCost()" style="border:none;background:none;color:var(--muted);font-size:12px;text-decoration:underline;">이 탕 원가 초기화 (원가표 기본값 사용)</button>
+        </div>
+        <div class="modal-actions">
+          <button class="btn-cancel" onclick="closeCostCalcModal()">취소</button>
+          <button class="btn-save" id="cost-calc-apply-btn" onclick="applyCostCalc()">계산해서 채우기</button>
+        </div>
+      </div>
+    </div>
+    <div class="modal-overlay" id="noteModal">
   <div class="modal">
     <h3 id="note-modal-title">메모</h3>
     <p id="note-modal-desc" style="font-size:12px;color:var(--muted);margin-top:-6px;"></p>
@@ -627,7 +656,7 @@
         <div><label style="display:flex;align-items:center;gap:6px;font-size:14px;color:var(--text);"><input type="radio" name="or-price-mode" value="unit" checked style="width:auto;" onchange="onPriceModeChange()"> 단가로 입력</label></div>
         <div><label style="display:flex;align-items:center;gap:6px;font-size:14px;color:var(--text);"><input type="radio" name="or-price-mode" value="total" style="width:auto;" onchange="onPriceModeChange()"> 총액 직접 입력</label></div>
       </div>
-      <label id="or-price-label">판매단가(원/y) — 매출 기록하려면 입력, 아니면 비워두세요</label>
+      <label id="or-price-label">판매단가 — 매출 기록하려면 입력, 아니면 비워두세요</label>
       <input id="or-price" type="number" step="1" placeholder="예: 3500">
       <label style="display:flex;align-items:center;gap:6px;font-size:14px;color:var(--text);margin-top:8px;"><input type="checkbox" id="or-tax" style="width:auto;"> 부가세 10% 추가해서 매출 잡기 (온라인 결제 등)</label>
     </div>
@@ -780,7 +809,7 @@
     <p style="font-size:12px;color:var(--muted);margin-top:-6px;">컬러 이름에 이 단어가 들어있으면, 어느 품목이든 자동으로 이 비용이 원가에 더해져요.</p>
     <div class="row2">
       <div><label>키워드</label><input id="pt-keyword" placeholder="예: 기모"></div>
-      <div><label>추가비용(원/y)</label><input id="pt-fee" type="number" step="1" placeholder="예: 3000"></div>
+      <div><label>추가비용</label><input id="pt-fee" type="number" step="1" placeholder="예: 3000"></div>
     </div>
     <button onclick="addProcessingType()" style="border:none;background:#eaf3ec;color:#2f6b46;border-radius:8px;padding:9px 14px;font-size:13px;font-weight:600;margin-top:8px;width:100%;">+ 추가</button>
     <div id="processing-type-list" style="margin-top:12px; max-height:280px; overflow-y:auto;"></div>
@@ -947,7 +976,7 @@
         <span>합계: <b id="sale-edit-breakdown-total">0</b>y</span>
       </div>
     </div>
-    <label>판매단가(원/y)</label>
+    <label>판매단가</label>
     <input id="sale-edit-price" type="number" step="1">
     <label>비고 (선택)</label>
     <input id="sale-edit-note" placeholder="예: 급송비 포함">
@@ -1034,10 +1063,10 @@
     <label>마수(y)</label>
     <input id="roll-edit-qty" type="number" step="0.1">
     <p style="font-size:12px;color:var(--muted);margin-top:-6px;">0으로 저장하면 "재고 없음"으로 처리돼요.</p>
-    <label>이 탕만의 원가(원/y, 선택 - 컷팅 원단처럼 이 탕만 다를 때)</label>
+    <label>이 탕만의 원가 (선택 - 컷팅 원단처럼 이 탕만 다를 때)</label>
     <div style="display:flex; gap:6px; align-items:center;">
       <input id="roll-edit-cost" type="number" step="1" placeholder="비워두면 원가표 기본값 사용" style="flex:1;">
-      <button type="button" onclick="calcCnyForInputId('roll-edit-cost')" style="border:none;background:#eee;color:#555;border-radius:8px;padding:8px 10px;font-size:12px;flex:none;">위안화로 계산</button>
+      <button type="button" onclick="calcCostForRollEdit()" style="border:none;background:#eee;color:#555;border-radius:8px;padding:8px 10px;font-size:12px;flex:none;">원가 계산</button>
     </div>
     <div class="modal-actions">
       <button class="btn-cancel" onclick="closeRollEditModal()">취소</button>
@@ -1056,7 +1085,7 @@
     <input id="rde-color" placeholder="예: 검정" autocomplete="off" oninput="showColorSuggestions(this, 'rde-item')" onfocus="showColorSuggestions(this, 'rde-item')" onblur="hideItemSuggestionsDelayed()">
     <label>수량(y)</label>
     <input id="rde-yards" type="number" step="0.1">
-    <label>단가(원/y)</label>
+    <label>단가</label>
     <input id="rde-price" type="number" step="1">
     <label>사유/메모</label>
     <input id="rde-note" placeholder="예: 색상 불일치">
@@ -1087,7 +1116,7 @@
     </div>
     <label>비고</label>
     <input id="log-edit-note" placeholder="선택사항">
-    <label>판매단가(원/y) — 처음에 안 넣으셨으면 여기서 입력하세요</label>
+    <label>판매단가 — 처음에 안 넣으셨으면 여기서 입력하세요</label>
     <input id="log-edit-price" type="number" step="1" placeholder="예: 7500">
     <label style="display:flex;align-items:center;gap:6px;font-size:14px;color:var(--text);margin-top:-6px;"><input type="checkbox" id="log-edit-tax" style="width:auto;"> 부가세 10% 포함</label>
     <p style="font-size:12px;color:var(--muted);">수량을 바꾸면 재고와 이월장부 진행상황도 자동으로 다시 맞춰져요.</p>
@@ -1111,7 +1140,7 @@
 const PASSWORD = "3059";
 const ADMIN_PASSWORD = "9503"; // 매출/미수금 탭 전용 - 필요하면 이 값만 바꿔서 변경 가능
 const DATA_VERSION = "2026-08-03-v4"; // 재고/이월장부 씨앗 데이터를 바꿀 때마다 이 값을 새로 바꿔주세요
-const APP_CODE_VERSION = "2026-09-28-x"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
+const APP_CODE_VERSION = "2026-09-29-j"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
 const SCHEMA_STAMP = 2; // 서버 저장규칙이 확인하는 "최신 앱 도장" - 절대 자주 바꾸지 않음(이 값을 아는 코드만 저장 가능하게 서버에서 막을 때 씀)
 const CONFIRMED_EMPTY = '__CONFIRMED_EMPTY__'; // "서버가 확실하게 문서가 없다고 확인해줬다"는 걸 표시하는 특수값
                                                  // (한번도 확인 안 한 null과 구분해서, 그 사이 다른 사람이 첫 데이터를 만들었으면 충돌로 감지하기 위함)
@@ -2860,10 +2889,14 @@ function renderInv() {
           const th = document.createElement('div');
           th.className = 'tang-head';
           const tangNote = getTangNote(g.item, g.color, tn, g.rolls);
+          const tangCostLabel = getTangCostLabel(g.item, g.color, tn, g.rolls);
           th.innerHTML = `<div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
               <div>탕${tn} · ${tangTotal.toLocaleString()}y</div>
-              <button class="btn-out" style="background:#fff3d6;color:#a15c1e;" onclick="event.stopPropagation(); openTangNoteModal('${escAttr(g.item)}','${escAttr(g.color)}',${tn})">메모</button>
-            </div>${tangNote ? `<div style="margin-top:3px;display:inline-block;background:#fff3d6;color:#a15c1e;font-weight:600;border-radius:5px;padding:2px 7px;font-size:12px;">📝 ${esc(tangNote)}</div>` : ''}`;
+              <div style="display:flex; gap:6px; flex:none;">
+                <button class="btn-out" style="background:#e8f0fb;color:var(--primary-dark);" onclick="event.stopPropagation(); openTangCostModal('${escAttr(g.item)}','${escAttr(g.color)}',${tn})">원가</button>
+                <button class="btn-out" style="background:#fff3d6;color:#a15c1e;" onclick="event.stopPropagation(); openTangNoteModal('${escAttr(g.item)}','${escAttr(g.color)}',${tn})">메모</button>
+              </div>
+            </div>${tangNote ? `<div style="margin-top:3px;display:inline-block;background:#fff3d6;color:#a15c1e;font-weight:600;border-radius:5px;padding:2px 7px;font-size:12px;">📝 ${esc(tangNote)}</div>` : ''}${tangCostLabel ? `<div style="margin-top:3px;display:inline-block;background:#e8f0fb;color:var(--primary-dark);font-weight:600;border-radius:5px;padding:2px 7px;font-size:12px;">💰 이 탕 원가 ${esc(tangCostLabel)}</div>` : ''}`;
           rollsDiv.appendChild(th);
           for (const r of tangRolls) {
             const rr = document.createElement('div');
@@ -3110,24 +3143,100 @@ function updateBlockStockInfo(colorInputEl) {
   infoEl.classList.remove('hidden');
 }
 function closeAddModal() { document.getElementById('addModal').classList.remove('open'); }
-function calcCnyForInputId(inputId) {
-  const cnyRaw = prompt('중국단가 (위안/미터)를 입력해주세요');
-  if (cnyRaw === null) return;
-  const cny = parseFloat(cnyRaw);
-  if (!cny || cny <= 0) { showToast('단가를 확인해주세요'); return; }
-  const costPerY = Math.round(cny * settings.rate * settings.yard + settings.ship);
-  document.getElementById(inputId).value = costPerY;
-  showToast(`${costPerY.toLocaleString()}원/y으로 계산해서 채웠어요 (환율 ${settings.rate}원 · 야드환산 ${settings.yard} · 운임 ${settings.ship}원)`);
+function calcCostForRollEdit() {
+  // 롤 수정 화면의 [원가 계산] 버튼 - 지금 입력창에 적힌 품번/컬러 기준
+  const item = document.getElementById('roll-edit-item').value.trim();
+  const color = document.getElementById('roll-edit-color').value.trim();
+  if (!item || !color) { showToast('품번과 컬러를 먼저 입력해주세요'); return; }
+  openCostCalcModal(item, color, { targetEl: document.getElementById('roll-edit-cost') });
 }
 function calcCnyForRollCost(btn) {
-  const cnyRaw = prompt('중국단가 (위안/미터)를 입력해주세요');
-  if (cnyRaw === null) return;
-  const cny = parseFloat(cnyRaw);
-  if (!cny || cny <= 0) { showToast('단가를 확인해주세요'); return; }
-  const costPerY = Math.round(cny * settings.rate * settings.yard + settings.ship);
-  const input = btn.closest('div').querySelector('.f-roll-cost');
-  input.value = costPerY;
-  showToast(`${costPerY.toLocaleString()}원/y으로 계산해서 채웠어요 (환율 ${settings.rate}원 · 야드환산 ${settings.yard} · 운임 ${settings.ship}원)`);
+  // 입고 등록 화면의 [원가 계산] 버튼 - 이 절이 속한 컬러 블록 기준
+  const item = document.getElementById('f-item').value.trim();
+  const block = btn.closest('.f-color-block');
+  const color = block ? block.querySelector('.f-block-color').value.trim() : '';
+  if (!item || !color) { showToast('품번과 컬러를 먼저 입력해주세요'); return; }
+  openCostCalcModal(item, color, { targetEl: btn.closest('div').querySelector('.f-roll-cost') });
+}
+let costCalcCtx = null;
+function openCostCalcModal(item, color, opts) {
+  // opts: { targetEl } - 계산 결과를 그 입력칸에 채우기만 함 (저장은 그 화면의 원래 저장 버튼이 함)
+  //       { tang }     - 계산 결과를 그 탕에 지금 있는 롤 전체에 바로 적용하고 저장까지 함
+  costCalcCtx = { item, color, ...opts };
+  const std = getCostPerYard(item, color);
+  costCalcCtx.mode = std != null ? 'extra' : 'cny';
+  document.getElementById('cost-calc-context').textContent = `${item} · ${color}${opts.tang != null ? ` · 탕${opts.tang}` : ''}`;
+  if (costCalcCtx.mode === 'extra') {
+    document.getElementById('cost-calc-std').textContent = `표준원가 ${Math.round(std).toLocaleString()}원`;
+    document.getElementById('cost-calc-extra-label').textContent = '추가 가공비 (텐타가공 등 · 이번 것만 · ±원)';
+    document.getElementById('cost-calc-extra').placeholder = '예: 150 또는 -100';
+  } else {
+    document.getElementById('cost-calc-std').textContent = '원가표에 등록된 기본단가가 없어서, 위안화 단가로 직접 계산할게요';
+    document.getElementById('cost-calc-extra-label').textContent = '중국단가 (위안/미터)';
+    document.getElementById('cost-calc-extra').placeholder = '예: 5';
+  }
+  document.getElementById('cost-calc-extra').value = '';
+  document.getElementById('cost-calc-apply-btn').textContent = opts.tang != null ? `탕${opts.tang} 전체에 적용` : '계산해서 채우기';
+  document.getElementById('cost-calc-reset-row').classList.toggle('hidden', opts.tang == null);
+  updateCostCalcPreview();
+  document.getElementById('costCalcModal').classList.add('open');
+  setTimeout(() => document.getElementById('cost-calc-extra').focus(), 50);
+}
+function computeCostCalcTotal() {
+  const raw = document.getElementById('cost-calc-extra').value;
+  const num = raw.trim() !== '' ? parseFloat(raw) : NaN;
+  if (costCalcCtx.mode === 'extra') {
+    const std = getCostPerYard(costCalcCtx.item, costCalcCtx.color);
+    if (std == null) return null;
+    return Math.round(std + (isNaN(num) ? 0 : num));
+  }
+  if (isNaN(num) || num <= 0) return null;
+  return Math.round(num * settings.rate * settings.yard + settings.ship);
+}
+function updateCostCalcPreview() {
+  const total = computeCostCalcTotal();
+  document.getElementById('cost-calc-total').textContent = total != null ? `${total.toLocaleString()}원` : '-';
+}
+function closeCostCalcModal() { document.getElementById('costCalcModal').classList.remove('open'); }
+async function applyCostCalc() {
+  const total = computeCostCalcTotal();
+  if (total == null) { showToast(costCalcCtx.mode === 'extra' ? '원가를 계산할 수 없어요' : '단가를 확인해주세요'); return; }
+  if (costCalcCtx.tang != null) {
+    const ok = await applyTangCost(costCalcCtx.item, costCalcCtx.color, costCalcCtx.tang, total);
+    if (ok !== false) closeCostCalcModal();
+  } else if (costCalcCtx.targetEl) {
+    costCalcCtx.targetEl.value = total;
+    closeCostCalcModal();
+    showToast(`${total.toLocaleString()}원으로 채웠어요`);
+  }
+}
+async function resetTangCost() {
+  if (!costCalcCtx || costCalcCtx.tang == null) return;
+  const ok = await applyTangCost(costCalcCtx.item, costCalcCtx.color, costCalcCtx.tang, null);
+  if (ok !== false) closeCostCalcModal();
+}
+async function applyTangCost(item, color, tang, costPerY) {
+  // 지금 이 순간 그 탕에 있는 실제 롤들에 직접 적용함(탕 번호로 나중에 다시 찾는 방식이 아님) -
+  // 그래야 나중에 다른 탕이 다 나가서 번호가 당겨져도(compactTangsForItemColor), 이 원가는 그 물리적인 롤들을 그대로 따라가고 엉뚱한 다른 롤로 옮겨붙지 않음
+  const targets = rolls.filter(r => String(r.item).trim() === String(item).trim() && String(r.color).trim() === String(color).trim() && r.tang === tang && !r.defective);
+  if (targets.length === 0) { showToast('적용할 롤이 없어요'); return false; }
+  const before = targets.map(r => r.costPerY);
+  targets.forEach(r => { r.costPerY = costPerY; });
+  const ok = await persistRolls();
+  if (ok === false) { targets.forEach((r, i) => { r.costPerY = before[i]; }); render(); return false; }
+  render();
+  showToast(costPerY == null ? `탕${tang} 전체(${targets.length}개 절)를 원가표 기본값으로 되돌렸어요` : `탕${tang} 전체(${targets.length}개 절)에 ${costPerY.toLocaleString()}원을 적용했어요`);
+  return true;
+}
+function openTangCostModal(item, color, tang) { openCostCalcModal(item, color, { tang }); }
+function getRollEffectiveCostLabel(rollId, item, color) {
+  // 출고 처리 화면에서 "이 롤을 가져가면 원가가 얼마로 잡히는지" 눈으로 참고하라고 보여주는 표시 (강제 확인은 아님)
+  const r = rolls.find(x => x.id === rollId);
+  const std = getCostPerYard(item, color);
+  const effective = (r && r.costPerY != null) ? r.costPerY : std;
+  if (effective == null) return { text: '', custom: false };
+  const custom = r && r.costPerY != null && std != null && r.costPerY !== std;
+  return { text: `원가 ${Math.round(effective).toLocaleString()}원`, custom };
 }
 function addRollRowToBlock(elInBlock) {
   const listEl = elInBlock.classList && elInBlock.classList.contains('f-block-rolls') ? elInBlock : elInBlock.closest('.f-color-block').querySelector('.f-block-rolls');
@@ -3148,8 +3257,8 @@ function addRollRowToBlock(elInBlock) {
       <button onclick="this.closest('.f-roll-row').remove()" style="border:none;background:#fdecea;color:var(--danger);border-radius:8px;padding:0 10px;font-size:12px;flex:none;height:38px;">삭제</button>
     </div>
     <div style="display:flex; gap:6px; align-items:center; margin-top:6px;">
-      <input type="number" step="1" placeholder="이 탕만 원가가 다르면 원가(원/y) 입력 (선택 - 컷팅 원단 등)" class="f-roll-cost" style="flex:1; padding:8px; border:1px solid var(--border); border-radius:8px; font-size:13px;">
-      <button type="button" onclick="calcCnyForRollCost(this)" style="border:none;background:#eee;color:#555;border-radius:8px;padding:8px 10px;font-size:12px;flex:none;">위안화로 계산</button>
+      <input type="number" step="1" placeholder="이 탕만 원가가 다르면 원가 입력 (선택 - 컷팅 원단 등)" class="f-roll-cost" style="flex:1; padding:8px; border:1px solid var(--border); border-radius:8px; font-size:13px;">
+      <button type="button" onclick="calcCnyForRollCost(this)" style="border:none;background:#eee;color:#555;border-radius:8px;padding:8px 10px;font-size:12px;flex:none;">원가 계산</button>
     </div>
     <div class="f-roll-note-wrap hidden" style="margin-top:6px;">
       <input type="text" class="f-roll-note" maxlength="40" placeholder="탕 메모 - 이 탕 전체 (예: 색 살짝 진함)" style="width:100%; padding:8px; border:1px solid var(--border); border-radius:8px; font-size:13px;">
@@ -3378,6 +3487,16 @@ function getTangNote(item, color, tang, pool) {
     if (String(r.item).trim() === String(item).trim() && String(r.color).trim() === String(color).trim() && r.tang === tang && !r.defective && r.note && !seen.includes(r.note)) seen.push(r.note);
   }
   return seen.join(' · ');
+}
+function getTangCostLabel(item, color, tang, pool) {
+  // 이 탕에 직접 입력된 원가가 있으면 표시용 글자로 돌려줌 (없으면 빈 문자열 - 원가표 기본값을 그대로 쓰는 것)
+  const seen = [];
+  for (const r of (pool || rolls)) {
+    if (String(r.item).trim() === String(item).trim() && String(r.color).trim() === String(color).trim() && r.tang === tang && !r.defective && r.costPerY != null && !seen.includes(r.costPerY)) seen.push(r.costPerY);
+  }
+  if (seen.length === 0) return '';
+  if (seen.length === 1) return `${Math.round(seen[0]).toLocaleString()}원`;
+  return '절마다 다름';
 }
 async function saveTangNote(item, color, tang, v) {
   const targets = rolls.filter(r => String(r.item).trim() === String(item).trim() && String(r.color).trim() === String(color).trim() && r.tang === tang && !r.defective);
@@ -3668,7 +3787,7 @@ function renderCost() {
     const isOpen = openGroups.has(gk);
     // 이 품목의 컬러 목록은 재고(rolls) + 재고 없어도 스왓치·중국품번 등록된 컬러까지 합쳐서 뽑음
     const colorsFromRollsForItem = rolls.filter(r => String(r.item).trim() === String(c.item).trim() && !r.defective).map(r => String(r.color).trim());
-    const colorsFromSwatchForItem = swatchInfo.filter(s => String(s.item).trim() === String(c.item).trim() && (s.order != null || s.chinaCode != null) && s.color != null).map(s => String(s.color).trim());
+    const colorsFromSwatchForItem = swatchInfo.filter(s => String(s.item).trim() === String(c.item).trim() && (s.order != null || s.chinaCode != null || s.keepCard) && s.color != null).map(s => String(s.color).trim()); // keepCard: 재고가 다 나가도 카드를 유지하는 컬러("OO기모" 등, 순번은 따로 안 매김) - 재고 탭과 같은 기준
     const colorsForItem = Array.from(new Set([...colorsFromRollsForItem, ...colorsFromSwatchForItem]))
       .sort((a, b) => {
         const sortInfo = (colorName) => {
@@ -3707,7 +3826,6 @@ function renderCost() {
       </div>
       <div class="price">
         <div class="won">${won.toLocaleString()}원</div>
-        <div class="cny">/y</div>
       </div>
     `;
     list.appendChild(div);
@@ -3716,7 +3834,7 @@ function renderCost() {
       const colorWrap = document.createElement('div');
       colorWrap.style.cssText = 'background:#faf8f4; border-radius:10px; padding:10px 12px; margin:-6px 0 10px;';
       colorWrap.innerHTML = `
-        <div style="font-size:12px; color:var(--muted); margin-bottom:6px;">기본은 위 원가(${won.toLocaleString()}원/y, 환율 바뀌면 자동으로 같이 바뀌어요)가 그대로 적용돼요. 이 컬러만 다르면 아래에 적으세요 - 입력하고 다른 곳 누르면 자동으로 저장돼요.</div>
+        <div style="font-size:12px; color:var(--muted); margin-bottom:6px;">기본은 위 원가(${won.toLocaleString()}원, 환율 바뀌면 자동으로 같이 바뀌어요)가 그대로 적용돼요. 이 컬러만 다르면 아래에 적으세요 - 입력하고 다른 곳 누르면 자동으로 저장돼요.</div>
         ${colorsForItem.map((color, colorIdx) => {
           const override = overridesForItem.find(x => String(x.color).trim() === color);
           const priceInputId = `cost-color-price-${c.id}-${colorIdx}`;
@@ -3732,7 +3850,7 @@ function renderCost() {
             <div style="padding:6px 0; border-bottom:1px dashed var(--border);">
               <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
                 <span style="font-size:13px; font-weight:600;">${esc(color)}${swLabel}</span>
-                <span id="${wonDisplayId}" style="font-size:13px; font-weight:700; color:${isDifferent ? '#a15c1e' : 'var(--muted)'};">${colorWon.toLocaleString()}원/y</span>
+                <span id="${wonDisplayId}" style="font-size:13px; font-weight:700; color:${isDifferent ? '#a15c1e' : 'var(--muted)'};">${colorWon.toLocaleString()}원</span>
               </div>
               <div style="display:flex; align-items:center; gap:6px; margin-bottom:4px;">
                 <span style="font-size:11px; color:var(--muted); width:100px; flex:none;">이 컬러만 중국단가</span>
@@ -3742,7 +3860,7 @@ function renderCost() {
               <div style="display:flex; align-items:center; gap:6px;">
                 <span style="font-size:11px; color:var(--muted); width:100px; flex:none;">가공비 추가</span>
                 <input type="number" step="1" id="${feeInputId}" placeholder="0" value="${override && override.fee ? override.fee : ''}" onblur="autoSaveCostColorOverride('${escAttr(c.item)}', '${escAttr(color)}', '${priceInputId}', '${feeInputId}', '${ignoreInputId}', '${wonDisplayId}')" style="width:100px; padding:6px; border:1px solid var(--border); border-radius:6px; font-size:13px;">
-                <span style="font-size:11px; color:var(--muted);">원/y (고정, 환율 영향 없음)</span>
+                <span style="font-size:11px; color:var(--muted);">원 (고정, 환율 영향 없음)</span>
               </div>
               ${keywordFee > 0 ? `
                 <label style="display:flex; align-items:center; gap:6px; font-size:11px; color:#a15c1e; margin-top:4px;">
@@ -3793,7 +3911,7 @@ async function autoSaveCostColorOverride(item, color, priceInputId, feeInputId, 
   const wonEl = document.getElementById(wonDisplayId);
   if (wonEl) {
     const newWon = Math.round(getCostPerYard(item, color));
-    wonEl.textContent = `${newWon.toLocaleString()}원/y`;
+    wonEl.textContent = `${newWon.toLocaleString()}원`;
   }
 }
 
@@ -3802,7 +3920,7 @@ function onCostTypeChange() {
   const label = document.getElementById('c-price-label');
   const hint = document.getElementById('c-price-hint');
   if (type === 'domestic') {
-    label.textContent = '고정 원가 (원/y)';
+    label.textContent = '고정 원가';
     hint.textContent = '환율 계산 없이, 여기 적은 금액을 그대로 원가로 씁니다.';
     document.getElementById('c-price').placeholder = '예: 3700';
   } else {
@@ -3861,7 +3979,7 @@ function openProcessingTypeModal() {
     <div style="display:flex; justify-content:space-between; align-items:center; padding:6px 4px; border-bottom:1px dashed var(--border);">
       <div style="font-size:13px;">${esc(pt.keyword)}</div>
       <div style="display:flex; align-items:center; gap:8px;">
-        <span style="font-weight:600;">+${pt.fee.toLocaleString()}원/y</span>
+        <span style="font-weight:600;">+${pt.fee.toLocaleString()}원</span>
         <button onclick="editProcessingType(${i})" style="border:none;background:none;color:var(--primary-dark);font-size:11px;text-decoration:underline;">수정</button>
         <button onclick="deleteProcessingType(${i})" style="border:none;background:none;color:var(--muted);font-size:11px;">삭제</button>
       </div>
@@ -3889,7 +4007,7 @@ async function editProcessingType(idx) {
   if (!cur) return;
   const newKeyword = prompt('키워드', cur.keyword);
   if (newKeyword === null) return;
-  const newFeeRaw = prompt('추가비용(원/y)', cur.fee);
+  const newFeeRaw = prompt('추가비용', cur.fee);
   if (newFeeRaw === null) return;
   const newFee = parseFloat(newFeeRaw);
   if (!newKeyword.trim()) { showToast('키워드를 적어주세요'); return; }
@@ -4384,7 +4502,7 @@ function addLogEditNewTangRow(tang, qty, manualCostPerY) {
       <input type="number" step="0.1" placeholder="마수(y)" class="log-edit-new-tang-qty" value="${qty != null ? qty : ''}" oninput="updateLogEditTotal()" style="flex:1; padding:6px; border:1px solid var(--border); border-radius:6px; font-size:13px;">
       <button onclick="this.closest('.log-edit-new-tang-row').remove(); updateLogEditTotal();" style="border:none;background:#fdecea;color:var(--danger);border-radius:6px;padding:0 8px;font-size:12px;flex:none;height:32px;">삭제</button>
     </div>
-    <input type="number" step="1" placeholder="이 탕 원가(원/y, 선택)" class="log-edit-new-tang-cost" value="${manualCostPerY != null ? manualCostPerY : ''}" style="width:100%; margin-top:4px; padding:6px; border:1px solid var(--border); border-radius:6px; font-size:12px;">
+    <input type="number" step="1" placeholder="이 탕 원가 (선택)" class="log-edit-new-tang-cost" value="${manualCostPerY != null ? manualCostPerY : ''}" style="width:100%; margin-top:4px; padding:6px; border:1px solid var(--border); border-radius:6px; font-size:12px;">
   `;
   listEl.appendChild(row);
 }
@@ -4713,7 +4831,7 @@ function addSaleEditNewTangRow(tang, qty, manualCostPerY) {
       <input type="number" step="0.1" placeholder="마수(y)" class="sale-edit-new-tang-qty" value="${qty != null ? qty : ''}" oninput="updateSaleEditTotal()" style="flex:1; padding:6px; border:1px solid var(--border); border-radius:6px; font-size:13px;">
       <button onclick="this.closest('.sale-edit-new-tang-row').remove(); updateSaleEditTotal();" style="border:none;background:#fdecea;color:var(--danger);border-radius:6px;padding:0 8px;font-size:12px;flex:none;height:32px;">삭제</button>
     </div>
-    <input type="number" step="1" placeholder="이 탕 원가(원/y, 선택)" class="sale-edit-new-tang-cost" value="${manualCostPerY != null ? manualCostPerY : ''}" style="width:100%; margin-top:4px; padding:6px; border:1px solid var(--border); border-radius:6px; font-size:12px;">
+    <input type="number" step="1" placeholder="이 탕 원가 (선택)" class="sale-edit-new-tang-cost" value="${manualCostPerY != null ? manualCostPerY : ''}" style="width:100%; margin-top:4px; padding:6px; border:1px solid var(--border); border-radius:6px; font-size:12px;">
   `;
   listEl.appendChild(row);
 }
@@ -5365,7 +5483,7 @@ function addPreShipRow(desc, qty, price, presetAmount, noteVal, itemName, colorN
     <input type="text" class="pre-ship-note" placeholder="비고(선택 - 운임비, 반품 사유 등)" value="${escAttr(noteVal || '')}" style="width:100%; padding:8px; border:1px solid var(--border); border-radius:8px; font-size:13px; margin-bottom:6px;">
     <div style="display:flex; gap:6px; align-items:center;">
       <input type="number" step="0.1" class="pre-ship-qty" placeholder="수량(y, 선택)" value="${qty != null && qty !== '' ? qty : ''}" oninput="updatePreShipTotals()" style="flex:1; padding:8px; border:1px solid var(--border); border-radius:8px; font-size:13px;">
-      <input type="number" step="1" class="pre-ship-price" placeholder="단가(원/y, 선택)" value="${price != null ? price : ''}" oninput="updatePreShipTotals()" style="flex:1; padding:8px; border:1px solid var(--border); border-radius:8px; font-size:13px;">
+      <input type="number" step="1" class="pre-ship-price" placeholder="단가 (선택)" value="${price != null ? price : ''}" oninput="updatePreShipTotals()" style="flex:1; padding:8px; border:1px solid var(--border); border-radius:8px; font-size:13px;">
       <input type="number" step="1" class="pre-ship-amount" placeholder="금액(직접 입력 가능)" oninput="this.dataset.manual='1'; updatePreShipTotals()" style="flex:1; padding:8px; border:1px solid var(--border); border-radius:8px; font-size:13px;">
       <button onclick="this.closest('.pre-ship-row').remove(); updatePreShipTotals();" style="border:none;background:#fdecea;color:var(--danger);border-radius:8px;padding:0 10px;font-size:12px;flex:none;height:38px;">삭제</button>
     </div>
@@ -5785,7 +5903,7 @@ async function editStandingPriceForAllColors(customer, item, colors, currentPric
     await rememberPrice(customer, item, c, newPrice);
   }
   render();
-  showToast(`다음부터 ${newPrice.toLocaleString()}원/y으로 적용돼요`);
+  showToast(`다음부터 ${newPrice.toLocaleString()}원으로 적용돼요`);
 }
 async function editStandingPrice(customer, item, color, currentPrice) {
   const raw = prompt(`"${customer}" · ${item} ${color}\n앞으로 이 원단에 쓸 기준 단가를 입력해주세요\n(과거 거래 기록은 전혀 안 바뀌고, 다음 출고 때부터만 이 단가가 자동으로 채워져요)`, currentPrice);
@@ -5794,7 +5912,7 @@ async function editStandingPrice(customer, item, color, currentPrice) {
   if (!newPrice || newPrice <= 0) { showToast('올바른 단가를 입력해주세요'); return; }
   await rememberPrice(customer, item, color, newPrice);
   render();
-  showToast(`다음부터 ${newPrice.toLocaleString()}원/y으로 적용돼요`);
+  showToast(`다음부터 ${newPrice.toLocaleString()}원으로 적용돼요`);
 }
 let _newPriceCustomer = null;
 function openNewPriceModal(customer) {
@@ -5945,7 +6063,7 @@ function renderCustomerPriceListView() {
         <div style="background:#fff; border-radius:10px; border:1px solid var(--border); overflow:hidden; break-inside:avoid; margin-bottom:8px;">
           <div onclick="editStandingPriceForAllColors('${escAttr(t_c)}','${escAttr(item)}',${JSON.stringify(colors).replace(/"/g, '&quot;')},${prices[0]})" style="display:flex; justify-content:space-between; align-items:center; padding:11px 14px; cursor:pointer;">
             <span style="font-size:14px; font-weight:600;">${esc(item)}</span>
-            <span style="font-size:14px; font-weight:700; color:#8a5a1e;">${prices[0].toLocaleString()}원<span style="font-size:11px; font-weight:400; color:var(--muted);">/y</span></span>
+            <span style="font-size:14px; font-weight:700; color:#8a5a1e;">${prices[0].toLocaleString()}원</span>
           </div>
         </div>
       `;
@@ -5959,7 +6077,7 @@ function renderCustomerPriceListView() {
     return `
             <div onclick="editStandingPrice('${escAttr(t_c)}','${escAttr(item)}','${escAttr(c)}',${info.unitPrice})" style="display:flex; justify-content:space-between; align-items:center; padding:9px 14px; border-top:1px solid #f1eee7; cursor:pointer;">
               <span style="font-size:14px;">${esc(c) || '(컬러 없음)'}</span>
-              <span style="font-size:14px; font-weight:700; color:#8a5a1e;">${info.unitPrice.toLocaleString()}원<span style="font-size:11px; font-weight:400; color:var(--muted);">/y</span></span>
+              <span style="font-size:14px; font-weight:700; color:#8a5a1e;">${info.unitPrice.toLocaleString()}원</span>
             </div>
           `;
   }).join('')}
@@ -6254,31 +6372,30 @@ function renderCustomerLedgerView() {
   list.appendChild(backBtn);
 
   const controls = document.createElement('div');
-  controls.style.cssText = 'display:flex; gap:8px; align-items:flex-end; flex-wrap:wrap; margin-bottom:14px;';
+  controls.id = 'ledger-controls';
+  controls.style.cssText = 'margin-bottom:14px;';
   controls.innerHTML = `
-    <div style="flex:1; min-width:180px;">
-      <label>거래처</label>
-      <div style="display:flex; gap:6px; align-items:center;">
-        <input id="ledger-customer" placeholder="예: 클래식" autocomplete="off" value="${escAttr(ledgerCustomer || '')}" oninput="showCustomerSuggestions(this)" onfocus="showCustomerSuggestions(this)" onblur="hideItemSuggestionsDelayed()" style="flex:1;">
-        <button type="button" onclick="openCustomerPicker('ledger-customer')" style="border:none;background:#e8edf5;color:#3d4f6b;border-radius:8px;padding:0 10px;height:38px;font-size:12px;flex:none;">목록</button>
-      </div>
+    <div style="display:flex; gap:6px; margin-bottom:6px;">
+      <input id="ledger-customer" placeholder="예: 클래식" autocomplete="off" value="${escAttr(ledgerCustomer || '')}" oninput="showCustomerSuggestions(this)" onfocus="showCustomerSuggestions(this)" onblur="hideItemSuggestionsDelayed()" style="flex:1; min-width:0; padding:8px 10px; font-size:13px;">
+      <button type="button" onclick="openCustomerPicker('ledger-customer')" style="border:none;background:#e8edf5;color:#3d4f6b;border-radius:7px;padding:0 12px;font-size:12px;flex:none;">목록</button>
     </div>
-    <div>
-      <label>시작일</label>
-      <input id="ledger-start" type="date">
+    <div style="display:flex; gap:6px; align-items:center; margin-bottom:8px;">
+      <input id="ledger-start" type="date" style="flex:0 0 auto; width:150px; padding:7px 6px; font-size:12px;">
+      <span style="flex:none; font-size:12px; color:var(--muted);">~</span>
+      <input id="ledger-end" type="date" style="flex:0 0 auto; width:150px; padding:7px 6px; font-size:12px;">
+      <button onclick="ledgerCustomer=document.getElementById('ledger-customer').value.trim(); ledgerStartDate=document.getElementById('ledger-start').value; ledgerEndDate=document.getElementById('ledger-end').value; renderCustomerLedgerTable();" style="flex:none; border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:7px;padding:7px 12px;font-size:12px;font-weight:600;">조회</button>
     </div>
-    <div>
-      <label>종료일</label>
-      <input id="ledger-end" type="date">
+    <div style="display:flex; gap:6px; flex-wrap:wrap; margin-bottom:8px;">
+      <button onclick="printCurrentLedgerStatement()" style="border:none;background:#eaf3ec;color:#2f6b46;border-radius:7px;padding:8px 12px;font-size:12px;font-weight:600;white-space:nowrap;">명세서 인쇄</button>
+      <button class="btn-key" onclick="if(ledgerCustomer) payCustomerUnpaid(ledgerCustomer)" style="border:none;background:#eaf3ec;color:#2f6b46;border-radius:7px;padding:8px 12px;font-size:12px;font-weight:600;white-space:nowrap;">입금 처리</button>
+      <button onclick="printLedgerPeriod()" style="border:none;background:#e8edf5;color:#3d4f6b;border-radius:7px;padding:8px 12px;font-size:12px;font-weight:600;white-space:nowrap;">기간별 인쇄</button>
     </div>
-    <button onclick="ledgerCustomer=document.getElementById('ledger-customer').value.trim(); ledgerStartDate=document.getElementById('ledger-start').value; ledgerEndDate=document.getElementById('ledger-end').value; renderCustomerLedgerTable();" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:8px;padding:10px 16px;font-size:13px;font-weight:600;height:38px;">조회</button>
-    <button onclick="printCurrentLedgerStatement()" style="border:none;background:#eaf3ec;color:#2f6b46;border-radius:8px;padding:10px 16px;font-size:13px;font-weight:600;height:38px;">명세서 인쇄</button>
-    <button class="btn-key" onclick="if(ledgerCustomer) payCustomerUnpaid(ledgerCustomer)" style="border:none;background:#eaf3ec;color:#2f6b46;border-radius:8px;padding:10px 16px;font-size:13px;font-weight:600;height:38px;">입금 처리</button>
-    <button onclick="printLedgerPeriod()" style="border:none;background:#e8edf5;color:#3d4f6b;border-radius:8px;padding:10px 16px;font-size:13px;font-weight:600;height:38px;">기간별 원장 인쇄</button>
-    <button onclick="if(ledgerCustomer) renameCustomer(ledgerCustomer)" style="border:none;background:#eee;color:#555;border-radius:8px;padding:10px 12px;font-size:12px;height:38px;">이름 수정</button>
-    <button onclick="document.querySelectorAll('.ledger-print-check').forEach(cb=>cb.checked=true)" style="border:none;background:#eee;color:#555;border-radius:8px;padding:10px 12px;font-size:12px;height:38px;">전체 선택</button>
-    <button onclick="document.querySelectorAll('.ledger-print-check').forEach(cb=>cb.checked=false)" style="border:none;background:#eee;color:#555;border-radius:8px;padding:10px 12px;font-size:12px;height:38px;">전체 해제</button>
-    <label style="display:flex; align-items:center; gap:4px; font-size:12px; color:var(--text);"><input type="checkbox" id="ledger-print-add-tax" style="width:auto;"> 부가세 10% 포함해서 인쇄 (세액 없는 항목만, 기록은 안 바뀜)</label>
+    <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; padding-top:6px; border-top:1px dashed var(--border); font-size:11px; color:var(--muted);">
+      <span onclick="if(ledgerCustomer) renameCustomer(ledgerCustomer)" style="text-decoration:underline; cursor:pointer;">이름 수정</span>
+      <span onclick="document.querySelectorAll('.ledger-print-check').forEach(cb=>cb.checked=true)" style="text-decoration:underline; cursor:pointer;">전체 선택</span>
+      <span onclick="document.querySelectorAll('.ledger-print-check').forEach(cb=>cb.checked=false)" style="text-decoration:underline; cursor:pointer;">전체 해제</span>
+      <label style="margin-left:auto; display:flex; align-items:center; gap:4px;"><input type="checkbox" id="ledger-print-add-tax" style="width:auto;"> 부가세 포함해서 인쇄</label>
+    </div>
   `;
   list.appendChild(controls);
 
@@ -6482,7 +6599,7 @@ function onQuickCostTypeChange() {
   const label = document.getElementById('qc-price-label');
   const hint = document.getElementById('qc-price-hint');
   if (type === 'domestic') {
-    label.textContent = '원가 (원/y)';
+    label.textContent = '원가';
     hint.textContent = '환율 계산 없이, 여기 적은 금액을 그대로 원가로 씁니다.';
     document.getElementById('qc-price').placeholder = '예: 3700';
   } else {
@@ -6650,28 +6767,67 @@ async function printLedgerPeriod() {
     lastDate = ev.date;
     const color = ev.type === '입금' ? 'color:#1a56db;' : (ev.type === '불량' || ev.type === '반품' || ev.type === '공제') ? 'color:#c0392b;' : '';
     return `${dateHeader}<tr style="${color}">
-      <td>${esc(ev.date)}</td>
-      <td>${esc(ev.type)}</td>
-      <td>${esc(ev.desc)}${ev.detail ? ` (${esc(ev.detail)})` : ''}</td>
-      <td style="font-size:0.85em; color:#666;">${esc(ev.note || '')}</td>
-      <td style="text-align:right;">${ev.amount < 0 ? '-' : ''}${Math.abs(ev.amount).toLocaleString()}</td>
-      <td style="text-align:right;">${running.toLocaleString()}</td>
+      <td style="border-bottom:1px solid #eee; padding:5px 6px;">${esc(ev.date)}</td>
+      <td style="border-bottom:1px solid #eee; padding:5px 6px;">${esc(ev.type)}</td>
+      <td style="border-bottom:1px solid #eee; padding:5px 6px;">${esc(ev.desc)}${ev.detail ? ` (${esc(ev.detail)})` : ''}</td>
+      <td style="border-bottom:1px solid #eee; padding:5px 6px; font-size:0.85em; color:#666;">${esc(ev.note || '')}</td>
+      <td style="border-bottom:1px solid #eee; padding:5px 6px; text-align:right;">${ev.amount < 0 ? '-' : ''}${Math.abs(ev.amount).toLocaleString()}</td>
+      <td style="border-bottom:1px solid #eee; padding:5px 6px; text-align:right;">${running.toLocaleString()}</td>
     </tr>`;
   }).join('');
 
+  // 기간 중 매출/입금/반품·불량 합계 (화면에 인쇄되는 줄 기준으로 계산 - 체크 해제해서 뺀 줄은 합계에도 안 들어감)
+  let salesSum = 0, paySum = 0, deductSum = 0;
+  for (const ev of rowsInRange) {
+    if (ev.type === '입금') paySum += -ev.amount;
+    else if (ev.amount > 0) salesSum += ev.amount;
+    else deductSum += -ev.amount;
+  }
+
+  // 사업자정보 - 설정에 입력해둔 것만 골라서 보여줌 (비워두신 항목은 빈 줄로 안 남게)
+  const bizLines = [];
+  if (settings.bizName) bizLines.push(`<div style="font-size:13px; font-weight:700;">${esc(settings.bizName)}</div>`);
+  const bizLine2 = [settings.bizOwner ? `대표 ${settings.bizOwner}` : '', settings.bizNumber || ''].filter(Boolean).join(' · ');
+  if (bizLine2) bizLines.push(`<div>${esc(bizLine2)}</div>`);
+  const bizLine3 = [settings.bizAddress || '', settings.bankInfo || ''].filter(Boolean).join(' · ');
+  if (bizLine3) bizLines.push(`<div>${esc(bizLine3)}</div>`);
+  const bizBlock = bizLines.length > 0 ? `<div style="text-align:right; font-size:11px; line-height:1.5; color:#333;">${bizLines.join('')}</div>` : '';
+
   const html = `
     <div class="ledger-print" style="padding:14mm 12mm; font-family:-apple-system,'Malgun Gothic',sans-serif;">
-      <h2 style="margin:0 0 4px;">거래처 원장 - ${esc(customer)}</h2>
-      <div style="color:#555; margin-bottom:10px; font-size:13px;">기간: ${esc(startDate || '')} ~ ${esc(endDate || '')} · 발행일: ${todayStr()}</div>
-      <table style="width:100%; border-collapse:collapse; table-layout:fixed;">
+      <div style="display:flex; justify-content:space-between; align-items:flex-start; border-bottom:2px solid #222; padding-bottom:10px; margin-bottom:12px;">
+        <div>
+          <div style="font-size:18px; font-weight:700;">거래명세서</div>
+          <div style="font-size:11px; color:#666; margin-top:2px;">기간 ${esc(startDate || '')} ~ ${esc(endDate || '')} · 발행일 ${todayStr()}</div>
+        </div>
+        ${bizBlock}
+      </div>
+      <div style="font-size:13px; font-weight:600; margin-bottom:6px;">공급받는자: ${esc(customer)}</div>
+      <table style="width:100%; border-collapse:collapse; table-layout:fixed; border:1px solid #ccc;">
         <thead>
-          <tr><th style="width:9%;">날짜</th><th style="width:8%;">구분</th><th style="width:28%;">내용</th><th style="width:25%;">비고</th><th style="width:15%;">금액</th><th style="width:15%;">잔액</th></tr>
+          <tr style="background:#f3f1ea;">
+            <th style="width:9%; border-bottom:1px solid #999; padding:5px 6px; text-align:left;">날짜</th>
+            <th style="width:8%; border-bottom:1px solid #999; padding:5px 6px; text-align:left;">구분</th>
+            <th style="width:28%; border-bottom:1px solid #999; padding:5px 6px; text-align:left;">내용</th>
+            <th style="width:25%; border-bottom:1px solid #999; padding:5px 6px; text-align:left;">비고</th>
+            <th style="width:15%; border-bottom:1px solid #999; padding:5px 6px; text-align:right;">금액</th>
+            <th style="width:15%; border-bottom:1px solid #999; padding:5px 6px; text-align:right;">잔액</th>
+          </tr>
         </thead>
         <tbody>
-          <tr><td colspan="5"><b>[이월]</b></td><td style="text-align:right;"><b>${openingBalance.toLocaleString()}</b></td></tr>
+          <tr style="background:#fafafa;"><td colspan="5" style="border-bottom:1px solid #eee; padding:5px 6px;"><b>이월 잔액</b></td><td style="border-bottom:1px solid #eee; padding:5px 6px; text-align:right;"><b>${openingBalance.toLocaleString()}</b></td></tr>
           ${rowsHtml}
         </tbody>
       </table>
+      <div style="display:flex; justify-content:flex-end; margin-top:10px;">
+        <table style="font-size:12px;">
+          <tr><td style="color:#666; padding:2px 14px 2px 0;">기간 중 매출 합계</td><td style="text-align:right; padding:2px 0;">${salesSum.toLocaleString()}원</td></tr>
+          ${deductSum > 0 ? `<tr><td style="color:#666; padding:2px 14px 2px 0;">반품·불량 차감</td><td style="text-align:right; padding:2px 0;">-${deductSum.toLocaleString()}원</td></tr>` : ''}
+          <tr><td style="color:#666; padding:2px 14px 2px 0;">기간 중 입금 합계</td><td style="text-align:right; padding:2px 0;">${paySum.toLocaleString()}원</td></tr>
+          <tr><td style="font-weight:700; padding:4px 14px 2px 0; border-top:1px solid #ccc;">최종 잔액</td><td style="text-align:right; font-weight:700; padding:4px 0 2px; border-top:1px solid #ccc;">${running.toLocaleString()}원</td></tr>
+        </table>
+      </div>
+      <div style="text-align:center; font-size:11px; color:#999; margin-top:16px;">항상 좋은 거래 감사드립니다.</div>
     </div>
   `;
   document.getElementById('printArea').innerHTML = html;
@@ -6685,7 +6841,7 @@ function buildCustomerLedgerEvents(t_c) {
     if (e.isSample) continue; // 샘플로 준 건(매출 0원)은 명세서랑 똑같이 원장에도 안 보이게 함
     if (e.isReturn || e.isDefect) {
       if (e.deductAmount != null) {
-        events.push({ id: e.id, date: e.date, type: e.isDefect ? '불량' : '반품', desc: `${e.item} ${e.color || ''}`, detail: `${Math.abs(e.amount)}${e.unit || 'y'}${e.unitPrice ? ` × ${e.unitPrice.toLocaleString()}원/y` : ''}`, amount: -e.deductAmount, note: e.note || e.defectNote || '' });
+        events.push({ id: e.id, date: e.date, type: e.isDefect ? '불량' : '반품', desc: `${e.item} ${e.color || ''}`, detail: `${Math.abs(e.amount)}${e.unit || 'y'}${e.unitPrice ? ` × ${e.unitPrice.toLocaleString()}원` : ''}`, amount: -e.deductAmount, note: e.note || e.defectNote || '' });
       }
       continue;
     }
@@ -6694,7 +6850,7 @@ function buildCustomerLedgerEvents(t_c) {
       const isJeolUnit = (e.unit || 'y') === '절';
       const breakdownText = (e.deductBreakdown && e.deductBreakdown.length > 1) ? ` (${e.deductBreakdown.map(b => `${b.qty}y`).join(', ')})` : '';
       const qtyLabel = isJeolUnit ? `${e.amount}절 (${e.yardsShipped}y)` : `${e.yardsShipped || e.amount}${e.unit || 'y'}`;
-      const detail = (isCarry || e.isFee) ? '' : `${qtyLabel}${breakdownText}${e.unitPrice ? ` × ${e.unitPrice.toLocaleString()}원/y` : ' (단가 미입력)'}`;
+      const detail = (isCarry || e.isFee) ? '' : `${qtyLabel}${breakdownText}${e.unitPrice ? ` × ${e.unitPrice.toLocaleString()}원` : ' (단가 미입력)'}`;
       // 원래 매출액은 절대 줄이지 않고 그대로 한 줄로 보여주고, 공제가 있으면 "공제" 라는 별도의 마이너스 줄을 따로 추가함
       // (예전엔 매출액에서 공제를 미리 뺀 값 하나만 보여줘서, 마치 원래 매출액 자체가 줄어든 것처럼 헷갈리게 보였음)
       events.push({ id: e.id, date: e.date, type: '매출', desc: isCarry ? '이월 미수금' : (e.isFee ? `추가금${e.note ? ` - ${e.note}` : ''}` : `${e.item} ${e.color || ''}`), detail, amount: e.saleAmount, isCarry, note: isCarry || e.isFee ? '' : (e.note || '') });
@@ -7027,7 +7183,7 @@ function renderDuplicateCheckView() {
           ${entries.map((e, i) => `
             <div style="padding:10px 12px; border-bottom:1px dashed var(--border);">
               <div style="font-size:13px;">${esc(e.date)} · ${esc(e.customer || '')} · ${esc(e.item)} ${esc(e.color || '')}</div>
-              <div style="font-size:12px; color:var(--muted); margin-top:2px;">${e.yardsShipped || e.amount || 0}${e.unit || 'y'}${e.unitPrice ? ` × ${e.unitPrice.toLocaleString()}원/y` : ''} · 매출액 ${(e.saleAmount || 0).toLocaleString()}원${e.isReturn ? ' (반품)' : ''}${e.isDefect ? ' (불량)' : ''}</div>
+              <div style="font-size:12px; color:var(--muted); margin-top:2px;">${e.yardsShipped || e.amount || 0}${e.unit || 'y'}${e.unitPrice ? ` × ${e.unitPrice.toLocaleString()}원` : ''} · 매출액 ${(e.saleAmount || 0).toLocaleString()}원${e.isReturn ? ' (반품)' : ''}${e.isDefect ? ' (불량)' : ''}</div>
               <button onclick="deleteDuplicateShipmentEntry(${id}, ${i})" style="border:none;background:#fdecea;color:var(--danger);border-radius:6px;padding:5px 10px;font-size:11px;margin-top:6px;">이 항목 삭제</button>
             </div>
           `).join('')}
@@ -9020,11 +9176,12 @@ function renderSales() {
           <div class="order-top">
             <div>
               <div class="order-name">${esc(e.item)} ${esc(e.color || '')}${e.isSample ? ' <span style="color:#a15c1e; font-weight:600;">🎁 샘플</span>' : ''}</div>
-              <div class="order-sub">${e.item === '이월 미수금' ? `${(e.saleAmount || 0).toLocaleString()}원` : `${e.amount}${e.unit}${e.unit === '절' ? ` (${e.yardsShipped}y${e.yardsEstimated ? ' 추정' : ''})` : ''}${e.deductBreakdown && e.deductBreakdown.length > 1 ? ` <span style="color:var(--muted);">(${e.deductBreakdown.map(b => `탕${b.tang}:${b.qty}y`).join('+')})</span>` : ''}${e.unitPrice ? ` × ${e.unitPrice.toLocaleString()}원/y` : ''} 출고${e.yardsEstimated ? ' <span style="color:var(--danger);">· 추정치</span>' : ''}`}</div>
+              <div class="order-sub">${e.item === '이월 미수금' ? `${(e.saleAmount || 0).toLocaleString()}원` : `${e.amount}${e.unit}${e.unit === '절' ? ` (${e.yardsShipped}y${e.yardsEstimated ? ' 추정' : ''})` : ''}${e.deductBreakdown && e.deductBreakdown.length > 1 ? ` <span style="color:var(--muted);">(${e.deductBreakdown.map(b => `탕${b.tang}:${b.qty}y`).join('+')})</span>` : ''}${e.unitPrice ? ` × ${e.unitPrice.toLocaleString()}원` : ''} 출고${e.yardsEstimated ? ' <span style="color:var(--danger);">· 추정치</span>' : ''}`}</div>
             </div>
             <div class="order-status ${statusClass2}">${statusLabel2}</div>
           </div>
           ${e.defectYards > 0 ? `<div style="color:var(--danger);font-weight:700;font-size:13px;">불량 ${e.defectYards}y 차감됨${e.defectNote ? ` (${esc(e.defectNote)})` : ''}</div>` : ''}
+          ${e._cost != null ? `<div style="font-size:11px; font-weight:600; display:inline-block; border-radius:5px; padding:1px 6px; margin-top:3px; background:${e._margin != null && e._margin < 20 ? '#fdf0e0' : '#eef4fa'}; color:${e._margin != null && e._margin < 20 ? '#8a5a1e' : '#1c4f86'};">원가 ${getCostPerYardForEntry(e) != null ? Math.round(getCostPerYardForEntry(e)).toLocaleString() : '?'}원 · 총 ${e._cost.toLocaleString()}원${e._margin != null ? ` · 마진 ${e._margin}%` : ''}</div>` : ''}
           <div class="order-btns">
             ${remaining > 0 ? `<button class="btn-key" onclick="recordPayment(${e.id})" style="border:none;background:#eaf3ec;color:#2f6b46;border-radius:6px;padding:4px 8px;font-size:11px;">입금 처리</button>` : ''}
             ${paidAmt > 0 ? `<button onclick="resetPayment(${e.id})" style="border:none;background:#f1eee7;color:var(--muted);border-radius:6px;padding:4px 8px;font-size:11px;">입금 취소</button>` : ''}
@@ -10223,13 +10380,16 @@ function openOrderReceiveModal(id) {
 
       pendingReceiveRolls = stockRolls.map(r => ({ rollId: r.id, tang: r.tang, qty: r.qty }));
       const tangListEl = document.getElementById('or-jeol-tang-list');
-      tangListEl.innerHTML = pendingReceiveRolls.map(r => `
+      tangListEl.innerHTML = pendingReceiveRolls.map(r => {
+        const costInfo = getRollEffectiveCostLabel(r.rollId, o.item, o.color);
+        return `
         <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; padding:6px 0; border-bottom:1px dashed var(--border);">
-          <div style="font-size:13px;">탕${r.tang} · 재고 ${r.qty}y</div>
+          <div style="font-size:13px;">탕${r.tang} · 재고 ${r.qty}y${costInfo.text ? ` <span style="font-size:11px; font-weight:600; border-radius:5px; padding:1px 6px; background:${costInfo.custom ? '#fdf0e0' : '#eef4fa'}; color:${costInfo.custom ? '#8a5a1e' : '#1c4f86'};">${costInfo.text}</span>` : ''}</div>
           <input type="number" step="0.1" min="0" max="${r.qty}" value="0" data-roll-id="${r.rollId}"
             oninput="updateJeolTangTotal()" style="width:90px; padding:6px; border:1px solid var(--border); border-radius:6px; font-size:13px;">
         </div>
-      `).join('');
+      `;
+      }).join('');
       tangSection.classList.remove('hidden');
       jeolManualWrap.classList.add('hidden');
       document.getElementById('or-jeol-new-tang-list').innerHTML = '';
@@ -10256,13 +10416,16 @@ function openOrderReceiveModal(id) {
   if (foundRolls.length > 0) {
     pendingReceiveRolls = foundRolls.map(r => ({ rollId: r.id, tang: r.tang, qty: r.qty }));
     const listEl = document.getElementById('or-rolls-list');
-    listEl.innerHTML = pendingReceiveRolls.map(r => `
+    listEl.innerHTML = pendingReceiveRolls.map(r => {
+      const costInfo = getRollEffectiveCostLabel(r.rollId, o.item, o.color);
+      return `
       <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; padding:6px 0; border-bottom:1px dashed var(--border);">
-        <div style="font-size:13px;">탕${r.tang} · 재고 ${r.qty}y</div>
+        <div style="font-size:13px;">탕${r.tang} · 재고 ${r.qty}y${costInfo.text ? ` <span style="font-size:11px; font-weight:600; border-radius:5px; padding:1px 6px; background:${costInfo.custom ? '#fdf0e0' : '#eef4fa'}; color:${costInfo.custom ? '#8a5a1e' : '#1c4f86'};">${costInfo.text}</span>` : ''}</div>
         <input type="number" step="0.1" min="0" max="${r.qty}" value="0" data-roll-id="${r.rollId}"
           oninput="updateOrderRollsTotal()" style="width:90px; padding:6px; border:1px solid var(--border); border-radius:6px; font-size:13px;">
       </div>
-    `).join('');
+    `;
+    }).join('');
     document.getElementById('or-rolls-label').textContent = '롤별로 이번에 나갈 양을 입력하세요 (자동 채움을 눌러 조정해도 됩니다)';
     document.getElementById('or-new-tang-list').innerHTML = '';
     rollsWrap.classList.remove('hidden');
@@ -10287,7 +10450,7 @@ function onPriceModeChange() {
     label.textContent = '총 판매금액(원) — 야드·단가 상관없이 실제 받은 총액';
     input.placeholder = '예: 10000';
   } else {
-    label.textContent = '판매단가(원/y) — 매출 기록하려면 입력, 아니면 비워두세요';
+    label.textContent = '판매단가 — 매출 기록하려면 입력, 아니면 비워두세요';
     input.placeholder = '예: 3500';
   }
 }
@@ -10338,7 +10501,7 @@ function addJeolNewTangRow() {
       <input type="number" step="0.1" placeholder="야드(y)" class="or-jeol-new-tang-qty" oninput="updateJeolTangTotal()" style="flex:1; padding:6px; border:1px solid var(--border); border-radius:6px; font-size:13px;">
       <button onclick="this.closest('.or-jeol-new-tang-row').remove(); updateJeolTangTotal();" style="border:none;background:#fdecea;color:var(--danger);border-radius:6px;padding:0 8px;font-size:12px;flex:none;height:32px;">삭제</button>
     </div>
-    <input type="number" step="1" placeholder="이 탕 원가(원/y, 선택)" class="or-jeol-new-tang-cost" style="width:100%; margin-top:4px; padding:6px; border:1px solid var(--border); border-radius:6px; font-size:12px;">
+    <input type="number" step="1" placeholder="이 탕 원가 (선택)" class="or-jeol-new-tang-cost" style="width:100%; margin-top:4px; padding:6px; border:1px solid var(--border); border-radius:6px; font-size:12px;">
   `;
   listEl.appendChild(row);
 }
@@ -10386,7 +10549,7 @@ function addNewTangRow() {
       <input type="number" step="0.1" placeholder="마수(y)" class="or-new-tang-qty" oninput="updateOrderRollsTotal()" style="flex:1; padding:6px; border:1px solid var(--border); border-radius:6px; font-size:13px;">
       <button onclick="this.closest('.or-new-tang-row').remove(); updateOrderRollsTotal();" style="border:none;background:#fdecea;color:var(--danger);border-radius:6px;padding:0 8px;font-size:12px;flex:none;height:32px;">삭제</button>
     </div>
-    <input type="number" step="1" placeholder="이 탕 원가(원/y, 선택 - 컷팅 원단 등)" class="or-new-tang-cost" style="width:100%; margin-top:4px; padding:6px; border:1px solid var(--border); border-radius:6px; font-size:12px;">
+    <input type="number" step="1" placeholder="이 탕 원가 (선택 - 컷팅 원단 등)" class="or-new-tang-cost" style="width:100%; margin-top:4px; padding:6px; border:1px solid var(--border); border-radius:6px; font-size:12px;">
   `;
   listEl.appendChild(row);
 }
@@ -10850,7 +11013,7 @@ function addReturnRow(item, color, unit, note) {
         <option value="y" ${unit !== '절' ? 'selected' : ''}>y</option>
         <option value="절" ${unit === '절' ? 'selected' : ''}>절</option>
       </select>
-      <input type="number" step="1" class="ret-row-price" placeholder="단가(원/y, 선택)" style="flex:1;">
+      <input type="number" step="1" class="ret-row-price" placeholder="단가 (선택)" style="flex:1;">
     </div>
     <div style="display:flex; gap:6px; align-items:center; margin-top:6px;">
       <label style="font-size:12px; color:var(--muted); flex:none;">반품시 재고로 넣을 탕</label>
@@ -11314,7 +11477,7 @@ async function markOrderDone(id) {
 
   if (remain > 0) {
     const remembered = findRememberedPrice(o.customer, o.item, o.color);
-    const priceStr = prompt(`남은 ${remain}${o.unit || 'y'}을 출고 처리하면서 완료합니다.\n판매단가(원/y)를 입력하세요 (모르면 빈 채로 확인 누르셔도 돼요).`, remembered != null ? String(remembered) : '');
+    const priceStr = prompt(`남은 ${remain}${o.unit || 'y'}을 출고 처리하면서 완료합니다.\n판매단가를 입력하세요 (모르면 빈 채로 확인 누르셔도 돼요).`, remembered != null ? String(remembered) : '');
     if (priceStr === null) return; // 취소하면 완료 처리 자체를 하지 않음
     const unitPriceRaw = parseFloat(priceStr);
     unitPrice = (unitPriceRaw && unitPriceRaw > 0) ? unitPriceRaw : null;
