@@ -1140,7 +1140,7 @@
 const PASSWORD = "3059";
 const ADMIN_PASSWORD = "9503"; // 매출/미수금 탭 전용 - 필요하면 이 값만 바꿔서 변경 가능
 const DATA_VERSION = "2026-08-03-v4"; // 재고/이월장부 씨앗 데이터를 바꿀 때마다 이 값을 새로 바꿔주세요
-const APP_CODE_VERSION = "2026-09-29-j"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
+const APP_CODE_VERSION = "2026-09-29-l"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
 const SCHEMA_STAMP = 2; // 서버 저장규칙이 확인하는 "최신 앱 도장" - 절대 자주 바꾸지 않음(이 값을 아는 코드만 저장 가능하게 서버에서 막을 때 씀)
 const CONFIRMED_EMPTY = '__CONFIRMED_EMPTY__'; // "서버가 확실하게 문서가 없다고 확인해줬다"는 걸 표시하는 특수값
                                                  // (한번도 확인 안 한 null과 구분해서, 그 사이 다른 사람이 첫 데이터를 만들었으면 충돌로 감지하기 위함)
@@ -9981,6 +9981,24 @@ function renderItemBuckets(list2) {
       const k = 'itemgrp:' + p + ':' + grp.item + '|' + grp.color;
       const isOpen = openGroups.has(k);
 
+      // 재고가 이월 수량을 못 채우는데 중국발주도 안 되어 있으면 경고 (주문 누락 방지용 - 그냥 눈으로 보라는 것, 강제는 아님)
+      const remainYardEquiv = Object.entries(remainByUnit).reduce((s, [u, v]) => s + (u === '절' ? v * 55 : v), 0);
+      let supplyWarning = '';
+      if (remainYardEquiv > 0) {
+        const stockQty = rolls.filter(r => String(r.item).trim() === String(grp.item).trim() && String(r.color).trim() === String(grp.color || '').trim() && !r.defective).reduce((s, r) => s + r.qty, 0);
+        if (remainYardEquiv > stockQty) {
+          const match = findWaitingChinaOrderMatch(grp.item, grp.color);
+          if (match) {
+            supplyWarning = `<div style="font-size:12px; color:#2f6b46; margin-top:7px;">🚚 발주중 ${esc(match.qty)}${match.arrivalDate ? ` (${formatChinaArrivalLabel(match.arrivalDate)} 도착)` : ''}</div>`;
+          } else {
+            supplyWarning = `<div style="display:flex; align-items:center; justify-content:space-between; gap:8px; margin-top:7px; background:#fdecea; border-radius:7px; padding:6px 9px;">
+              <span style="font-size:12px; color:var(--danger);">⚠ 재고 ${Math.round(stockQty * 10) / 10}y · 중국발주 미등록</span>
+              <button onclick="event.stopPropagation(); openChinaOrderAddModalFor('${escAttr(grp.item)}','${escAttr(grp.color)}')" style="flex:none; border:none; background:#fff; color:var(--danger); border-radius:6px; padding:5px 10px; font-size:12px; font-weight:600;">발주하기</button>
+            </div>`;
+          }
+        }
+      }
+
       const groupDiv = document.createElement('div');
       groupDiv.className = 'group';
       groupDiv.innerHTML = `
@@ -9988,6 +10006,7 @@ function renderItemBuckets(list2) {
           <div class="info">
             <div class="name">${esc(grp.item)} ${esc(grp.color || '')}</div>
             <div class="sub">거래처 ${items.length}건 · 진행중 ${pendingCount}건${remainLabel ? ` · <span style="color:var(--danger);font-weight:700;">이월 총 ${remainLabel}</span>` : ''}</div>
+            ${supplyWarning}
           </div>
           <div class="total"><div class="cnt">${isOpen ? '접기 ▲' : '펼치기 ▼'}</div></div>
         </div>
