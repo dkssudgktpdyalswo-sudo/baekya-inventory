@@ -208,6 +208,11 @@
 
   /* ===== 버튼은 각자 필요한 만큼만 차지(꽉 채우기 없음) - 화면이 넓으면 자연스럽게 한 줄에, 좁으면 줄만 늘어남 ===== */
   /* 드롭다운(눌러야 나오는 팝업 메뉴)만 폭을 적당히 제한 - 이건 펼쳐지는 메뉴라 좁아도 자연스러움 */
+  /* 지출·입금 내역은 항목이 많이 쌓이면 좁은 팝업 안에서 답답해 보이니, 넓은 화면에서는 더 크게 */
+  @media (min-width: 900px) {
+    #expenseModal .modal { max-width: 720px; }
+    #expense-list { max-height: 480px; }
+  }
 </style>
 </head>
 <body>
@@ -282,21 +287,21 @@
       <span onclick="toggleAllMainFlags(false)" style="text-decoration:underline; cursor:pointer;">전체 해제</span>
     </div>
   </div>
-  <div id="sales-dd-reports" class="hidden" style="display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-top:6px; padding:8px; background:#faf6ff; border-radius:10px; max-width:420px;">
-    <button onclick="addCustomerName()" style="border:none;background:#eaf3ec;color:#2f6b46;border-radius:8px;padding:7px 8px;font-size:12px;font-weight:600;">+ 거래처 추가</button>
-    <button class="btn-key" onclick="openSaleAddModal('')" style="border:none;background:#fff3d6;color:#a15c1e;border-radius:8px;padding:7px 8px;font-size:12px;font-weight:600;">+ 새 매출 등록</button>
-    <button onclick="openDefectReturnForCustomer('')" style="border:none;background:#fdecea;color:var(--danger);border-radius:8px;padding:7px 8px;font-size:12px;font-weight:600;">+ 반품/불량 등록</button>
-    <button onclick="showPaymentLedger()" style="border:none;background:#e6f0fa;color:#1a56db;border-radius:8px;padding:7px 8px;font-size:12px;font-weight:600;">입금 장부</button>
-    <button onclick="showCustomerRanking()" style="border:none;background:#f0e6fa;color:#6b3fa0;border-radius:8px;padding:7px 8px;font-size:12px;font-weight:600;">거래처 순위</button>
-    <button onclick="showReportMenu()" style="border:none;background:#e6faf0;color:#1a7a4a;border-radius:8px;padding:7px 8px;font-size:12px;font-weight:600;">리포트</button>
-    <button onclick="showItemMonthlyStats()" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:8px;padding:7px 8px;font-size:12px;font-weight:600;grid-column:1 / -1;">품목별 출고량</button>
+  <div id="sales-dd-reports" class="hidden" style="display:flex; flex-wrap:wrap; gap:6px; margin-top:6px; padding:8px; background:#faf6ff; border-radius:10px;">
+    <button onclick="addCustomerName()" style="border:none;background:#eaf3ec;color:#2f6b46;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;white-space:nowrap;">+ 거래처 추가</button>
+    <button class="btn-key" onclick="openSaleAddModal('')" style="border:none;background:#fff3d6;color:#a15c1e;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;white-space:nowrap;">+ 새 매출 등록</button>
+    <button onclick="openDefectReturnForCustomer('')" style="border:none;background:#fdecea;color:var(--danger);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;white-space:nowrap;">+ 반품/불량 등록</button>
+    <button onclick="showPaymentLedger()" style="border:none;background:#e6f0fa;color:#1a56db;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;white-space:nowrap;">입금 장부</button>
+    <button onclick="showCustomerRanking()" style="border:none;background:#f0e6fa;color:#6b3fa0;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;white-space:nowrap;">거래처 순위</button>
+    <button onclick="showReportMenu()" style="border:none;background:#e6faf0;color:#1a7a4a;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;white-space:nowrap;">리포트</button>
+    <button onclick="showItemMonthlyStats()" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;white-space:nowrap;">품목별 출고량</button>
   </div>
-  <div id="sales-dd-manage" class="hidden" style="display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-top:6px; padding:8px; background:#f6f4f0; border-radius:10px; max-width:420px;">
-    <button onclick="archiveOldSalesLog()" style="border:none;background:#fff3d6;color:#a15c1e;border-radius:8px;padding:7px 8px;font-size:12px;font-weight:600;">매출장부 내보내기 및 정리</button>
-    <button onclick="showAvailableBackups()" style="border:none;background:#f1eee7;color:var(--muted);border-radius:8px;padding:7px 8px;font-size:12px;font-weight:600;">백업 · 복구</button>
-    <button onclick="openBizInfoModal()" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:8px;padding:7px 8px;font-size:12px;font-weight:600;">사업자 정보 설정</button>
-    <button onclick="showDuplicateCheck()" style="border:none;background:#f1eee7;color:var(--muted);border-radius:8px;padding:7px 8px;font-size:12px;font-weight:600;">중복 점검</button>
-    <button onclick="manualBackupNow()" style="border:none;background:#eaf3ec;color:#2f6b46;border-radius:8px;padding:7px 8px;font-size:12px;font-weight:600;grid-column:1 / -1;">지금 백업</button>
+  <div id="sales-dd-manage" class="hidden" style="display:flex; flex-wrap:wrap; gap:6px; margin-top:6px; padding:8px; background:#f6f4f0; border-radius:10px;">
+    <button onclick="archiveOldSalesLog()" style="border:none;background:#fff3d6;color:#a15c1e;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;white-space:nowrap;">매출장부 내보내기 및 정리</button>
+    <button onclick="showAvailableBackups()" style="border:none;background:#f1eee7;color:var(--muted);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;white-space:nowrap;">백업 · 복구</button>
+    <button onclick="openBizInfoModal()" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;white-space:nowrap;">사업자 정보 설정</button>
+    <button onclick="showDuplicateCheck()" style="border:none;background:#f1eee7;color:var(--muted);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;white-space:nowrap;">중복 점검</button>
+    <button onclick="manualBackupNow()" style="border:none;background:#eaf3ec;color:#2f6b46;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;white-space:nowrap;">지금 백업</button>
   </div>
 </div>
 
@@ -1140,7 +1145,7 @@
 const PASSWORD = "3059";
 const ADMIN_PASSWORD = "9503"; // 매출/미수금 탭 전용 - 필요하면 이 값만 바꿔서 변경 가능
 const DATA_VERSION = "2026-08-03-v4"; // 재고/이월장부 씨앗 데이터를 바꿀 때마다 이 값을 새로 바꿔주세요
-const APP_CODE_VERSION = "2026-09-29-p"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
+const APP_CODE_VERSION = "2026-09-29-s"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
 const SCHEMA_STAMP = 2; // 서버 저장규칙이 확인하는 "최신 앱 도장" - 절대 자주 바꾸지 않음(이 값을 아는 코드만 저장 가능하게 서버에서 막을 때 씀)
 const CONFIRMED_EMPTY = '__CONFIRMED_EMPTY__'; // "서버가 확실하게 문서가 없다고 확인해줬다"는 걸 표시하는 특수값
                                                  // (한번도 확인 안 한 null과 구분해서, 그 사이 다른 사람이 첫 데이터를 만들었으면 충돌로 감지하기 위함)
@@ -7654,13 +7659,13 @@ async function deleteBackupMoment(label, docIdsJson) {
   }
 }
 function openExpenseModal() {
+  expenseFilterMethod = 'all';
   document.getElementById('exp-date').value = toDateInputValue(todayStr());
   document.getElementById('exp-amount').value = '';
   document.getElementById('exp-title').value = '';
   document.getElementById('exp-note').value = '';
   document.querySelector('input[name="exp-type"][value="expense"]').checked = true;
   document.querySelector('input[name="exp-method"][value="cash"]').checked = true;
-  expenseFilterMethod = 'all';
   const now = new Date();
   expenseViewYear = now.getFullYear();
   expenseViewMonth = now.getMonth() + 1;
