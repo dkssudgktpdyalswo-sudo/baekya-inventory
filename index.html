@@ -301,6 +301,7 @@
     <button onclick="showAvailableBackups()" style="border:none;background:#f1eee7;color:var(--muted);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;white-space:nowrap;">백업 · 복구</button>
     <button onclick="openBizInfoModal()" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;white-space:nowrap;">사업자 정보 설정</button>
     <button onclick="showDuplicateCheck()" style="border:none;background:#f1eee7;color:var(--muted);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;white-space:nowrap;">중복 점검</button>
+    <button onclick="restorePriceBookFromHistory()" style="border:none;background:#f1eee7;color:var(--muted);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;white-space:nowrap;">단가 복구</button>
     <button onclick="manualBackupNow()" style="border:none;background:#eaf3ec;color:#2f6b46;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;white-space:nowrap;">지금 백업</button>
   </div>
 </div>
@@ -827,7 +828,8 @@
 <div class="modal-overlay" id="fixedCostModal">
   <div class="modal" style="max-width:420px;">
     <h3>고정비 관리</h3>
-    <p style="font-size:12px;color:var(--muted);margin-top:-6px;">직원 월급, 임대료 등 매달 나가는 고정비예요. 월간 리포트의 "진짜 순이익"에 매달 반영돼요.</p>
+    <p style="font-size:12px;color:var(--muted);margin-top:-6px;">직원 월급, 임대료 등 매달 나가는 고정비예요. 달마다 따로 저장돼서, 이 달을 고쳐도 지난 달 숫자는 안 바뀌어요. 안 고친 달은 앞선 달 금액이 이어져요.</p>
+    <div id="fixed-cost-month-nav" style="display:flex; align-items:center; gap:8px; margin:8px 0 10px;"></div>
     <div class="row2">
       <div><label>항목</label><input id="fixed-cost-label" placeholder="예: 직원 월급"></div>
       <div><label>월 금액(원)</label><input id="fixed-cost-amount" type="number" step="1" placeholder="예: 2500000"></div>
@@ -1145,7 +1147,7 @@
 const PASSWORD = "3059";
 const ADMIN_PASSWORD = "9503"; // 매출/미수금 탭 전용 - 필요하면 이 값만 바꿔서 변경 가능
 const DATA_VERSION = "2026-08-03-v4"; // 재고/이월장부 씨앗 데이터를 바꿀 때마다 이 값을 새로 바꿔주세요
-const APP_CODE_VERSION = "2026-09-29-s"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
+const APP_CODE_VERSION = "2026-09-29-z"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
 const SCHEMA_STAMP = 2; // 서버 저장규칙이 확인하는 "최신 앱 도장" - 절대 자주 바꾸지 않음(이 값을 아는 코드만 저장 가능하게 서버에서 막을 때 씀)
 const CONFIRMED_EMPTY = '__CONFIRMED_EMPTY__'; // "서버가 확실하게 문서가 없다고 확인해줬다"는 걸 표시하는 특수값
                                                  // (한번도 확인 안 한 null과 구분해서, 그 사이 다른 사람이 첫 데이터를 만들었으면 충돌로 감지하기 위함)
@@ -2167,8 +2169,9 @@ function getTodayCollectList() {
     const today0 = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     const daysSince = ds => { const d = ds ? parseKDate(ds) : null; return d ? Math.max(0, Math.round((today0 - d) / 86400000)) : null; };
     const rows = [];
+    const _ub = getCustomerTrueUnpaidAll();
     for (const c of names) {
-      const unpaid = getCustomerTrueUnpaid(c);
+      const unpaid = _ub.get(c) || 0;
       if (unpaid <= 0) continue;
       const lp = lastPay.get(c) || null;
       rows.push({ customer: c, unpaid, noPay: !lp, days: daysSince(lp || lastSale.get(c)) });
@@ -2280,7 +2283,17 @@ function renderToday() {
   if (salesAdminUnlocked) html += `<div style="text-align:center; margin-bottom:14px;"><button onclick="lockTodayAdmin()" style="border:none; background:none; color:var(--muted); font-size:12px; text-decoration:underline; cursor:pointer;">관리자 잠금</button></div>`;
   list.innerHTML = html;
 }
+function sanitizeRollsInMemory() {
+  // 옛 데이터/복원 파일에 분류·품목·컬러가 비어있거나 수량이 글자로 들어있는 롤이 하나만 섞여 있어도 화면 전체가 멈추지 않게, 화면에 쓰기 전에 메모리에서만 바로잡음
+  for (const r of rolls) {
+    if (r.cat == null) r.cat = '';
+    if (r.item == null) r.item = '';
+    if (r.color == null) r.color = '';
+    if (typeof r.qty === 'string') { const q = parseFloat(r.qty); r.qty = isNaN(q) ? 0 : q; }
+  }
+}
 function render() {
+  sanitizeRollsInMemory();
   updateItemNameList();
   if (currentTab === 'today') renderToday();
   else if (currentTab === 'inv') renderInv();
@@ -2607,6 +2620,28 @@ function getLowStockAlerts() {
   const remapSum = (m) => { const out = new Map(); for (const [k, v] of m) { const nk = resolveRenamedKey(k, liveKeys); out.set(nk, (out.get(nk) || 0) + v); } return out; };
   shipCountMap = remapSum(shipCountMap);
   shipQtyMap = remapSum(shipQtyMap);
+  // 띄어쓰기/#/대소문자/"5번" 표기만 다르게 찍힌 출고 기록도 같은 컬러로 이어서 셈 - 안 그러면 재고는 멀쩡히 있는데 알림에는 "0y"로 뜨는 가짜 알림이 생김
+  const normLive = new Map(); // 다듬은 이름 -> 지금 재고 키 (같은 다듬은 이름이 두 개 이상이면 헷갈리니 연결 안 함)
+  for (const lk of liveKeys) {
+    const [li, ...lc] = lk.split('|');
+    const nk0 = normalizeNameForMatch(li) + '|' + normalizeNameForMatch(lc.join('|'));
+    normLive.set(nk0, normLive.has(nk0) ? null : lk);
+  }
+  const remapLoose = (m) => {
+    const out = new Map();
+    for (const [k, v] of m) {
+      let nk = k;
+      if (!liveKeys.has(k)) {
+        const [ki, ...kc] = k.split('|');
+        const hit = normLive.get(normalizeNameForMatch(ki) + '|' + normalizeNameForMatch(kc.join('|'))); // 띄어쓰기/#/대소문자 차이만 같은 컬러로 봄 (부분 일치는 "기모"와 무지가 섞이니 쓰지 않음)
+        if (hit) nk = hit;
+      }
+      out.set(nk, (out.get(nk) || 0) + v);
+    }
+    return out;
+  };
+  shipCountMap = remapLoose(shipCountMap);
+  shipQtyMap = remapLoose(shipQtyMap);
   // 재고가 완전히 다 소진되면 그 롤 자체가 정리(삭제)돼서 rolls에서 안 보이게 되는데,
   // 그러면 위 stockMap 순회에서 아예 빠져서 "제일 급한 완전품절" 상황을 알림에서 놓치게 됨 - 그래서 여기서 0으로 보정해 넣어줌
   for (const k of shipCountMap.keys()) {
@@ -2646,7 +2681,11 @@ function getLowStockAlerts() {
     let pending = pendingMap.get(normKey(k)) || [];
     let pendingViaBase = false;
     const baseColorForStock = getProcessingBaseColor(color);
-    const baseStockQty = baseColorForStock ? (stockMap.get(`${item}|${baseColorForStock}`) || 0) : 0; // 가공 종류가 걸려있으면, 무지(기반 컬러)로 이미 가지고 있는 재고도 같이 알려줌 (발주 전에 그걸로 가공하면 되니까)
+    let baseStockQty = 0;
+    if (baseColorForStock) {
+      const bk = `${item}|${baseColorForStock}`;
+      baseStockQty = stockMap.has(bk) ? stockMap.get(bk) : (normLive.get(normalizeNameForMatch(item) + '|' + normalizeNameForMatch(baseColorForStock)) ? stockMap.get(normLive.get(normalizeNameForMatch(item) + '|' + normalizeNameForMatch(baseColorForStock))) : 0) || 0;
+    } // 가공 종류가 걸려있으면, 무지(기반 컬러)로 이미 가지고 있는 재고도 같이 알려줌 (발주 전에 그걸로 가공하면 되니까)
     if (pending.length === 0) {
       if (baseColorForStock) { pending = pendingMap.get(normKey(`${item}|${baseColorForStock}`)) || []; if (pending.length > 0) pendingViaBase = true; }
     }
@@ -2790,7 +2829,7 @@ function renderInv() {
   }
   let itemGroups = Array.from(itemMap.values());
   itemGroups.sort((a, b) => {
-    if (a.cat !== b.cat) return a.cat.localeCompare(b.cat, 'ko');
+    if (a.cat !== b.cat) return String(a.cat || '').localeCompare(String(b.cat || ''), 'ko'); // 분류가 비어있는 옛 롤이 하나 섞여 있어도 재고 탭 전체가 안 열리는 일이 없게
     return a.item.localeCompare(b.item, 'ko');
   });
   for (const ig of itemGroups) {
@@ -5694,7 +5733,11 @@ function buildStatementHTMLInner(customerName, startDate, endDate, entryIdFilter
 
   // 한 반쪽에 최대 이만큼만 넣고, 그 이상이면 폰트를 더 줄이지 않고 다음 장으로 자연스럽게 넘김
   const ROWS_PER_PAGE = 14;
-  const n = Math.min(rows.length, ROWS_PER_PAGE); // sizes는 항상 "이 페이지 안에서 실제 보여줄 줄 수" 기준으로 계산함
+  const noteLines = (txt) => {
+    const w = Array.from(String(txt || '')).reduce((sum, ch) => sum + (ch.charCodeAt(0) > 255 ? 1 : 0.55), 0); // 한글은 1칸, 영문/숫자는 약 반 칸
+    return Math.max(1, Math.ceil(w / 15));
+  };
+  const n = Math.min(rows.reduce((sum, r) => sum + noteLines(r.note), 0), ROWS_PER_PAGE); // sizes는 항상 "이 페이지 안에서 실제 보여줄 줄 수" 기준으로 계산함
   const compact = startDate !== endDate || rows.length > 5; // 하루짜리라도 품목이 많으면 촘촘하게
   let rowFontPx, rowPadPx;
   if (n <= 6) { rowFontPx = 10; rowPadPx = 3; }
@@ -5705,6 +5748,8 @@ function buildStatementHTMLInner(customerName, startDate, endDate, entryIdFilter
     ? { pad: '2mm 4mm 3mm 4mm', titleSize: '13px', titleGap: '2px', metaSize: '8px', metaGap: '2px', boxGap: '1px', boxFont: '8px', innerFont: '8px', rowFont: rowFontPx + 'px', rowPad: rowPadPx + 'px', totalsFont: '8px', totalsGap: '1px', bankSize: '8px', bankGap: '1px' }
     : { pad: '3mm 5mm 3mm 5mm', titleSize: '16px', titleGap: '4px', metaSize: '10px', metaGap: '4px', boxGap: '3px', boxFont: '10px', innerFont: '10px', rowFont: '10px', rowPad: '3px', totalsFont: '10px', totalsGap: '3px', bankSize: '10px', bankGap: '3px' };
 
+  // 비고란은 글자를 더 줄이거나 ...로 자르지 않고, 길면 2줄로 내려서 보여줌 (최소 8.5px 아래로는 안 작아지게)
+  const noteFontPx = compact ? Math.max(rowFontPx, 8.5) : 10;
   const buildRowsHtml = (rowsForPage) => rowsForPage.map(r => {
     const style = r.color === 'blue' ? 'color:#1a56db;' : r.color === 'red' ? 'color:#c0392b;' : '';
     const fmt = (v) => v == null ? '' : (v < 0 ? `-${Math.abs(v).toLocaleString()}` : v.toLocaleString());
@@ -5714,7 +5759,7 @@ function buildStatementHTMLInner(customerName, startDate, endDate, entryIdFilter
         <td style="${pad}">${esc(r.date)}</td>
         <td style="${pad}">${esc(r.desc)}</td>
         <td style="text-align:right;${pad}">${esc(r.qty)}</td>
-        <td style="white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-size:0.85em;${pad}">${esc(r.note || '')}</td>
+        <td style="white-space:normal; word-break:keep-all; overflow-wrap:anywhere; line-height:1.2; font-size:${noteFontPx}px;${pad}">${esc(r.note || '')}</td>
         <td style="text-align:right;${pad}">${esc(r.unitPrice)}</td>
         <td style="text-align:right;${pad}">${fmt(r.supply)}</td>
         <td style="text-align:right;${pad}">${fmt(r.tax)}</td>
@@ -5767,7 +5812,7 @@ function buildStatementHTMLInner(customerName, startDate, endDate, entryIdFilter
       <div style="flex:1 1 auto; overflow:hidden; min-height:0;">
         <table style="font-size:${sizes.rowFont}; table-layout:fixed; width:100%;">
           <thead>
-            <tr><th style="width:8%; padding:${sizes.rowPad} 4px;">날짜</th><th style="width:25%; padding:${sizes.rowPad} 4px;">내용</th><th style="width:8%; padding:${sizes.rowPad} 4px;">수량</th><th style="width:23%; padding:${sizes.rowPad} 4px;">비고</th><th style="width:9%; padding:${sizes.rowPad} 4px;">단가(원)</th><th style="width:14%; padding:${sizes.rowPad} 4px;">공급가액(원)</th><th style="width:13%; padding:${sizes.rowPad} 4px;">세액(원)</th></tr>
+            <tr><th style="width:8%; padding:${sizes.rowPad} 4px;">날짜</th><th style="width:23%; padding:${sizes.rowPad} 4px;">내용</th><th style="width:8%; padding:${sizes.rowPad} 4px;">수량</th><th style="width:25%; padding:${sizes.rowPad} 4px;">비고</th><th style="width:9%; padding:${sizes.rowPad} 4px;">단가(원)</th><th style="width:14%; padding:${sizes.rowPad} 4px;">공급가액(원)</th><th style="width:13%; padding:${sizes.rowPad} 4px;">세액(원)</th></tr>
           </thead>
           <tbody>${rowsHtmlForPage}</tbody>
         </table>
@@ -5802,8 +5847,15 @@ function buildStatementHTMLInner(customerName, startDate, endDate, entryIdFilter
   `;
 
   // 한 반쪽(ROWS_PER_PAGE줄)씩 끊어서, 페이지가 여러 장이면 자연스럽게 다음 장으로 넘어가게 함
+  // 비고가 길어서 2줄 이상이 되는 줄은 그만큼 자리를 더 차지하니, 줄 수 대신 "차지하는 높이"로 끊어서 아래가 잘리지 않게 함
   const pages = [];
-  for (let i = 0; i < rows.length; i += ROWS_PER_PAGE) pages.push(rows.slice(i, i + ROWS_PER_PAGE));
+  let curPage = [], curUnits = 0;
+  for (const r of rows) {
+    const u = noteLines(r.note);
+    if (curPage.length > 0 && curUnits + u > ROWS_PER_PAGE) { pages.push(curPage); curPage = []; curUnits = 0; }
+    curPage.push(r); curUnits += u;
+  }
+  if (curPage.length > 0) pages.push(curPage);
   if (pages.length === 0) pages.push([]);
 
   return pages.map((pageRows, pageIdx) => {
@@ -6305,7 +6357,8 @@ function renderPaymentLedgerView() {
   }
   // 매출은 라이브인데 그 매출에 달린 반품/불량만 먼저 정리(보관함행)될 수 있어서, 미수금 계산은 보관함까지 잠깐 합친 상태로 해야 정확함
   withFullArchiveMerged(() => {
-    for (const k of custNamesForUnpaid) unpaidByCustomer.set(k, getCustomerTrueUnpaid(k));
+    const _ub = getCustomerTrueUnpaidAll();
+    for (const k of custNamesForUnpaid) unpaidByCustomer.set(k, _ub.get(k) || 0);
   });
 
   const byDate = new Map();
@@ -7051,6 +7104,7 @@ async function renderCustomerLedgerTable() {
 
   // 원장의 "[이월]" 잔액이나 프로필요약(누적매출 등)이나 둘 다 이 거래처의 전체 과거 흐름이 필요하니,
   // 특정 기간이 아니라 보관함 전체를 가져와서 잠깐 합친 상태로 둘 다 계산한 뒤 되돌림
+  if (useFirebase && !(_archiveDocsCache && Date.now() - _archiveDocsCacheAt < ARCHIVE_CACHE_MS)) wrap.innerHTML = '<div class="empty">거래 내역 불러오는 중...</div>'; // 보관함을 처음 받아올 땐 빈 화면 대신 안내를 먼저 보여줌
   const archivedForCustomer = await fetchAllArchivedEntriesForCustomer(t_c);
   const originalShipmentLog = shipmentLog;
   if (archivedForCustomer.length > 0) shipmentLog = shipmentLog.concat(archivedForCustomer);
@@ -7356,7 +7410,7 @@ async function writeArchiveMonthAtomic(monthKey, json, oldDocIds) {
   }
   // 조각 개수가 줄었거나 저장 방식이 바뀌어서 더 이상 안 쓰는 예전 문서만, 같은 일괄 쓰기 안에서 같이 지움
   for (const docId of (oldDocIds || [])) if (!newIds.has(docId)) batch.delete(col.doc(docId));
-  await batch.commit();
+  try { await batch.commit(); } finally { invalidateArchiveCache(); } // 보관함을 고쳤으니 들고 있던 복사본은 버림
 }
 async function restoreArchivedEntriesByIds(ids) {
   // 보관함에서 지정한 건들을 라이브 매출장부로 다시 꺼내옴. 순서: (1) 라이브에 먼저 추가+저장 → (2) 보관함에서 뺌
@@ -7457,17 +7511,55 @@ function getMonthsInRange(startDate, endDate) {
   }
   return months;
 }
-async function fetchArchivedEntriesForMonth(monthKey) {
+// ---- 보관함 읽기 캐시 ----
+// 예전엔 원장 한 번 열 때마다(그리고 월 하나 읽을 때마다) 보관함 전체를 서버에서 통째로 다시 받았고, 받은 걸 또 문서별로 한 번 더 받았음 - 폰에서 느리고 렉 걸리던 가장 큰 원인
+// 이제 보관함 문서를 한 번만 받아서 메모리에 30분간 들고 있고, 정리/복구/이름변경으로 보관함을 고치면 바로 비움
+let _archiveDocsCache = null, _archiveDocsCacheAt = 0, _archiveDocsLoading = null;
+const ARCHIVE_CACHE_MS = 30 * 60 * 1000; // 정리(보관함 변경)는 드물고, 이 기기에서 고치면 바로 비우니 30분 들고 있어도 안전 (쓰기 전 읽기는 항상 새로 읽음)
+function invalidateArchiveCache() { _archiveDocsCache = null; _archiveDocsCacheAt = 0; }
+async function getArchiveDocs(fresh) {
+  // fresh=true면 캐시를 무시하고 서버에서 새로 읽음 (보관함에 "쓰기 전에" 기존 내용을 읽을 땐 반드시 이걸로 - 다른 기기에서 방금 정리한 내용을 덮어쓰지 않게)
+  if (!fresh) {
+    if (_archiveDocsCache && Date.now() - _archiveDocsCacheAt < ARCHIVE_CACHE_MS) return _archiveDocsCache;
+    if (_archiveDocsLoading) return _archiveDocsLoading;
+  }
+  const p = (async () => {
+    const snap = await db.collection('inventory_archive').get();
+    const m = new Map();
+    snap.forEach(doc => m.set(doc.id, doc.data()));
+    _archiveDocsCache = m;
+    _archiveDocsCacheAt = Date.now();
+    return m;
+  })();
+  if (!fresh) {
+    _archiveDocsLoading = p;
+    p.then(() => { if (_archiveDocsLoading === p) _archiveDocsLoading = null; }, () => { if (_archiveDocsLoading === p) _archiveDocsLoading = null; });
+  }
+  return p;
+}
+function archiveDocIdsByMonth(docs) {
+  const byMonth = new Map();
+  for (const id of docs.keys()) {
+    const m = id.match(/^shipmentLog_(\d{4}-\d{2})(?:_chunk\d+)?$/);
+    if (!m) continue;
+    if (!byMonth.has(m[1])) byMonth.set(m[1], []);
+    byMonth.get(m[1]).push(id);
+  }
+  return byMonth;
+}
+function joinArchiveDocs(docs, ids) {
+  const parts = ids.map(id => { const d = docs.get(id) || {}; return { chunkIndex: d.chunkIndex != null ? d.chunkIndex : 0, data: d.data }; });
+  parts.sort((a, b) => a.chunkIndex - b.chunkIndex);
+  return parts.map(p => p.data).join('');
+}
+async function fetchArchivedEntriesForMonth(monthKey, fresh) {
   // 이 달의 보관함 파일을 가져옴 (데이터가 커서 조각나 있으면 조각들을 순서대로 합쳐서 복원). 없으면 빈 배열
   if (!useFirebase) return [];
   try {
-    const snap = await db.collection('inventory_archive').get();
-    const docIds = [];
-    snap.forEach(doc => { if (doc.id === `shipmentLog_${monthKey}` || doc.id.startsWith(`shipmentLog_${monthKey}_chunk`)) docIds.push(doc.id); });
-    if (docIds.length === 0) return [];
-    const joined = await fetchAndJoinBackupChunks_ForArchive(docIds);
-    if (joined == null) return null; // 조각 중 일부를 못 가져온 거라 "진짜 없음"이 아니라 "실패"임 - 구분해서 나중에 재시도되게 함
-    return JSON.parse(joined);
+    const docs = await getArchiveDocs(fresh);
+    const ids = archiveDocIdsByMonth(docs).get(monthKey) || [];
+    if (ids.length === 0) return [];
+    return JSON.parse(joinArchiveDocs(docs, ids));
   } catch (e) {
     console.error(`보관함 월별 조회 실패 (${monthKey}):`, e);
     return null; // 빈 배열([])과 구분: null은 "진짜로 없음"이 아니라 "가져오기 자체가 실패함"을 의미
@@ -7499,20 +7591,10 @@ async function fetchAllArchivedEntries() {
   // 거래처 상관없이 보관함에 있는 모든 데이터를 다 가져옴 (품목출고량 월별보기처럼 특정 거래처로 안 좁혀지는 화면에서 씀)
   if (!useFirebase) return [];
   try {
-    const snap = await db.collection('inventory_archive').get();
-    const docsByMonth = new Map();
-    snap.forEach(doc => {
-      const m = doc.id.match(/^shipmentLog_(\d{4}-\d{2})(?:_chunk\d+)?$/);
-      if (!m) return;
-      const mk = m[1];
-      if (!docsByMonth.has(mk)) docsByMonth.set(mk, []);
-      docsByMonth.get(mk).push(doc.id);
-    });
+    const docs = await getArchiveDocs();
     let merged = [];
-    for (const [, docIds] of docsByMonth) {
-      const joined = await fetchAndJoinBackupChunks_ForArchive(docIds);
-      if (joined == null) continue;
-      try { merged = merged.concat(JSON.parse(joined)); } catch (e) { /* 이 달 파싱 실패시 건너뜀 */ }
+    for (const [, ids] of archiveDocIdsByMonth(docs)) {
+      try { merged = merged.concat(JSON.parse(joinArchiveDocs(docs, ids))); } catch (e) { /* 이 달 파싱 실패시 건너뜀 */ }
     }
     return merged;
   } catch (e) {
@@ -7525,21 +7607,11 @@ async function fetchAllArchivedEntriesForCustomer(customer) {
   if (!useFirebase) return [];
   const t_c = String(customer || '').trim();
   try {
-    const snap = await db.collection('inventory_archive').get();
-    const docsByMonth = new Map(); // monthKey -> [docId,...]
-    snap.forEach(doc => {
-      const m = doc.id.match(/^shipmentLog_(\d{4}-\d{2})(?:_chunk\d+)?$/);
-      if (!m) return;
-      const mk = m[1];
-      if (!docsByMonth.has(mk)) docsByMonth.set(mk, []);
-      docsByMonth.get(mk).push(doc.id);
-    });
+    const docs = await getArchiveDocs();
     let merged = [];
-    for (const [, docIds] of docsByMonth) {
-      const joined = await fetchAndJoinBackupChunks_ForArchive(docIds);
-      if (joined == null) continue;
+    for (const [, ids] of archiveDocIdsByMonth(docs)) {
       try {
-        const entries = JSON.parse(joined);
+        const entries = JSON.parse(joinArchiveDocs(docs, ids));
         merged = merged.concat(entries.filter(e => String(e.customer || '').trim() === t_c));
       } catch (e) { /* 이 달 파싱 실패시 건너뜀 */ }
     }
@@ -7875,7 +7947,7 @@ function renderReportMenuView() {
   const items = [
     ['월간 리포트', '이번달/지난달 매출·순이익 비교', showMonthlyReport],
     ['연간 리포트', '올해 전체 매출·순이익 흐름', showYearlyReport],
-    ['회계장부 (고정비)', '직원 월급, 임대료 등 고정비 관리', openFixedCostModal],
+    ['회계장부 (고정비)', '직원 월급, 임대료 등 고정비 관리 (달마다 따로 저장)', () => openFixedCostModal(monthKeyFromOffset(0))],
   ];
   for (const [title, desc, fn] of items) {
     const card = document.createElement('div');
@@ -7915,9 +7987,44 @@ function shiftYearlyReport(delta) {
   yearlyReportOffset += delta;
   render();
 }
-function openFixedCostModal() {
+let fixedCostModalMonth = null; // 고정비 창에서 지금 보고 있는/고치는 달 ('YY.MM')
+function monthKeyFromOffset(offset) {
+  const now = new Date();
+  const t = new Date(now.getFullYear(), now.getMonth() + offset, 1);
+  return `${String(t.getFullYear()).slice(2)}.${String(t.getMonth() + 1).padStart(2, '0')}`;
+}
+function monthKeyLabel(mk) {
+  const [y, m] = String(mk).split('.');
+  return `20${y}년 ${parseInt(m)}월`;
+}
+function getFixedCostsForMonth(mk) {
+  // 그 달에 따로 저장한 고정비가 있으면 그걸 쓰고, 없으면 "그 달보다 앞선 달 중 가장 최근에 저장한 것"을 이어서 씀 (매달 안 바뀌면 다시 안 적어도 됨).
+  // 앞선 저장이 하나도 없으면 예전에 한 번에 저장해둔 고정비(settings.fixedCosts)를 씀 - 그래서 과거 달 숫자는 안 바뀜
+  const by = settings.fixedCostsByMonth || {};
+  if (by[mk]) return by[mk];
+  const earlier = Object.keys(by).filter(k => k < mk).sort();
+  if (earlier.length > 0) return by[earlier[earlier.length - 1]];
+  return settings.fixedCosts || [];
+}
+async function saveFixedCostsForMonth(mk, items) {
+  settings = { ...settings, fixedCostsByMonth: { ...(settings.fixedCostsByMonth || {}), [mk]: items } };
+  await persistSettings();
+}
+function shiftFixedCostMonth(delta) {
+  const [y, m] = fixedCostModalMonth.split('.').map(Number);
+  const t = new Date(2000 + y, m - 1 + delta, 1);
+  fixedCostModalMonth = `${String(t.getFullYear()).slice(2)}.${String(t.getMonth() + 1).padStart(2, '0')}`;
+  openFixedCostModal(fixedCostModalMonth);
+}
+function openFixedCostModal(mk) {
+  fixedCostModalMonth = (typeof mk === 'string' && /^\d\d\.\d\d$/.test(mk)) ? mk : (fixedCostModalMonth || monthKeyFromOffset(monthlyReportOffset));
   const listEl = document.getElementById('fixed-cost-list');
-  const items = settings.fixedCosts || [];
+  const items = getFixedCostsForMonth(fixedCostModalMonth);
+  const hasOwn = !!(settings.fixedCostsByMonth || {})[fixedCostModalMonth];
+  document.getElementById('fixed-cost-month-nav').innerHTML = `
+    <button onclick="shiftFixedCostMonth(-1)" style="border:none;background:#eee;color:#555;border-radius:8px;padding:6px 12px;font-size:13px;">◀</button>
+    <div style="flex:1; text-align:center; font-size:15px; font-weight:700;">${monthKeyLabel(fixedCostModalMonth)}<div style="font-size:11px; font-weight:400; color:var(--muted);">${hasOwn ? '이 달에 따로 저장된 고정비' : '앞선 달 고정비를 이어서 쓰는 중'}</div></div>
+    <button onclick="shiftFixedCostMonth(1)" style="border:none;background:#eee;color:#555;border-radius:8px;padding:6px 12px;font-size:13px;">▶</button>`;
   listEl.innerHTML = items.length === 0 ? '<div class="empty">아직 등록된 고정비가 없어요</div>' : items.map((c, i) => `
     <div style="display:flex; justify-content:space-between; align-items:center; padding:6px 4px; border-bottom:1px dashed var(--border);">
       <div style="font-size:13px;">${esc(c.label)}</div>
@@ -7934,6 +8041,7 @@ function openFixedCostModal() {
 }
 function closeFixedCostModal() {
   document.getElementById('fixedCostModal').classList.remove('open');
+  fixedCostModalMonth = null;
   renderMonthlyReportView();
 }
 async function addFixedCost() {
@@ -7941,35 +8049,31 @@ async function addFixedCost() {
   const amount = parseFloat(document.getElementById('fixed-cost-amount').value);
   if (!label) { showToast('항목을 적어주세요'); return; }
   if (!amount || amount <= 0) { showToast('금액을 확인해주세요'); return; }
-  const items = settings.fixedCosts || [];
+  const items = getFixedCostsForMonth(fixedCostModalMonth).slice();
   items.push({ label, amount });
-  settings = { ...settings, fixedCosts: items };
-  await persistSettings();
-  openFixedCostModal();
+  await saveFixedCostsForMonth(fixedCostModalMonth, items);
+  openFixedCostModal(fixedCostModalMonth);
 }
 async function editFixedCost(idx) {
-  const items = settings.fixedCosts || [];
+  const items = getFixedCostsForMonth(fixedCostModalMonth).slice();
   const cur = items[idx];
   if (!cur) return;
   const newLabel = prompt('항목 이름', cur.label);
   if (newLabel === null) return;
-  const newAmountRaw = prompt('월 금액(원)', cur.amount);
+  const newAmountRaw = prompt(`${monthKeyLabel(fixedCostModalMonth)} 월 금액(원)`, cur.amount);
   if (newAmountRaw === null) return;
   const newAmount = parseFloat(newAmountRaw);
   if (!newLabel.trim()) { showToast('항목을 적어주세요'); return; }
   if (!newAmount || newAmount <= 0) { showToast('금액을 확인해주세요'); return; }
-  const updated = items.slice();
-  updated[idx] = { label: newLabel.trim(), amount: newAmount };
-  settings = { ...settings, fixedCosts: updated };
-  await persistSettings();
-  openFixedCostModal();
+  items[idx] = { label: newLabel.trim(), amount: newAmount };
+  await saveFixedCostsForMonth(fixedCostModalMonth, items);
+  openFixedCostModal(fixedCostModalMonth);
 }
 async function deleteFixedCost(idx) {
-  const items = (settings.fixedCosts || []).slice();
+  const items = getFixedCostsForMonth(fixedCostModalMonth).slice();
   items.splice(idx, 1);
-  settings = { ...settings, fixedCosts: items };
-  await persistSettings();
-  openFixedCostModal();
+  await saveFixedCostsForMonth(fixedCostModalMonth, items);
+  openFixedCostModal(fixedCostModalMonth);
 }
 function computeProfitFieldsForEntries(entries) {
   // renderSales가 라이브 항목에 하는 원가/순이익/마진율 계산과 완전히 똑같은 로직 - 보관함에서 가져온 항목에도 똑같이 적용하기 위한 함수
@@ -8020,7 +8124,7 @@ async function renderMonthlyReportView() {
   const fixedCostBtn = document.createElement('button');
   fixedCostBtn.textContent = '회계장부';
   fixedCostBtn.style.cssText = 'border:none;background:#f1eee7;color:var(--muted);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;';
-  fixedCostBtn.onclick = openFixedCostModal;
+  fixedCostBtn.onclick = () => openFixedCostModal(monthKeyFromOffset(monthlyReportOffset));
   topBar.appendChild(fixedCostBtn);
   list.appendChild(topBar);
 
@@ -8121,7 +8225,8 @@ function buildMonthlyReportHTML(monthKey, prevMonthKey, year, monthNum) {
       if (e.customer) custNamesForTotalUnpaid.add(String(e.customer).trim());
     }
     let sum = 0;
-    for (const k of custNamesForTotalUnpaid) sum += getCustomerTrueUnpaid(k);
+    const _ub = getCustomerTrueUnpaidAll();
+    for (const k of custNamesForTotalUnpaid) sum += _ub.get(k) || 0;
     return sum;
   });
   totalUnpaid = Math.round(totalUnpaid);
@@ -8129,7 +8234,7 @@ function buildMonthlyReportHTML(monthKey, prevMonthKey, year, monthNum) {
   const topItems = Array.from(itemQty.entries()).sort((a, b) => b[1] - a[1]).slice(0, 3);
   const fmtPct = (p) => p == null ? '' : ` (전월 ${p >= 0 ? '▲' : '▼'}${Math.abs(p)}%)`;
 
-  const fixedCostItems = settings.fixedCosts || [];
+  const fixedCostItems = getFixedCostsForMonth(monthKey);
   const totalFixedCost = fixedCostItems.reduce((s, c) => s + c.amount, 0);
   const trueNetProfit = netProfit - totalFixedCost;
 
@@ -8301,7 +8406,8 @@ function buildYearlyReportHTML(yearKey, prevYearKey, year) {
       if (e.customer) custNamesForTotalUnpaid.add(String(e.customer).trim());
     }
     let sum = 0;
-    for (const k of custNamesForTotalUnpaid) sum += getCustomerTrueUnpaid(k);
+    const _ub = getCustomerTrueUnpaidAll();
+    for (const k of custNamesForTotalUnpaid) sum += _ub.get(k) || 0;
     return sum;
   });
   totalUnpaid = Math.round(totalUnpaid);
@@ -8309,8 +8415,13 @@ function buildYearlyReportHTML(yearKey, prevYearKey, year) {
   const topItems = Array.from(itemQty.entries()).sort((a, b) => b[1] - a[1]).slice(0, 5);
   const fmtPct = (p) => p == null ? '' : ` (전년 ${p >= 0 ? '▲' : '▼'}${Math.abs(p)}%)`;
 
-  const fixedCostItems = settings.fixedCosts || [];
-  const totalFixedCostYear = fixedCostItems.reduce((s, c) => s + c.amount, 0) * 12; // 매달 나가는 고정비를 연간으로 환산
+  // 달마다 따로 저장된 고정비를 1~12월 전부 더함 (항목 이름이 같으면 합쳐서 보여줌)
+  const fixedCostByLabel = new Map();
+  for (let mo = 1; mo <= 12; mo++) {
+    for (const c of getFixedCostsForMonth(`${yearKey}.${String(mo).padStart(2, '0')}`)) fixedCostByLabel.set(c.label, (fixedCostByLabel.get(c.label) || 0) + c.amount);
+  }
+  const fixedCostItems = Array.from(fixedCostByLabel.entries()).map(([label, total]) => ({ label, amount: total / 12 })); // 아래 표시에서 ×12 해서 연간 합계로 보이게 평균 월액으로 둠
+  const totalFixedCostYear = Array.from(fixedCostByLabel.values()).reduce((s, v) => s + v, 0);
   const trueNetProfit = netProfit - totalFixedCostYear;
 
   return `
@@ -8324,9 +8435,9 @@ function buildYearlyReportHTML(yearKey, prevYearKey, year) {
       </table>
       ${reportUnlocked ? `
         <div style="border-top:1px dashed var(--border); margin:10px 0;"></div>
-        <div style="font-weight:600; font-size:13px; margin-bottom:6px; color:#a15c1e;">고정비 (월 고정비 × 12개월 환산)</div>
+        <div style="font-weight:600; font-size:13px; margin-bottom:6px; color:#a15c1e;">고정비 (1-12월 달별 합계)</div>
         <table style="width:100%; font-size:13px; border-collapse:collapse;">
-          ${fixedCostItems.map(c => `<tr><td style="padding:3px 0;">${esc(c.label)}</td><td style="text-align:right; color:var(--danger);">-${(c.amount * 12).toLocaleString()}원</td></tr>`).join('')}
+          ${fixedCostItems.map(c => `<tr><td style="padding:3px 0;">${esc(c.label)}</td><td style="text-align:right; color:var(--danger);">-${Math.round(c.amount * 12).toLocaleString()}원</td></tr>`).join('')}
           <tr><td style="padding:6px 0; font-weight:700;">진짜 순이익 (고정비 반영)</td><td style="text-align:right; font-weight:700; color:${trueNetProfit >= 0 ? '#1a7a4a' : 'var(--danger)'};">${Math.round(trueNetProfit).toLocaleString()}원</td></tr>
         </table>
       ` : ''}
@@ -8538,10 +8649,10 @@ function renderUnpaidSummaryList() {
     if (e.item === '이월 미수금') custMap.get(k).carryoverId = e.id;
   }
   // 매출은 라이브인데 그 매출에 달린 반품/불량만 먼저 정리(보관함행)될 수 있어서, 미수금 계산은 보관함까지 잠깐 합친 상태로 해야 정확함
-  let rows = withFullArchiveMerged(() => Array.from(custMap.entries())
-    .map(([k, rec]) => ({ customer: k, unpaid: getCustomerTrueUnpaid(k), carryoverId: rec.carryoverId }))
+  let rows = withFullArchiveMerged(() => { const _ub = getCustomerTrueUnpaidAll(); return Array.from(custMap.entries())
+    .map(([k, rec]) => ({ customer: k, unpaid: _ub.get(k) || 0, carryoverId: rec.carryoverId }))
     .filter(r => r.unpaid > 0)
-    .sort((a, b) => b.unpaid - a.unpaid));
+    .sort((a, b) => b.unpaid - a.unpaid); });
 
   // 미수금이 있는데 최근(60일 넘게) 거래 자체가 없는 거래처를 따로 찾아서 알림으로 보여줌
   const INACTIVE_DAYS = 60;
@@ -8789,6 +8900,23 @@ async function renameCustomer(oldName) {
     showToast(`"${oldName}" → "${newName}"(으)로 이름을 바꿨습니다`);
   }
 }
+function unpaidContributionOf(e, asOfDate) {
+  // 매출 기록 한 건이 그 거래처 미수금에 더하는(또는 빼는) 금액. 계산에서 빼야 하는 건이면 0
+  if (e.isSample) return 0;
+  if (asOfDate && String(e.date) > String(asOfDate)) return 0; // 이 날짜 이후에 생긴 매출/반품/불량은 그 시점 미수금 계산에서 제외
+  if (e.isReturn || e.isDefect) return e.deductAmount != null ? -e.deductAmount : 0;
+  if (e.saleAmount == null) return 0;
+  // 공제는 "공제를 결정한 날짜" 기준으로 반영함 - 원장이 공제를 그 날짜에 따로 찍는 것과 똑같이 맞춤 (안 그러면 지난 기간 명세서 미수금이 원장과 어긋남)
+  const discApplies = !asOfDate || String(e.discountDate || e.date) <= String(asOfDate);
+  let total = Math.round((e.saleAmount - (discApplies ? (e.discount || 0) : 0)) * 100) / 100;
+  for (const p of (e.payments || [])) {
+    if (asOfDate && String(p.date) > String(asOfDate)) continue; // 이 날짜 이후에 들어온 입금도 제외
+    total -= p.amount;
+  }
+  // 예전 방식(입금 기록 배열 없이 paidAmount/paid만 있는) 데이터도 getRemaining/getPaidAmount와 똑같이 입금으로 인정함
+  if (!(e.payments && e.payments.length)) total -= getPaidAmount(e);
+  return total;
+}
 function getCustomerTrueUnpaid(customer, asOfDate) {
   // 이 거래처의 총 미수금 - 건별로 끊어서 0 밑으로 안 내려가게 막지 않고, 전체를 하나의 흐름으로 누적계산함
   // (건별로 끊어서 계산하면, 한 건이 다 받아지고 나중에 그 건에 공제가 걸린 경우 초과분이 다른 건에 안 넘어가서 실제보다 크게 나오는 문제가 있었음)
@@ -8798,25 +8926,21 @@ function getCustomerTrueUnpaid(customer, asOfDate) {
   let total = 0;
   for (const e of shipmentLog) {
     if (String(e.customer || '').trim() !== t_c) continue;
-    if (e.isSample) continue;
-    if (asOfDate && String(e.date) > String(asOfDate)) continue; // 이 날짜 이후에 생긴 매출/반품/불량은 그 시점 미수금 계산에서 제외
-    if (e.isReturn || e.isDefect) {
-      if (e.deductAmount != null) total -= e.deductAmount;
-      continue;
-    }
-    if (e.saleAmount != null) {
-      // 공제는 "공제를 결정한 날짜" 기준으로 반영함 - 원장이 공제를 그 날짜에 따로 찍는 것과 똑같이 맞춤 (안 그러면 지난 기간 명세서 미수금이 원장과 어긋남)
-      const discApplies = !asOfDate || String(e.discountDate || e.date) <= String(asOfDate);
-      total += Math.round((e.saleAmount - (discApplies ? (e.discount || 0) : 0)) * 100) / 100;
-      for (const p of (e.payments || [])) {
-        if (asOfDate && String(p.date) > String(asOfDate)) continue; // 이 날짜 이후에 들어온 입금도 제외
-        total -= p.amount;
-      }
-      // 예전 방식(입금 기록 배열 없이 paidAmount/paid만 있는) 데이터도 getRemaining/getPaidAmount와 똑같이 입금으로 인정함
-      if (!(e.payments && e.payments.length)) total -= getPaidAmount(e);
-    }
+    total += unpaidContributionOf(e, asOfDate);
   }
   return Math.max(0, Math.round(total * 100) / 100);
+}
+function getCustomerTrueUnpaidAll(asOfDate) {
+  // 모든 거래처의 미수금을 매출 기록을 딱 한 번만 훑어서 한꺼번에 계산함 (거래처마다 getCustomerTrueUnpaid를 따로 부르면 거래처 수 x 기록 수만큼 훑어서 폰에서 렉이 걸렸음)
+  // 결과는 거래처마다 getCustomerTrueUnpaid를 따로 부른 것과 똑같음
+  const totals = new Map();
+  for (const e of shipmentLog) {
+    const k = String(e.customer || '').trim();
+    totals.set(k, (totals.get(k) || 0) + unpaidContributionOf(e, asOfDate));
+  }
+  const out = new Map();
+  for (const [k, v] of totals) out.set(k, Math.max(0, Math.round(v * 100) / 100));
+  return out;
 }
 function getAllKnownCustomerNames() {
   return Array.from(new Set([
@@ -9065,7 +9189,8 @@ function renderSales() {
     // 매출은 라이브인데 그 매출에 달린 반품/불량만 먼저 정리(보관함행)될 수 있어서, 미수금은 보관함까지 합친 상태로 미리 한번에 다 계산해둠
     const custUnpaidMap = withFullArchiveMerged(() => {
       const m = new Map();
-      for (const k of custKeys) m.set(k, getCustomerTrueUnpaid(k));
+      const _ub = getCustomerTrueUnpaidAll();
+      for (const k of custKeys) m.set(k, _ub.get(k) || 0);
       return m;
     });
     for (const k of custKeys) {
@@ -9947,6 +10072,19 @@ function renderCustomerBuckets(list2) {
   }
 }
 
+function stockQtyForOrderName(item, color) {
+  // 이월장부에 적힌 품명/컬러는 재고에 등록된 이름과 글자가 조금 다를 수 있어서(띄어쓰기, #, "5번" 표기, 줄임말), 재고 이름으로 맞춰서 합계를 구함 - 안 그러면 재고가 있는데도 재고부족으로 뜸
+  const rItem = String(resolveInventoryItem(item)).trim();
+  const nItem = normalizeNameForMatch(rItem);
+  const tColor = String(color || '').trim();
+  const sumFor = (matchColor) => rolls.filter(r => !r.defective && normalizeNameForMatch(r.item) === nItem && normalizeNameForMatch(r.color) === normalizeNameForMatch(matchColor)).reduce((s, r) => s + r.qty, 0);
+  const direct = sumFor(tColor);
+  if (direct > 0) return direct;
+  // 가공 컬러(기모 등)는 부분 일치로 무지 재고에 붙으면 무지가 이중으로 잡히니, 이름이 정확히 같을 때만 봄
+  if (getProcessingBaseColor(tColor)) return 0;
+  const rColor = String(resolveInventoryColor(rItem, tColor)).trim();
+  return rColor && rColor !== tColor ? sumFor(rColor) : 0;
+}
 function renderOrdersByItem(list2) {
   renderItemBuckets(list2);
 }
@@ -9997,7 +10135,7 @@ function renderItemBuckets(list2) {
       const remainYardEquiv = Object.entries(remainByUnit).reduce((s, [u, v]) => s + (u === '절' ? v * 55 : v), 0);
       let supplyWarning = '';
       if (remainYardEquiv > 0) {
-        const stockOf = (c) => rolls.filter(r => String(r.item).trim() === String(grp.item).trim() && String(r.color).trim() === String(c || '').trim() && !r.defective).reduce((s, r) => s + r.qty, 0);
+        const stockOf = (c) => stockQtyForOrderName(grp.item, c);
         const stockQty = stockOf(grp.color);
         const baseColor = getProcessingBaseColor(grp.color); // 가공 종류(기모/워싱/텐타가공 등)가 걸려있으면 기반이 되는 무지 컬러 이름
         const baseStockQty = baseColor ? stockOf(baseColor) : 0;
@@ -10333,7 +10471,8 @@ function resolveInventoryColor(item, colorText) {
     const candidatesFromRolls = rolls.filter(r => String(r.item).trim() === t_item).map(r => String(r.color).trim());
     const candidatesFromSwatch = swatchInfo.filter(s => String(s.item).trim() === t_item && (s.order != null || s.chinaCode != null) && s.color != null).map(s => String(s.color).trim());
     const candidates = [...new Set([...candidatesFromRolls, ...candidatesFromSwatch])];
-    const partial = candidates.filter(c => c.includes(t_color) || t_color.includes(c));
+    // 가공 컬러("OO기모")와 그 무지("OO")는 서로 다른 원단이라 줄임말처럼 같은 컬러로 묶으면 안 됨 - 안 그러면 기모 출고가 무지 재고에서 몰래 빠져나감
+    const partial = candidates.filter(c => (c.includes(t_color) || t_color.includes(c)) && getProcessingBaseColor(c) !== t_color && getProcessingBaseColor(t_color) !== c);
     if (partial.length === 1) return partial[0];
   }
   return t_color; // 매칭 실패 시 원본 그대로 반환
@@ -10352,14 +10491,47 @@ function findInventoryTangs(item, color) {
 
 let pendingReceiveRolls = []; // [{rollId, tang, qty}]
 
+function isPriceSourceEntry(e) {
+  // 매출 기록 중 "이 거래처가 이 가격에 샀다"는 근거로 쓸 수 있는 것만 (반품/불량/샘플/추가금/이월 미수금은 제외)
+  return e && e.saleAmount != null && !e.isReturn && !e.isDefect && !e.isSample && !e.isFee && e.item !== '이월 미수금' && e.unitPrice > 0 && e.customer && e.item;
+}
+function latestPriceMapFromEntries(entries) {
+  // 거래처|품목|컬러별로 가장 최근 단가만 뽑음 (같은 날짜면 id가 큰 것)
+  const m = new Map();
+  for (const e of entries) {
+    if (!isPriceSourceEntry(e)) continue;
+    const k = `${String(e.customer).trim()}|${String(e.item).trim()}|${String(e.color || '').trim()}`;
+    const cur = m.get(k);
+    if (!cur || String(e.date) > String(cur.date) || (String(e.date) === String(cur.date) && (e.id || 0) > (cur.id || 0))) m.set(k, e);
+  }
+  return m;
+}
+function backfillPriceBookFromEntries(entries) {
+  // 단가장부에 아직 없는 거래처|품목|컬러만 매출 기록의 최근 단가로 채움 (이미 있는 건 절대 안 건드림). 새로 추가한 개수를 돌려줌
+  let added = 0;
+  for (const [k, e] of latestPriceMapFromEntries(entries)) {
+    const t_c = String(e.customer).trim(), t_i = String(e.item).trim(), t_col = String(e.color || '').trim();
+    if (priceBook.some(p => String(p.customer).trim() === t_c && String(p.item).trim() === t_i && String(p.color).trim() === t_col)) continue;
+    priceBook.push({ id: nextPriceId++, customer: t_c, item: t_i, color: t_col, unitPrice: e.unitPrice });
+    added++;
+  }
+  return added;
+}
 function findRememberedPrice(customer, item, color) {
   // 단가는 품목별로 정확히 구분되어야 해서(예: "249"와 "249기모"는 서로 다른 원단), 자동보정(resolveInventoryItem) 없이 입력된 이름 그대로 씀
   const t_c = String(customer || '').trim(), t_i = String(item || '').trim(), t_col = String(color || '').trim();
   const exact = priceBook.find(p => String(p.customer).trim() === t_c && String(p.item).trim() === t_i && String(p.color).trim() === t_col);
   if (exact) return exact.unitPrice;
+  // 단가장부에 없어도 거래처 단가표에는 매출 기록으로 보이는 단가가 있을 수 있어서, 같은 컬러의 가장 최근 매출 단가를 먼저 찾아봄 (단가표랑 똑같이 보이게)
+  const live = shipmentLog.filter(e => isPriceSourceEntry(e) && String(e.customer).trim() === t_c && String(e.item).trim() === t_i);
+  const pickLatest = (arr) => arr.reduce((best, e) => (!best || String(e.date) > String(best.date) || (String(e.date) === String(best.date) && (e.id || 0) > (best.id || 0))) ? e : best, null);
+  const liveSameColor = pickLatest(live.filter(e => String(e.color || '').trim() === t_col));
+  if (liveSameColor) return liveSameColor.unitPrice;
   // 같은 컬러로 입력한 적 없으면, 같은 거래처+품목 중 가장 최근 것으로 대신 사용
   const sameItem = priceBook.filter(p => String(p.customer).trim() === t_c && String(p.item).trim() === t_i);
   if (sameItem.length > 0) return sameItem[sameItem.length - 1].unitPrice;
+  const liveSameItem = pickLatest(live);
+  if (liveSameItem) return liveSameItem.unitPrice;
   return null;
 }
 async function rememberPrice(customer, item, color, unitPrice) {
@@ -10643,16 +10815,11 @@ function closeOrderReceiveModal() {
   }
 }
 function registerDepletedColorSwatch(t_item, t_color, cat) {
-  // 재고가 다 빠진 컬러가 카드에서 안 사라지게 스왓치정보에 등록함.
-  // "OO기모" 컬러는 순번을 따로 안 매기고 카드만 유지함 - 화면 정렬은 기본 컬러("OO") 바로 밑으로 자동으로 붙음
-  // (예전엔 기본 컬러 순번을 물려받게 했더니 같은 번호가 두 번 보이는 문제가 있었음). 그 외 컬러는 새 순번을 매김
+  // 재고가 다 빠진 컬러가 카드에서 안 사라지게 스왓치정보에 "카드 유지"로만 등록함.
+  // 순번은 절대 자동으로 매기지 않음 - 순번은 직접 정한 사람만 정하는 것 (예전엔 재고가 0이 되는 순간 새 순번을 마음대로 붙여서, 순번 안 정해둔 컬러에 번호가 생기는 버그가 있었음)
   const exact = swatchInfo.find(s => String(s.item).trim() === t_item && s.color != null && String(s.color).trim() === t_color);
-  if (splitKimoColorName(t_color)) {
-    if (exact) exact.keepCard = true; else swatchInfo.push({ id: nextSwatchId++, cat: cat || '', item: t_item, color: t_color, order: null, chinaCode: null, keepCard: true });
-  } else {
-    const order = swatchInfo.filter(s => String(s.item).trim() === t_item).reduce((m, s) => Math.max(m, s.order || 0), 0) + 1;
-    if (exact) exact.order = order; else swatchInfo.push({ id: nextSwatchId++, cat: cat || '', item: t_item, color: t_color, order, chinaCode: null });
-  }
+  if (exact) exact.keepCard = true;
+  else swatchInfo.push({ id: nextSwatchId++, cat: cat || '', item: t_item, color: t_color, order: null, chinaCode: null, keepCard: true });
 }
 async function cleanupKimoInheritedOrders() {
   // 예전 자동보호가 기모 컬러에 기본 컬러와 똑같은 순번을 붙여놨던 것을 정리함 - 순번은 비우고 카드만 유지, 정렬은 기본 컬러 바로 밑
@@ -11861,7 +12028,7 @@ async function archiveOldSalesLog() {
   const failedMonths = [];
   for (const [monthKey, newEntries] of byMonth) {
     try {
-      const existing = await fetchArchivedEntriesForMonth(monthKey);
+      const existing = await fetchArchivedEntriesForMonth(monthKey, true); // 쓰기 전 기존 내용은 항상 서버에서 새로 읽음
       if (existing === null) { failedMonths.push(monthKey); continue; } // 기존 보관함을 못 읽었으면 안전하게 이 달은 건너뜀 (잘못 합쳐써서 기존 걸 날리는 사고 방지)
       const merged = existing.concat(newEntries);
       const json = JSON.stringify(merged);
@@ -11871,7 +12038,7 @@ async function archiveOldSalesLog() {
       oldSnap.forEach(doc => { if (doc.id === `shipmentLog_${monthKey}` || doc.id.startsWith(`shipmentLog_${monthKey}_chunk`)) oldDocIds.push(doc.id); });
       await writeArchiveMonthAtomic(monthKey, json, oldDocIds); // 전부 성공하거나 전부 취소 - 중간에 끊겨도 기존 보관 데이터는 그대로 남음
       // 저장 성공 확인차 다시 읽어서 건수가 맞는지 검증한 다음에만 라이브 삭제 대상에 포함시킴
-      const verify = await fetchArchivedEntriesForMonth(monthKey);
+      const verify = await fetchArchivedEntriesForMonth(monthKey, true);
       if (verify !== null && verify.length === merged.length) {
         for (const e of newEntries) idsToRemove.add(e.id);
       } else {
@@ -11886,6 +12053,9 @@ async function archiveOldSalesLog() {
     alert(`보관함 저장에 실패해서, 사이트에서는 아무것도 안 지웠어요. CSV 파일은 정상적으로 받아졌으니 안심하세요.\n\n실패 원인: ${failedMonths.join(', ')}`);
     return;
   }
+  // 정리하면 매출 기록에서 단가가 사라지니, 지우기 전에 이 기록들의 최근 단가를 단가장부에 옮겨 적어둠 (그래야 출고할 때 자동으로 계속 뜸)
+  const priceAdded = backfillPriceBookFromEntries(shipmentLog.filter(e => idsToRemove.has(e.id)));
+  if (priceAdded > 0) await persistPriceBook();
   shipmentLog = shipmentLog.filter(e => !idsToRemove.has(e.id));
   await persistShipmentLog();
   render();
@@ -11937,6 +12107,17 @@ async function repairInventoryFromShipmentLog() {
   await persistRolls();
   render();
   alert(`${appliedCount}건 반영했어요${shortfallCount > 0 ? `\n(이 중 ${shortfallCount}건은 재고가 부족해서 일부만 빠졌어요 - 확인 필요)` : ''}\n\n${lines.slice(0, 40).join('\n')}${lines.length > 40 ? `\n...외 ${lines.length - 40}건` : ''}\n\n※ 이 기간에 새로 입고하신 게 있다면, 그건 직접 다시 입고 처리해주세요.`);
+}
+async function restorePriceBookFromHistory() {
+  // 이미 정리해서 단가장부에서 빠진 단가를, 지금 매출 기록 + 보관함 전체에서 찾아 다시 채움 (이미 있는 단가는 그대로 둠)
+  if (!confirm('매출 기록과 보관함을 전부 뒤져서, 거래처별 품목·컬러 단가 중 "출고할 때 자동으로 안 뜨는 것"을 다시 채울게요.\n이미 저장된 단가는 안 바꿔요. 진행할까요?')) return;
+  if (useFirebase && !priceBookFirstLoadDone) { showToast('단가장부를 아직 불러오는 중이에요. 잠시 후 다시 눌러주세요'); return; }
+  const archived = await fetchAllArchivedEntries();
+  if (archived === null) { alert('보관함을 읽지 못해서 아무것도 바꾸지 않았어요. 인터넷 연결을 확인하고 다시 시도해주세요.'); return; }
+  const added = backfillPriceBookFromEntries(shipmentLog.concat(archived));
+  if (added > 0) await persistPriceBook();
+  render();
+  showToast(added > 0 ? `단가 ${added}건을 다시 채웠어요` : '새로 채울 단가가 없어요 (전부 이미 저장돼 있어요)');
 }
 async function repairOrdersFromShipmentLog() {
   if (!confirm('매출/출고 기록을 기준으로, 실제로 나간 것보다 이월장부 진행량이 적게 잡혀있는 발주들을 찾아서 다시 채워넣을게요.\n(줄이는 방향으로는 절대 안 건드려요) 진행할까요?')) return;
