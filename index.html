@@ -719,6 +719,7 @@
     <div id="ret-multi-wrap">
       <div id="ret-multi-rows"></div>
       <button onclick="addReturnRow()" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;margin-top:6px;">+ 항목 추가</button>
+      <label style="display:flex;align-items:center;gap:6px;font-size:14px;color:var(--text);margin-top:10px;"><input type="checkbox" id="ret-tax" style="width:auto;"> 부가세 10% 포함해서 차감 (입력한 단가는 공급단가 기준 - 세액도 같이 차감돼요)</label>
     </div>
 
     <div id="ret-extra-amount-wrap" class="hidden">
@@ -1094,6 +1095,7 @@
     <input id="rde-yards" type="number" step="0.1">
     <label>단가</label>
     <input id="rde-price" type="number" step="1">
+    <label style="display:flex;align-items:center;gap:6px;font-size:14px;color:var(--text);margin-top:8px;"><input type="checkbox" id="rde-tax" style="width:auto;"> 부가세 10% 포함 (단가는 공급단가 기준)</label>
     <label>사유/메모</label>
     <input id="rde-note" placeholder="예: 색상 불일치">
     <div class="modal-actions">
@@ -1147,7 +1149,7 @@
 const PASSWORD = "3059";
 const ADMIN_PASSWORD = "9503"; // 매출/미수금 탭 전용 - 필요하면 이 값만 바꿔서 변경 가능
 const DATA_VERSION = "2026-08-03-v4"; // 재고/이월장부 씨앗 데이터를 바꿀 때마다 이 값을 새로 바꿔주세요
-const APP_CODE_VERSION = "2026-10-13-a"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
+const APP_CODE_VERSION = "2026-10-15-a"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
 const SCHEMA_STAMP = 2; // 서버 저장규칙이 확인하는 "최신 앱 도장" - 절대 자주 바꾸지 않음(이 값을 아는 코드만 저장 가능하게 서버에서 막을 때 씀)
 const CONFIRMED_EMPTY = '__CONFIRMED_EMPTY__'; // "서버가 확실하게 문서가 없다고 확인해줬다"는 걸 표시하는 특수값
                                                  // (한번도 확인 안 한 null과 구분해서, 그 사이 다른 사람이 첫 데이터를 만들었으면 충돌로 감지하기 위함)
@@ -2139,6 +2141,10 @@ function getTodaySummary() {
     overdue: waiting.filter(o => o.arrivalDate && o.arrivalDate < today).sort((a, b) => String(a.arrivalDate).localeCompare(String(b.arrivalDate)))
   };
 }
+// 반품/불량의 '공급가액'(부가세 뺀 금액) - 매출/순이익 보고서는 공급가액 기준이라 이걸로 차감함.
+// deductAmount는 부가세까지 합친 총액(미수금·원장·명세서 차감용). 부가세 없는 기록/예전 기록은 둘이 같음.
+function returnSupplyOf(e) { return e.deductSupply != null ? e.deductSupply : (e.deductAmount || 0); }
+function returnTaxOf(e) { return e.deductTax || 0; }
 function getTodayMoney() {
   // 관리자 전용 - 월간 리포트와 같은 기준(공급가액 - 공제 + 추가금, 반품/불량 차감)으로 오늘 매출/입금을 셈
   const today = todayStr();
@@ -2148,7 +2154,7 @@ function getTodayMoney() {
     for (const e of shipmentLog) {
       if (e.item !== '이월 미수금' && e.date === today) {
         if (e.saleAmount != null && !e.isReturn && !e.isDefect) sales += (e.supplyAmount != null ? e.supplyAmount : e.saleAmount) - (e.discount || 0) + (e.extraAmount || 0);
-        if ((e.isReturn || e.isDefect) && e.deductAmount != null) sales -= e.deductAmount;
+        if ((e.isReturn || e.isDefect) && e.deductAmount != null) sales -= returnSupplyOf(e);
       }
       for (const p of (e.payments || [])) {
         if (p.date !== today) continue;
@@ -5668,9 +5674,11 @@ function buildStatementHTMLInner(customerName, startDate, endDate, entryIdFilter
       const q = Math.abs(e.amount);
       const label = e.isDefect ? '불량' : '반품';
       const amt = e.deductAmount != null ? -e.deductAmount : null;
+      const rSupply = amt != null ? -returnSupplyOf(e) : null; // 부가세 포함 반품이면 공급가액/세액을 나눠서 표시
+      const rTax = amt != null ? (0 - returnTaxOf(e)) : 0; // -0이 '-0'으로 찍히지 않게 0에서 뺌
       if (amt != null) { totalReturnDefect += Math.abs(amt); listedUnpaid += amt; } // 이 명세서에 찍힌 반품/불량 차감도 "이 명세서 항목들의 미수금"에 정확히 반영
       if (e.unit === 'y' || !e.unit) totalQty -= Math.abs(e.yardsShipped || q);
-      saleRows.push({ date: e.date, desc: `${label} - ${e.item} ${e.color || ''}`, note: e.note || '', qty: `-${q}${e.unit}`, unitPrice: e.unitPrice ? e.unitPrice.toLocaleString() : '', supply: amt, tax: 0, amount: amt, color: 'red' });
+      saleRows.push({ date: e.date, desc: `${label} - ${e.item} ${e.color || ''}`, note: e.note || '', qty: `-${q}${e.unit}`, unitPrice: e.unitPrice ? e.unitPrice.toLocaleString() : '', supply: rSupply, tax: rTax, amount: amt, color: 'red' });
       continue;
     }
     if (e.saleAmount == null) continue;
@@ -6700,6 +6708,7 @@ function openReturnDefectEditModal(id) {
   document.getElementById('rde-color').value = e.color || '';
   document.getElementById('rde-yards').value = Math.abs(e.yardsShipped || e.amount || 0);
   document.getElementById('rde-price').value = e.unitPrice || '';
+  document.getElementById('rde-tax').checked = (e.deductTax || 0) > 0;
   document.getElementById('rde-note').value = e.note || '';
   document.getElementById('returnDefectEditModal').classList.add('open');
 }
@@ -6755,7 +6764,14 @@ async function confirmReturnDefectEdit() {
   e.amount = -newYards;
   e.yardsShipped = -newYards;
   e.unitPrice = newPrice;
-  e.deductAmount = Math.round(newPrice * newYards);
+  { // 공급가액 + (부가세 체크 시) 세액 = 총 차감액
+    const sup = Math.round(newPrice * newYards);
+    const tx = document.getElementById('rde-tax').checked ? Math.round(sup * 0.1) : 0;
+    e.deductSupply = sup;
+    e.deductTax = tx;
+    e.taxIncluded = tx > 0;
+    e.deductAmount = sup + tx;
+  }
   e.note = newNote;
   await persistShipmentLog();
   closeReturnDefectEditModal();
@@ -6911,7 +6927,7 @@ function buildCustomerLedgerEvents(t_c) {
     if (e.isSample) continue; // 샘플로 준 건(매출 0원)은 명세서랑 똑같이 원장에도 안 보이게 함
     if (e.isReturn || e.isDefect) {
       if (e.deductAmount != null) {
-        events.push({ id: e.id, date: e.date, type: e.isDefect ? '불량' : '반품', desc: `${e.item} ${e.color || ''}`, detail: `${Math.abs(e.amount)}${e.unit || 'y'}${e.unitPrice ? ` × ${e.unitPrice.toLocaleString()}원` : ''}`, amount: -e.deductAmount, note: e.note || e.defectNote || '' });
+        events.push({ id: e.id, date: e.date, type: e.isDefect ? '불량' : '반품', desc: `${e.item} ${e.color || ''}`, detail: `${Math.abs(e.amount)}${e.unit || 'y'}${e.unitPrice ? ` × ${e.unitPrice.toLocaleString()}원` : ''}${e.deductTax > 0 ? ` (세액 ${e.deductTax.toLocaleString()}원 포함)` : ''}`, amount: -e.deductAmount, note: e.note || e.defectNote || '' });
       }
       continue;
     }
@@ -8184,7 +8200,7 @@ function buildMonthlyReportHTML(monthKey, prevMonthKey, year, monthNum) {
         if (!e.isFee && e.yardsShipped) itemQty.set(e.item, (itemQty.get(e.item) || 0) + e.yardsShipped);
       }
       if ((e.isReturn || e.isDefect) && e.deductAmount != null && inMonth(e.date)) {
-        totalReturnDefect += e.deductAmount;
+        totalReturnDefect += returnSupplyOf(e);
       }
     }
     for (const p of (e.payments || [])) {
@@ -8199,7 +8215,7 @@ function buildMonthlyReportHTML(monthKey, prevMonthKey, year, monthNum) {
   totalProfit = 0;
   for (const e of shipmentLog) {
     if (e.item === '이월 미수금' || !inMonth(e.date)) continue;
-    if (e.isReturn || e.isDefect) { if (e.deductAmount != null) totalProfit -= e.deductAmount; continue; }
+    if (e.isReturn || e.isDefect) { if (e.deductAmount != null) totalProfit -= returnSupplyOf(e); continue; }
     if (e.saleAmount == null) continue;
     const effectiveRevenue = (e.supplyAmount != null ? e.supplyAmount : e.saleAmount) - (e.discount || 0) + (e.extraAmount || 0);
     const costPerY = getCostPerYardForEntry(e);
@@ -8219,7 +8235,7 @@ function buildMonthlyReportHTML(monthKey, prevMonthKey, year, monthNum) {
   let prevSale = 0, prevProfit = 0;
   for (const e of shipmentLog) {
     if (e.item === '이월 미수금' || String(e.date).slice(0, 5) !== prevMonthKey) continue;
-    if (e.isReturn || e.isDefect) { if (e.deductAmount != null) { prevSale -= e.deductAmount; prevProfit -= e.deductAmount; } continue; }
+    if (e.isReturn || e.isDefect) { if (e.deductAmount != null) { prevSale -= returnSupplyOf(e); prevProfit -= returnSupplyOf(e); } continue; }
     if (e.saleAmount == null) continue;
     prevSale += ((e.supplyAmount != null ? e.supplyAmount : e.saleAmount) - (e.discount || 0) + (e.extraAmount || 0));
     const effectiveRevenue = (e.supplyAmount != null ? e.supplyAmount : e.saleAmount) - (e.discount || 0) + (e.extraAmount || 0);
@@ -8369,7 +8385,7 @@ function buildYearlyReportHTML(yearKey, prevYearKey, year) {
         if (!e.isFee && e.yardsShipped) itemQty.set(e.item, (itemQty.get(e.item) || 0) + e.yardsShipped);
       }
       if ((e.isReturn || e.isDefect) && e.deductAmount != null && inYear(e.date)) {
-        totalReturnDefect += e.deductAmount;
+        totalReturnDefect += returnSupplyOf(e);
       }
     }
     for (const p of (e.payments || [])) {
@@ -8383,7 +8399,7 @@ function buildYearlyReportHTML(yearKey, prevYearKey, year) {
   let totalProfit = 0;
   for (const e of shipmentLog) {
     if (e.item === '이월 미수금' || !inYear(e.date)) continue;
-    if (e.isReturn || e.isDefect) { if (e.deductAmount != null) totalProfit -= e.deductAmount; continue; }
+    if (e.isReturn || e.isDefect) { if (e.deductAmount != null) totalProfit -= returnSupplyOf(e); continue; }
     if (e.saleAmount == null) continue;
     const effectiveRevenue = (e.supplyAmount != null ? e.supplyAmount : e.saleAmount) - (e.discount || 0) + (e.extraAmount || 0);
     const costPerY = getCostPerYardForEntry(e);
@@ -8403,7 +8419,7 @@ function buildYearlyReportHTML(yearKey, prevYearKey, year) {
   let prevSale = 0, prevProfit = 0;
   for (const e of shipmentLog) {
     if (e.item === '이월 미수금' || String(e.date).slice(0, 2) !== prevYearKey) continue;
-    if (e.isReturn || e.isDefect) { if (e.deductAmount != null) { prevSale -= e.deductAmount; prevProfit -= e.deductAmount; } continue; }
+    if (e.isReturn || e.isDefect) { if (e.deductAmount != null) { prevSale -= returnSupplyOf(e); prevProfit -= returnSupplyOf(e); } continue; }
     if (e.saleAmount == null) continue;
     prevSale += ((e.supplyAmount != null ? e.supplyAmount : e.saleAmount) - (e.discount || 0) + (e.extraAmount || 0));
     const effectiveRevenue = (e.supplyAmount != null ? e.supplyAmount : e.saleAmount) - (e.discount || 0) + (e.extraAmount || 0);
@@ -9287,7 +9303,7 @@ function renderSales() {
                 <div class="order-sub">${e.date} · ${Math.abs(e.amount)}${e.unit}${e.note ? ` · ${esc(e.note)}` : ''}</div>
               </div>
             </div>
-            <div class="order-progress" style="color:var(--danger);font-weight:700;">${e.deductAmount != null ? `-${e.deductAmount.toLocaleString()}원` : '금액 미확인'}</div>
+            <div class="order-progress" style="color:var(--danger);font-weight:700;">${e.deductAmount != null ? `-${e.deductAmount.toLocaleString()}원${e.deductTax > 0 ? ` (공급가 ${returnSupplyOf(e).toLocaleString()} + 세액 ${e.deductTax.toLocaleString()})` : ''}` : '금액 미확인'}</div>
             <div class="order-btns">
               <button onclick="openReturnDefectEditModal(${e.id})" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:6px;padding:4px 8px;font-size:11px;">수정</button>
               <button onclick="deleteReturnDefectEntry(${e.id})" style="border:none;background:#f1eee7;color:var(--muted);border-radius:6px;padding:4px 8px;font-size:11px;">삭제</button>
@@ -11293,6 +11309,7 @@ function updateReturnRowTangHint(fromEl) {
 }
 function resetReturnRows(item, color, unit, note) {
   document.getElementById('ret-multi-rows').innerHTML = '';
+  { const tx = document.getElementById('ret-tax'); if (tx) tx.checked = false; }
   addReturnRow(item, color, unit, note);
 }
 
@@ -11501,6 +11518,7 @@ function openReturnFromSaleEntry(entryId) {
   document.querySelector('input[name="ret-type"][value="return"]').checked = true;
   document.getElementById('ret-customer').value = e.customer || '';
   resetReturnRows(e.item || '', e.color || '', e.unit || 'y', '');
+  document.getElementById('ret-tax').checked = !!(e.taxIncluded || e.taxAmount > 0); // 부가세 붙은 매출에서 연 반품이면 기본으로 체크
   document.getElementById('ret-extra-amount').value = '';
   document.getElementById('ret-extra-factory').value = e.factory || '';
   document.getElementById('ret-note').value = '';
@@ -11630,6 +11648,8 @@ async function confirmReturnInner() {
   let totalDeduct = 0;
   let anyMissingPrice = false;
   let anyMissingInventory = false;
+  const retTaxIncluded = !!document.getElementById('ret-tax').checked;
+  let totalDeductTax = 0;
 
   for (let i = 0; i < rowEls.length; i++) {
     const rowEl = rowEls[i];
@@ -11647,8 +11667,10 @@ async function confirmReturnInner() {
 
     let unitPrice = (priceRaw && priceRaw > 0) ? priceRaw : findRememberedPrice(customer, item, color);
     if (unitPrice == null) anyMissingPrice = true;
-    const deductAmount = unitPrice ? Math.round(unitPrice * yardsAmount) : null;
-    if (deductAmount != null) totalDeduct += deductAmount;
+    const deductSupply = unitPrice ? Math.round(unitPrice * yardsAmount) : null;
+    const deductTax = (deductSupply != null && retTaxIncluded) ? Math.round(deductSupply * 0.1) : 0;
+    const deductAmount = deductSupply != null ? deductSupply + deductTax : null; // 총 차감액 = 공급가액 + 세액 (미수금에서 빠지는 금액)
+    if (deductAmount != null) { totalDeduct += deductAmount; totalDeductTax += deductTax; }
 
     let returnAddedToInventory = false;
     let returnRollId = null;
@@ -11679,7 +11701,7 @@ async function confirmReturnInner() {
       customer, factory: o ? o.factory : '', item, color,
       amount: -amt, unit, yardsShipped: -yardsAmount, remainAfter: remain,
       isFullCompletion: false, isReturn: !isDefectType, isDefect: isDefectType, note,
-      unitPrice, deductAmount, saleAmount: null, paidAmount: 0, returnRollId
+      unitPrice, deductAmount, deductSupply, deductTax, taxIncluded: !!(retTaxIncluded && deductSupply), saleAmount: null, paidAmount: 0, returnRollId
     });
     processedCount++;
   }
@@ -11692,7 +11714,7 @@ async function confirmReturnInner() {
 
   closeReturnModal();
   render();
-  const priceMsg = anyMissingPrice ? ' (일부 단가를 몰라 금액 계산이 안 된 항목이 있어요)' : `, 매출 총 ${totalDeduct.toLocaleString()}원 차감 반영`;
+  const priceMsg = anyMissingPrice ? ' (일부 단가를 몰라 금액 계산이 안 된 항목이 있어요)' : `, 총 ${totalDeduct.toLocaleString()}원 차감 반영${totalDeductTax > 0 ? ` (세액 ${totalDeductTax.toLocaleString()}원 포함)` : ''}`;
   showToast(`${isDefectType ? '불량' : '반품'} ${processedCount}건 등록됨${priceMsg}${!isDefectType && anyMissingInventory ? ' (재고에 없는 품목은 자동 추가 안 됐어요)' : ''}`);
 }
 
@@ -12023,7 +12045,7 @@ async function archiveOldSalesLog() {
   const rows = toArchive.map(e => [
     e.date, e.customer, e.factory, e.item, e.color,
     e.isReturn || e.isDefect ? Math.abs(e.amount) : e.amount, e.unit || 'y',
-    e.unitPrice || '', e.supplyAmount || '', e.taxAmount || '',
+    e.unitPrice || '', (e.isReturn || e.isDefect) ? (e.deductTax > 0 ? -returnSupplyOf(e) : '') : (e.supplyAmount || ''), (e.isReturn || e.isDefect) ? (e.deductTax > 0 ? -e.deductTax : '') : (e.taxAmount || ''),
     e.isReturn || e.isDefect ? -(e.deductAmount || 0) : (e.saleAmount || ''),
     getPaidAmount(e), e.isDefect ? '불량' : (e.isReturn ? '반품' : ''), e.note || ''
   ]);
