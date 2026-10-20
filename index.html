@@ -213,6 +213,7 @@
     #expenseModal .modal { max-width: 720px; }
     #expense-list { max-height: 480px; }
   }
+  .carry-chip { display:inline-block; background:#efe9fb; color:#6b4fbb; border-radius:5px; padding:1px 7px; font-weight:700; font-size:12px; }
 </style>
 </head>
 <body>
@@ -1072,7 +1073,7 @@
     <label>마수(y)</label>
     <input id="roll-edit-qty" type="number" step="0.1">
     <p style="font-size:12px;color:var(--muted);margin-top:-6px;">0으로 저장하면 "재고 없음"으로 처리돼요.</p>
-    <label>이 탕만의 원가 (선택 - 컷팅 원단처럼 이 탕만 다를 때)</label>
+    <label>이 롤(절) 하나만의 원가 (선택 - 이 절만 다를 때. 같은 탕의 다른 절은 안 바뀌어요)</label>
     <div style="display:flex; gap:6px; align-items:center;">
       <input id="roll-edit-cost" type="number" step="1" placeholder="비워두면 원가표 기본값 사용" style="flex:1;">
       <button type="button" onclick="calcCostForRollEdit()" style="border:none;background:#eee;color:#555;border-radius:8px;padding:8px 10px;font-size:12px;flex:none;">원가 계산</button>
@@ -1150,7 +1151,7 @@
 const PASSWORD = "3059";
 const ADMIN_PASSWORD = "9503"; // 매출/미수금 탭 전용 - 필요하면 이 값만 바꿔서 변경 가능
 const DATA_VERSION = "2026-08-03-v4"; // 재고/이월장부 씨앗 데이터를 바꿀 때마다 이 값을 새로 바꿔주세요
-const APP_CODE_VERSION = "2026-10-19-d"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
+const APP_CODE_VERSION = "2026-10-20-c"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
 const SCHEMA_STAMP = 2; // 서버 저장규칙이 확인하는 "최신 앱 도장" - 절대 자주 바꾸지 않음(이 값을 아는 코드만 저장 가능하게 서버에서 막을 때 씀)
 const CONFIRMED_EMPTY = '__CONFIRMED_EMPTY__'; // "서버가 확실하게 문서가 없다고 확인해줬다"는 걸 표시하는 특수값
                                                  // (한번도 확인 안 한 null과 구분해서, 그 사이 다른 사람이 첫 데이터를 만들었으면 충돌로 감지하기 위함)
@@ -2761,7 +2762,7 @@ function renderLowStockAlerts(list) {
                 <div style="cursor:pointer; flex:1;" onclick="event.stopPropagation();goToLowStockItem('${escAttr(a.item)}','${escAttr(a.color)}')">
                   <div style="font-size:13px; font-weight:600;">${esc(a.color)}${a.swOrder != null ? ` <span style="font-weight:400; color:var(--muted);">(${a.swOrder}번)</span>` : ''}</div>
                   <div style="font-size:11px; color:var(--muted); margin-top:1px;">최근 30일 ${a.shippedRecently}y 나감</div>
-                  ${(() => { const cy = carryIdxAlert && carryIdxAlert.byColor.get(normalizeNameForMatch(a.item) + '|' + normalizeNameForMatch(a.color)); return cy ? `<div style="font-size:11px; color:var(--danger); font-weight:700; margin-top:2px;">이월 ${fmtCarry(cy)}</div>` : ''; })()}
+                  ${(() => { const cy = carryIdxAlert && carryIdxAlert.byColor.get(normalizeNameForMatch(a.item) + '|' + normalizeNameForMatch(a.color)); return cy ? `<div style="margin-top:3px;"><span class="carry-chip">이월 ${fmtCarry(cy)}</span></div>` : ''; })()}
                   ${a.pending && a.pending.length > 0 ? `<div style="font-size:11px; color:#2f6b46; font-weight:600; margin-top:2px;">${a.pendingViaBase ? '무지로 발주중' : '발주중'} ${a.pending.slice(0, 2).map(o => `${esc(o.qty)}${o.arrivalDate ? ` (${formatChinaArrivalLabel(o.arrivalDate)} 도착)` : ''}`).join(' · ')}${a.pending.length > 2 ? ` 외 ${a.pending.length - 2}건` : ''}${a.pendingViaBase ? ' · 가공 필요' : ''}</div>` : (a.baseStockQty > 0 ? `<div style="font-size:11px; color:#2f6b46; font-weight:600; margin-top:2px;">무지 재고 ${a.baseStockQty}y / 가공필요</div>` : '')}
                   <div style="margin-top:4px;"><button onclick="event.stopPropagation();openChinaOrderAddModalFor('${escAttr(a.item)}','${escAttr(a.color)}')" style="border:none;background:#eaf3ec;color:#2f6b46;border-radius:6px;padding:3px 8px;font-size:11px;font-weight:600;">${a.pending && a.pending.length > 0 ? '추가 발주' : '발주하기'}</button></div>
                 </div>
@@ -2935,7 +2936,7 @@ function renderInv() {
       <div class="group-head" onclick="toggleGroup('${escAttr(ik)}')">
         <div class="info">
           <div class="name">${esc(ig.item)}${itemChina ? ` <span style="font-weight:400;font-size:12px;color:var(--muted);">#${esc(itemChina)}</span>` : ''}</div>
-          <div class="sub">분류 ${esc(ig.cat)} · 컬러 ${ig.colors.length}종${itemCarry ? ` · <span style="color:var(--danger);font-weight:700;">이월 ${fmtCarry(itemCarry)}</span>` : ''}</div>
+          <div class="sub">분류 ${esc(ig.cat)} · 컬러 ${ig.colors.length}종${itemCarry ? ` · <span class="carry-chip">이월 ${fmtCarry(itemCarry)}</span>` : ''}</div>
           <div style="margin-top:4px; display:flex; gap:4px;"><button onclick="event.stopPropagation(); renameInventoryItem('${escAttr(ig.item)}')" style="border:none;background:#f1eee7;color:var(--muted);border-radius:6px;padding:3px 8px;font-size:11px;">품목 이름 수정</button><button onclick="event.stopPropagation(); deleteAllRollsForItem('${escAttr(ig.item)}')" style="border:none;background:#fdecea;color:var(--danger);border-radius:6px;padding:3px 8px;font-size:11px;">이 품목 전체 삭제</button></div>
         </div>
         <div class="total">
@@ -2964,7 +2965,7 @@ function renderInv() {
           ${sw && sw.order != null ? `<div class="swatch-num">${sw.order}</div>` : `<div class="swatch-num swatch-num-empty">-</div>`}
           <div class="info">
             <div class="name">${esc(g.color)}${sw && sw.chinaCode ? ` <span style="font-size:11px; color:var(--muted); font-weight:400;">(중국품번 ${esc(sw.chinaCode)})</span>` : ''}</div>
-            <div class="sub">${total > 0 ? `롤 ${normalRolls.length}개` : '재고 없음'}${carry ? ` · <span style="color:var(--danger);font-weight:700;">이월 ${fmtCarry(carry)}</span>` : ''}${defectiveTotal > 0 ? ` · <span style="color:var(--danger);font-weight:700;">불량 ${defectiveTotal.toLocaleString()}y</span>` : ''}</div>
+            <div class="sub">${total > 0 ? `롤 ${normalRolls.length}개` : '재고 없음'}${carry ? ` · <span class="carry-chip">이월 ${fmtCarry(carry)}</span>` : ''}${defectiveTotal > 0 ? ` · <span style="color:var(--danger);font-weight:700;">불량 ${defectiveTotal.toLocaleString()}y</span>` : ''}</div>
             <div style="margin-top:4px; display:flex; gap:4px; flex-wrap:wrap;">
               <button onclick="event.stopPropagation(); openSwatchEditModal('${escAttr(g.cat)}','${escAttr(g.item)}','${escAttr(g.color)}')" style="border:none;background:#f1eee7;color:var(--muted);border-radius:6px;padding:3px 8px;font-size:11px;">스왓치·중국품번 수정</button>
               <button class="btn-key" onclick="event.stopPropagation(); openRollAddModalFor('${escAttr(g.item)}', '${escAttr(g.color)}')" style="border:none;background:#eaf3ec;color:#2f6b46;border-radius:6px;padding:3px 8px;font-size:11px;">입고</button>
@@ -2982,7 +2983,7 @@ function renderInv() {
       const rollsDiv = cdiv.querySelector('.rolls');
       if (isOpen && carry) {
         const cw = document.createElement('div');
-        cw.style.cssText = 'padding:8px 14px; font-size:12px; background:#fff5f3; color:var(--danger); border-bottom:1px solid var(--border);';
+        cw.style.cssText = 'padding:8px 14px; font-size:12px; background:#f6f2fd; color:#5a3fa8; border-bottom:1px solid var(--border);';
         cw.innerHTML = `<b>이월 ${fmtCarry(carry)}</b><br>` + carry.list.map(x => `${esc(x.customer)} ${fmtCarry(x)}`).join(' · ');
         rollsDiv.appendChild(cw);
       }
@@ -3016,7 +3017,7 @@ function renderInv() {
                 <button class="btn-out" style="background:#e8f0fb;color:var(--primary-dark);" onclick="event.stopPropagation(); openTangCostModal('${escAttr(g.item)}','${escAttr(g.color)}',${tn})">원가</button>
                 <button class="btn-out" style="background:#fff3d6;color:#a15c1e;" onclick="event.stopPropagation(); openTangNoteModal('${escAttr(g.item)}','${escAttr(g.color)}',${tn})">메모</button>
               </div>
-            </div>${tangNote ? `<div style="margin-top:3px;display:inline-block;background:#fff3d6;color:#a15c1e;font-weight:600;border-radius:5px;padding:2px 7px;font-size:12px;">📝 ${esc(tangNote)}</div>` : ''}${tangCostLabel ? `<div style="margin-top:3px;display:inline-block;background:#e8f0fb;color:var(--primary-dark);font-weight:600;border-radius:5px;padding:2px 7px;font-size:12px;">💰 이 탕 원가 ${esc(tangCostLabel)}</div>` : ''}`;
+            </div>${tangNote ? `<div style="margin-top:3px;display:inline-block;background:#fff3d6;color:#a15c1e;font-weight:600;border-radius:5px;padding:2px 7px;font-size:12px;">📝 ${esc(tangNote)}</div>` : ''}${tangCostLabel ? `<div style="margin-top:3px;display:inline-block;background:#e8f0fb;color:var(--primary-dark);font-weight:600;border-radius:5px;padding:2px 7px;font-size:12px;">💰 ${/원$/.test(tangCostLabel) ? '이 탕 원가 ' : ''}${esc(tangCostLabel)}</div>` : ''}`;
           rollsDiv.appendChild(th);
           for (const r of tangRolls) {
             const rr = document.createElement('div');
@@ -3036,7 +3037,7 @@ function renderInv() {
               rr.innerHTML = `
                 <div style="display:flex; align-items:center; gap:8px;">
                   <input type="checkbox" class="roll-bulk-checkbox" data-roll-id="${r.id}" style="width:auto; margin:0;" onclick="event.stopPropagation();">
-                  <div>롤 <span class="yd">${r.qty}y</span>${r.inDate ? `<span style="font-size:11px;color:var(--muted);margin-left:6px;">${esc(r.inDate)} 입고</span>` : ''}${r.rollNote ? `<div style="margin-top:3px;display:inline-block;background:#e8f0fb;color:var(--primary-dark);font-weight:600;border-radius:5px;padding:2px 7px;font-size:12px;">📌 ${esc(r.rollNote)}</div>` : ''}</div>
+                  <div>롤 <span class="yd">${r.qty}y</span>${r.inDate ? `<span style="font-size:11px;color:var(--muted);margin-left:6px;">${esc(r.inDate)} 입고</span>` : ''}${r.rollNote ? `<div style="margin-top:3px;display:inline-block;background:#e8f0fb;color:var(--primary-dark);font-weight:600;border-radius:5px;padding:2px 7px;font-size:12px;">📌 ${esc(r.rollNote)}</div>` : ''}${(r.costPerY != null && !isTangCostUniform(tangRolls)) ? `<div style="margin-top:3px;display:inline-block;background:#e8f0fb;color:var(--primary-dark);font-weight:600;border-radius:5px;padding:2px 7px;font-size:12px;">💰 이 절 원가 ${Math.round(r.costPerY).toLocaleString()}원</div>` : ''}</div>
                 </div>
                 <div class="btns">
                   <button class="btn-out btn-key" onclick="event.stopPropagation(); openRollAddModalFor('${escAttr(r.item)}', '${escAttr(r.color)}')">입고</button>
@@ -3377,7 +3378,7 @@ function addRollRowToBlock(elInBlock) {
       <button onclick="this.closest('.f-roll-row').remove()" style="border:none;background:#fdecea;color:var(--danger);border-radius:8px;padding:0 10px;font-size:12px;flex:none;height:38px;">삭제</button>
     </div>
     <div style="display:flex; gap:6px; align-items:center; margin-top:6px;">
-      <input type="number" step="1" placeholder="이 탕만 원가가 다르면 원가 입력 (선택 - 컷팅 원단 등)" class="f-roll-cost" style="flex:1; padding:8px; border:1px solid var(--border); border-radius:8px; font-size:13px;">
+      <input type="number" step="1" placeholder="이 롤(절)만 원가가 다르면 원가 입력 (선택 - 컷팅 원단 등)" class="f-roll-cost" style="flex:1; padding:8px; border:1px solid var(--border); border-radius:8px; font-size:13px;">
       <button type="button" onclick="calcCnyForRollCost(this)" style="border:none;background:#eee;color:#555;border-radius:8px;padding:8px 10px;font-size:12px;flex:none;">원가 계산</button>
     </div>
     <div class="f-roll-note-wrap hidden" style="margin-top:6px;">
@@ -3609,14 +3610,22 @@ function getTangNote(item, color, tang, pool) {
   return seen.join(' · ');
 }
 function getTangCostLabel(item, color, tang, pool) {
-  // 이 탕에 직접 입력된 원가가 있으면 표시용 글자로 돌려줌 (없으면 빈 문자열 - 원가표 기본값을 그대로 쓰는 것)
-  const seen = [];
-  for (const r of (pool || rolls)) {
-    if (String(r.item).trim() === String(item).trim() && String(r.color).trim() === String(color).trim() && r.tang === tang && !r.defective && r.costPerY != null && !seen.includes(r.costPerY)) seen.push(r.costPerY);
-  }
-  if (seen.length === 0) return '';
-  if (seen.length === 1) return `${Math.round(seen[0]).toLocaleString()}원`;
-  return '절마다 다름';
+  // 탕 머리글에 보여줄 원가 표시. 그 탕의 "모든" 절이 같은 원가일 때만 "X원"으로 보여주고,
+  // 한두 절만 원가를 따로 고쳤으면 탕 전체 원가인 것처럼 보이지 않게 머리글엔 안 띄움 (각 절 줄에 따로 표시됨)
+  const rs = (pool || rolls).filter(r => String(r.item).trim() === String(item).trim() && String(r.color).trim() === String(color).trim() && r.tang === tang && !r.defective);
+  const real = rs.filter(r => r.qty > 0);
+  const pick = real.length > 0 ? real : rs;
+  const custom = pick.filter(r => r.costPerY != null);
+  if (custom.length === 0) return '';
+  const distinct = Array.from(new Set(custom.map(r => r.costPerY)));
+  if (custom.length === pick.length && distinct.length === 1) return `${Math.round(distinct[0]).toLocaleString()}원`;
+  return ''; // 절마다 원가가 다르면 탕 머리글엔 안 띄우고, 바뀐 절 줄마다 "이 절 원가"로만 보여줌
+}
+function isTangCostUniform(tangRolls) { // 그 탕의 모든 절이 같은 원가(또는 전부 기본값)인지
+  const pick = tangRolls.filter(r => !r.defective && r.qty > 0);
+  if (pick.length <= 1) return true;
+  const first = pick[0].costPerY == null ? null : pick[0].costPerY;
+  return pick.every(r => (r.costPerY == null ? null : r.costPerY) === first);
 }
 async function saveTangNote(item, color, tang, v) {
   const targets = rolls.filter(r => String(r.item).trim() === String(item).trim() && String(r.color).trim() === String(color).trim() && r.tang === tang && !r.defective);
