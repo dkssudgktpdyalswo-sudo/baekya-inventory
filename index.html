@@ -1155,7 +1155,7 @@
 const PASSWORD = "3059";
 const ADMIN_PASSWORD = "9503"; // 매출/미수금 탭 전용 - 필요하면 이 값만 바꿔서 변경 가능
 const DATA_VERSION = "2026-08-03-v4"; // 재고/이월장부 씨앗 데이터를 바꿀 때마다 이 값을 새로 바꿔주세요
-const APP_CODE_VERSION = "2026-10-20-e"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
+const APP_CODE_VERSION = "2026-10-20-f"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
 const SCHEMA_STAMP = 2; // 서버 저장규칙이 확인하는 "최신 앱 도장" - 절대 자주 바꾸지 않음(이 값을 아는 코드만 저장 가능하게 서버에서 막을 때 씀)
 const CONFIRMED_EMPTY = '__CONFIRMED_EMPTY__'; // "서버가 확실하게 문서가 없다고 확인해줬다"는 걸 표시하는 특수값
                                                  // (한번도 확인 안 한 null과 구분해서, 그 사이 다른 사람이 첫 데이터를 만들었으면 충돌로 감지하기 위함)
@@ -7484,11 +7484,12 @@ async function renderBackupManagerList() {
   topBar.appendChild(delSelBtn);
   list.appendChild(topBar);
 
-  const shipLogSize = JSON.stringify(shipmentLog).length;
+  let shipLogSize = 0; // 실제로 서버에 저장되는 크기(압축 후, 바이트) - 한도는 1MB
+  try { shipLogSize = utf8Len(packDoc(JSON.stringify(shipmentLog))); } catch (e) { shipLogSize = 0; }
   if (shipLogSize > 700000) {
     const warnBanner = document.createElement('div');
     warnBanner.style.cssText = 'background:#fdecea; border:1px solid #f0b8b8; border-radius:10px; padding:10px 12px; margin-bottom:10px; font-size:13px; color:var(--danger);';
-    warnBanner.innerHTML = `⚠️ 매출장부 용량이 커지고 있어요 (${Math.round(shipLogSize / 1024)}KB). 지금은 자동으로 여러 조각으로 나눠서 안전하게 백업되고 있지만, 계속 커지면 화면 로딩이 느려질 수 있어요. "관리" 메뉴의 "매출장부 내보내기 및 정리"로 오래되고 정산 끝난 건들을 정리해주시는 걸 추천드려요.`;
+    warnBanner.innerHTML = `⚠️ 매출장부 저장 용량이 한도(1,024KB)에 가까워지고 있어요 (압축 후 ${Math.round(shipLogSize / 1024)}KB). 백업은 여러 조각으로 나눠서 안전하게 되고 있지만, 계속 커지면 저장이 막힐 수 있어요. "관리" 메뉴의 "매출장부 내보내기 및 정리"로 오래되고 정산 끝난 건들을 정리해주시는 걸 추천드려요.`;
     list.appendChild(warnBanner);
   }
 
