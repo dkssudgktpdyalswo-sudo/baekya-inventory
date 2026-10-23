@@ -363,6 +363,8 @@
     <label id="c-price-label">중국단가 (위안/미터)</label>
     <input id="c-price" type="number" step="0.1" placeholder="예: 12.5">
     <p id="c-price-hint" style="font-size:12px;color:var(--muted);">최종원가 = 중국단가 × 환율 × 야드환산 + 운임비 (자동 계산됩니다)</p>
+    <label>혼용률 (선택)</label>
+    <input id="c-mix" maxlength="40" placeholder="예: 폴리 95 스판 5" autocomplete="off">
     <div class="modal-actions">
       <button class="btn-cancel" onclick="closeCostModal()">취소</button>
       <button class="btn-save" onclick="saveCost()">저장</button>
@@ -988,6 +990,28 @@
     </div>
     <label>판매단가</label>
     <input id="sale-edit-price" type="number" step="1">
+    <div id="sale-edit-cost-wrap" class="hidden">
+      <label>이 매출 원가 (원/y) — 잘못 들어간 원가를 여기서 바로 고칠 수 있어요</label>
+      <input id="sale-edit-cost" type="number" step="0.01" placeholder="비우면 지금 원가표 기준으로 다시 계산">
+      <div id="sale-edit-cost-hint" style="font-size:11px;color:var(--muted);margin-top:2px;"></div>
+      <button type="button" id="sale-edit-cost-calc-toggle" onclick="toggleSaleCostCalc()" style="border:none;background:#eaf3ec;color:#2f6b46;border-radius:8px;padding:6px 10px;font-size:12px;font-weight:600;margin-top:6px;">단가로 계산하기 (중국산/국내산 + 가공비) ▾</button>
+      <div id="sale-edit-cost-calc" class="hidden" style="background:#f3f6f9;border-radius:10px;padding:10px;margin-top:6px;">
+        <div class="row2">
+          <div><label style="display:flex;align-items:center;gap:6px;font-size:14px;color:var(--text);"><input type="radio" name="sce-type" value="import" checked style="width:auto;" onchange="onSaleCostTypeChange()"> 수입(중국산)</label></div>
+          <div><label style="display:flex;align-items:center;gap:6px;font-size:14px;color:var(--text);"><input type="radio" name="sce-type" value="domestic" style="width:auto;" onchange="onSaleCostTypeChange()"> 국내산</label></div>
+        </div>
+        <label id="sce-price-label">중국단가 (위안/미터)</label>
+        <input id="sce-price" type="number" step="0.1" placeholder="예: 12.5" oninput="updateSaleCostCalcPreview()">
+        <label>가공비 추가 (원/y, 선택 · 텐타가공 등)</label>
+        <input id="sce-fee" type="number" step="1" placeholder="예: 150" oninput="updateSaleCostCalcPreview()">
+        <p id="sce-detail" style="font-size:11px;color:var(--muted);margin:6px 0 0;"></p>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px;font-size:14px;">
+          <span style="color:var(--muted);">계산 결과</span>
+          <span id="sce-total" style="font-weight:700;color:var(--primary-dark);">-</span>
+        </div>
+        <button type="button" onclick="applySaleCostCalc()" style="border:none;background:var(--primary);color:#fff;border-radius:8px;padding:8px 12px;font-size:13px;font-weight:600;margin-top:8px;width:100%;">원가 칸에 채우기</button>
+      </div>
+    </div>
     <label>비고 (선택)</label>
     <input id="sale-edit-note" placeholder="예: 급송비 포함">
     <label style="display:flex;align-items:center;gap:6px;font-size:14px;color:var(--text);margin-top:8px;"><input type="checkbox" id="sale-edit-tax" style="width:auto;"> 부가세 10% 포함</label>
@@ -1155,7 +1179,7 @@
 const PASSWORD = "3059";
 const ADMIN_PASSWORD = "9503"; // 매출/미수금 탭 전용 - 필요하면 이 값만 바꿔서 변경 가능
 const DATA_VERSION = "2026-08-03-v4"; // 재고/이월장부 씨앗 데이터를 바꿀 때마다 이 값을 새로 바꿔주세요
-const APP_CODE_VERSION = "2026-10-21-a"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
+const APP_CODE_VERSION = "2026-10-23-c"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
 const SCHEMA_STAMP = 2; // 서버 저장규칙이 확인하는 "최신 앱 도장" - 절대 자주 바꾸지 않음(이 값을 아는 코드만 저장 가능하게 서버에서 막을 때 씀)
 const CONFIRMED_EMPTY = '__CONFIRMED_EMPTY__'; // "서버가 확실하게 문서가 없다고 확인해줬다"는 걸 표시하는 특수값
                                                  // (한번도 확인 안 한 null과 구분해서, 그 사이 다른 사람이 첫 데이터를 만들었으면 충돌로 감지하기 위함)
@@ -2397,6 +2421,11 @@ function getChosung(str) {
   }
   return result;
 }
+function buildMixMap() { // 품목(다듬은 이름) -> 혼용률 (원가표에서 품목에 적어둔 것)
+  const m = new Map();
+  for (const c of costs) if (!c.color && c.mix) m.set(normalizeNameForMatch(c.item), String(c.mix));
+  return m;
+}
 function matchesSearchWords(term, ...fields) {
   // "2 인디고"처럼 띄어서 검색해도, "2"는 품목에 "인디고"는 컬러에 있는 식으로 서로 다른 칸에 나뉘어 있으면 못 찾던 문제 해결
   // - 입력한 단어들을 띄어쓰기로 나눠서, 그 단어들이 (여러 필드를 합친 것 중에) 전부 어딘가에 포함만 되면 매칭시킴
@@ -2936,6 +2965,7 @@ function renderInv() {
   renderChips();
 
   let groups = buildGroups(); // 컬러 단위 (cat,item,color,rolls[])
+  const mixMap = buildMixMap(); // 품목별 혼용률 (원가표에서 적은 것)
   const pendIdx = buildChinaPendingMap(new Set(groups.map(g => `${String(g.item).trim()}|${String(g.color).trim()}`))); // 아직 안 들어온 중국발주 (재고부족알림과 같은 계산)
   { // 재고가 0이라 롤이 정리돼서 목록에서 사라진 컬러도, 아직 안 들어온 중국발주가 있으면 "재고 없음 · 발주중"으로 같이 보여줌 (제일 급한 상황이라)
     const haveNorm = new Set(groups.map(g => pendIdx.normKey(`${g.item}|${g.color}`)));
@@ -2955,7 +2985,7 @@ function renderInv() {
   if (activeCat !== null) groups = groups.filter(g => g.cat === activeCat);
   if (searchTerm.trim()) {
     const t = searchTerm.trim();
-    groups = groups.filter(g => matchesSearchWords(t, g.item, g.color, ...g.rolls.filter(r => !r.defective).flatMap(r => [r.note, r.rollNote]))); // 탕 메모 내용으로도 찾을 수 있게
+    groups = groups.filter(g => matchesSearchWords(t, g.item, g.color, mixMap.get(normalizeNameForMatch(g.item)), ...g.rolls.filter(r => !r.defective).flatMap(r => [r.note, r.rollNote]))); // 탕 메모 내용 + 혼용률로도 찾을 수 있게
   }
   for (const g of groups) g._swatch = findSwatchFor(g.cat, g.item, g.color);
 
@@ -3024,6 +3054,7 @@ function renderInv() {
       <div class="group-head" onclick="toggleGroup('${escAttr(ik)}')">
         <div class="info">
           <div class="name">${esc(ig.item)}${itemChina ? ` <span style="font-weight:400;font-size:12px;color:var(--muted);">#${esc(itemChina)}</span>` : ''}</div>
+          ${mixMap.get(normalizeNameForMatch(ig.item)) ? `<div class="sub" style="font-size:11px; color:#8a8a8a; margin-top:1px;">혼용률 ${esc(mixMap.get(normalizeNameForMatch(ig.item)))}</div>` : ''}
           <div class="sub">분류 ${esc(ig.cat || '미분류')} · 컬러 ${ig.colors.length}종${itemCarry ? ` · <span class="carry-chip">이월 ${fmtCarry(itemCarry)}</span>` : ''}</div>
           <div style="margin-top:4px; display:flex; gap:4px;"><button onclick="event.stopPropagation(); renameInventoryItem('${escAttr(ig.item)}')" style="border:none;background:#f1eee7;color:var(--muted);border-radius:6px;padding:3px 8px;font-size:11px;">품목 이름 수정</button><button onclick="event.stopPropagation(); deleteAllRollsForItem('${escAttr(ig.item)}')" style="border:none;background:#fdecea;color:var(--danger);border-radius:6px;padding:3px 8px;font-size:11px;">이 품목 전체 삭제</button></div>
         </div>
@@ -3987,7 +4018,7 @@ function renderCost() {
   if (activeCat !== null) list2 = list2.filter(c => c.cat === activeCat);
   if (searchTerm.trim()) {
     const t = searchTerm.trim();
-    list2 = list2.filter(c => matchesSearchWords(t, c.item));
+    list2 = list2.filter(c => matchesSearchWords(t, c.item, c.mix));
   }
   list2.sort((a, b) => String(a.item).localeCompare(String(b.item), 'ko'));
 
@@ -4034,6 +4065,7 @@ function renderCost() {
     div.innerHTML = `
       <div>
         <div class="name">${esc(c.item)}${colorsForItem.length > 0 ? ` <span style="font-size:11px; color:var(--muted); font-weight:400;">${isOpen ? '(컬러별 접기 ▲)' : '(눌러서 컬러별 보기 ▼)'}</span>` : ''}</div>
+        ${c.mix ? `<div class="sub" style="font-size:11px; color:#8a8a8a; margin-top:1px;">혼용률 ${esc(c.mix)}</div>` : ''}
         <div class="sub">분류 ${esc(c.cat)} · ${c.type === 'domestic' ? '국내산 고정가' : ('중국단가 ' + c.price + '위안/m')}</div>
         ${c.type === 'domestic' ? '<div class="sub" style="color:#2f6b46;">환율 미적용 (적혀있는 금액 그대로)</div>' : ''}
         ${overridesForItem.length > 0 ? `<div class="sub" style="color:#a15c1e;">가공비 추가된 컬러 ${overridesForItem.length}개</div>` : ''}
@@ -4155,6 +4187,7 @@ function openCostAddModal() {
   document.getElementById('c-cat').value = '';
   document.getElementById('c-item').value = '';
   document.getElementById('c-price').value = '';
+  document.getElementById('c-mix').value = '';
   document.querySelector('input[name="c-type"][value="import"]').checked = true;
   onCostTypeChange();
   document.getElementById('costModal').classList.add('open');
@@ -4167,6 +4200,7 @@ function openCostEditModal(id) {
   document.getElementById('c-cat').value = c.cat;
   document.getElementById('c-item').value = c.item;
   document.getElementById('c-price').value = c.price;
+  document.getElementById('c-mix').value = c.mix || '';
   document.querySelector(`input[name="c-type"][value="${c.type === 'domestic' ? 'domestic' : 'import'}"]`).checked = true;
   onCostTypeChange();
   document.getElementById('costModal').classList.add('open');
@@ -4177,12 +4211,16 @@ async function saveCost() {
   const item = document.getElementById('c-item').value.trim();
   const price = parseFloat(document.getElementById('c-price').value);
   const type = document.querySelector('input[name="c-type"]:checked').value;
+  const mix = document.getElementById('c-mix').value.trim().slice(0, 40);
   if (!item || !price || price <= 0) { showToast('품목과 가격을 확인해주세요'); return; }
   if (editingCostId !== null) {
     const c = costs.find(x => x.id === editingCostId);
     c.cat = cat || '미분류'; c.item = item; c.price = price; c.type = type;
+    if (mix) c.mix = mix; else delete c.mix; // 혼용률: 비우면 지움
   } else {
-    costs.push({ id: nextCostId++, cat: cat || '미분류', item, color: null, price, type });
+    const nc = { id: nextCostId++, cat: cat || '미분류', item, color: null, price, type };
+    if (mix) nc.mix = mix;
+    costs.push(nc);
   }
   await persistCosts(); closeCostModal(); render(); showToast('저장되었습니다');
 }
@@ -4817,7 +4855,7 @@ async function confirmLogEdit() {
     });
     if (newTotal <= 0) { showToast('수량을 확인해주세요'); return; }
     await persistRolls();
-    delete e.fcost; // 어느 탕에서 나갔는지 바꿨으니 원가도 다시 정해지게
+    if (breakdownSig(newBreakdown) !== breakdownSig(e.deductBreakdown)) delete e.fcost; // 어느 탕에서 나갔는지 실제로 바꾼 경우만 원가를 다시 정함 (안 건드렸으면 고정된 원가 그대로)
     e.deductBreakdown = newBreakdown;
     e.invDeductedAmount = newBreakdown.filter(b => b.rollId != null).reduce((s, b) => s + b.qty, 0);
     newTotal = Math.round(newTotal * 100) / 100;
@@ -5005,6 +5043,9 @@ let pendingDefectLogId = null;
 
 let pendingSaleEditId = null; // null이면 신규 추가 모드
 let pendingSaleAddCustomer = null;
+function breakdownSig(arr) { // 탕별 출고 내역이 실제로 바뀌었는지 비교하려고 만든 글자 (순서/빈칸 표기 차이는 무시)
+  return JSON.stringify((arr || []).filter(b => b && (b.qty || 0) > 0).map(b => JSON.stringify([b.rollId == null ? null : b.rollId, b.tang == null ? 0 : b.tang, Math.round((b.qty || 0) * 100) / 100, b.manualCostPerY == null ? null : b.manualCostPerY])).sort());
+}
 function populateSaleEditBreakdown(entry) {
   const wrap = document.getElementById('sale-edit-breakdown-wrap');
   const listEl = document.getElementById('sale-edit-breakdown-list');
@@ -5038,7 +5079,11 @@ function populateSaleEditBreakdown(entry) {
     `;
   }).join('');
   for (const nt of origNewTang) { addSaleEditNewTangRow(nt.tang, nt.qty, nt.manualCostPerY); }
-  updateSaleEditTotal();
+  if (origBreakdown.length === 0 && origNewTang.length === 0) {
+    document.getElementById('sale-edit-breakdown-total').textContent = 0; // 저장된 탕 내역이 없는 옛 매출은 수량 칸을 0으로 덮지 않고 원래 수량 그대로 둠 (원가만 고치려는데 수량 오류가 뜨는 걸 막음)
+  } else {
+    updateSaleEditTotal();
+  }
 }
 function addSaleEditNewTangRow(tang, qty, manualCostPerY) {
   const listEl = document.getElementById('sale-edit-new-tang-list');
@@ -5101,7 +5146,65 @@ function openSaleEditModal(logId) {
   document.getElementById('sale-edit-extra').value = entry.extraAmount || '';
   document.getElementById('sale-edit-extra-reason').value = entry.extraReason || '';
   document.getElementById('sale-edit-extra-reason-wrap').classList.toggle('hidden', !(entry.extraAmount > 0));
+  { // 이 매출의 원가(원/y)를 바로 고칠 수 있는 칸 - 일반 출고 매출에만 보임
+    const canCost = !(entry.isReturn || entry.isDefect || entry.isFee || entry.manualClose || entry.isSample) && entry.item !== '이월 미수금' && entry.yardsShipped > 0;
+    const cw = document.getElementById('sale-edit-cost-wrap'), ci = document.getElementById('sale-edit-cost');
+    cw.classList.toggle('hidden', !canCost);
+    document.getElementById('sale-edit-cost-calc').classList.add('hidden');
+    ci.value = ''; ci.dataset.orig = '';
+    if (canCost) {
+      const c = getCostPerYardForEntry(entry);
+      ci.value = (c != null && isFinite(c)) ? String(Math.round(c * 100) / 100) : '';
+      ci.dataset.orig = ci.value;
+      document.getElementById('sale-edit-cost-hint').textContent = entry.manualCostPerY != null ? '직접 정한 값이에요' : (entry.fcost != null ? '매출 당시 값으로 고정돼 있어요' : (ci.value === '' ? '원가가 아직 정해지지 않았어요' : '자동 계산된 값이에요'));
+    }
+  }
   document.getElementById('saleEditModal').classList.add('open');
+}
+let _sceRate = null; // 단가로 계산하기에서 쓸 환율 묶음 - 이 매출이 찍힐 때의 환율(없으면 지금 환율)
+function toggleSaleCostCalc() {
+  const box = document.getElementById('sale-edit-cost-calc');
+  if (!box.classList.contains('hidden')) { box.classList.add('hidden'); return; }
+  const entry = shipmentLog.find(e => e.id === pendingSaleEditId);
+  _sceRate = (entry && entry.rateSnapshot && entry.rateSnapshot.rate != null) ? entry.rateSnapshot : { rate: settings.rate, yard: settings.yard, ship: settings.ship };
+  const item = document.getElementById('sale-edit-item').value.trim();
+  const base = item ? findCostFor(item) : null; // 원가표에 등록된 구분/단가가 있으면 미리 채워줌
+  const type = base && base.type === 'domestic' ? 'domestic' : 'import';
+  document.querySelector(`input[name="sce-type"][value="${type}"]`).checked = true;
+  document.getElementById('sce-price').value = base && base.price != null ? base.price : '';
+  document.getElementById('sce-fee').value = '';
+  onSaleCostTypeChange();
+  box.classList.remove('hidden');
+}
+function onSaleCostTypeChange() {
+  const dom = document.querySelector('input[name="sce-type"]:checked').value === 'domestic';
+  document.getElementById('sce-price-label').textContent = dom ? '국내 단가 (원/y)' : '중국단가 (위안/미터)';
+  document.getElementById('sce-price').placeholder = dom ? '예: 3500' : '예: 12.5';
+  updateSaleCostCalcPreview();
+}
+function computeSaleCostCalc() { // -> {total, base, fee} 또는 null
+  const dom = document.querySelector('input[name="sce-type"]:checked').value === 'domestic';
+  const price = parseFloat(document.getElementById('sce-price').value);
+  const feeRaw = parseFloat(document.getElementById('sce-fee').value);
+  if (isNaN(price) || price <= 0 || !_sceRate) return null;
+  const fee = isNaN(feeRaw) ? 0 : feeRaw;
+  const base = dom ? price : price * _sceRate.rate * _sceRate.yard + _sceRate.ship; // 원가표와 같은 계산 (중국산: 단가×환율×야드환산+운임)
+  const total = Math.round((base + fee) * 100) / 100;
+  if (!isFinite(total) || total < 0) return null;
+  return { total, base: Math.round(base * 100) / 100, fee };
+}
+function updateSaleCostCalcPreview() {
+  const r = computeSaleCostCalc();
+  document.getElementById('sce-total').textContent = r ? `${r.total.toLocaleString()}원/y` : '-';
+  const dom = document.querySelector('input[name="sce-type"]:checked').value === 'domestic';
+  document.getElementById('sce-detail').textContent = !_sceRate ? '' : (r ? `${dom ? '국내 단가' : `환율 ${_sceRate.rate} · 야드환산 ${_sceRate.yard} · 운임 ${_sceRate.ship}원 적용`}: ${r.base.toLocaleString()}원${r.fee ? ` + 가공비 ${r.fee.toLocaleString()}원` : ''}` : (dom ? '' : `환율 ${_sceRate.rate} · 야드환산 ${_sceRate.yard} · 운임 ${_sceRate.ship}원 적용 (이 매출이 찍힌 때의 값)`));
+}
+function applySaleCostCalc() {
+  const r = computeSaleCostCalc();
+  if (!r) { showToast('단가를 확인해주세요'); return; }
+  document.getElementById('sale-edit-cost').value = r.total;
+  document.getElementById('sale-edit-cost-calc').classList.add('hidden');
+  showToast(`원가 칸에 ${r.total.toLocaleString()}원을 채웠어요 · 저장해야 반영돼요`);
 }
 function openSaleAddModal(customer) {
   pendingSaleEditId = null;
@@ -5129,6 +5232,9 @@ function openSaleAddModal(customer) {
   document.getElementById('sale-edit-extra').value = '';
   document.getElementById('sale-edit-extra-reason').value = '';
   document.getElementById('sale-edit-extra-reason-wrap').classList.add('hidden');
+  document.getElementById('sale-edit-cost-wrap').classList.add('hidden');
+  document.getElementById('sale-edit-cost-calc').classList.add('hidden');
+  document.getElementById('sale-edit-cost').value = ''; document.getElementById('sale-edit-cost').dataset.orig = '';
   document.getElementById('saleEditModal').classList.add('open');
 }
 function closeSaleEditModal() { document.getElementById('saleEditModal').classList.remove('open'); pendingSaleEditId = null; pendingSaleAddCustomer = null; }
@@ -5169,6 +5275,19 @@ async function confirmSaleEditInner(keepOpen) {
   if (!item) { showToast('품목을 확인해주세요'); return; }
   if (!yardsRaw || yardsRaw <= 0) { showToast('출고 수량을 확인해주세요'); return; }
   if (!priceRaw || priceRaw <= 0) { showToast('판매단가를 확인해주세요'); return; }
+  let costEdit = null; // 원가 칸을 고쳤을 때만 {set:값} 또는 {clear:true} (안 건드렸으면 null이라 원가는 그대로)
+  if (!isNew && !document.getElementById('sale-edit-cost-wrap').classList.contains('hidden')) {
+    const ci = document.getElementById('sale-edit-cost');
+    const raw = ci.value.trim();
+    if (raw !== (ci.dataset.orig || '')) {
+      if (raw === '') costEdit = { clear: true };
+      else {
+        const v = parseFloat(raw);
+        if (!isFinite(v) || v < 0) { showToast('원가를 확인해주세요 (0 이상의 숫자)'); return; }
+        costEdit = { set: Math.round(v * 100) / 100 };
+      }
+    }
+  }
 
   const supplyAmount = Math.round(priceRaw * yardsRaw);
   const taxAmount = taxIncluded ? Math.round(supplyAmount * 0.1) : 0;
@@ -5272,12 +5391,18 @@ async function confirmSaleEditInner(keepOpen) {
       const manualCostPerY = costRaw ? parseFloat(costRaw) : null;
       if (qty > 0) newBreakdown.push({ tang, qty: Math.round(qty * 100) / 100, rollId: null, manualCostPerY });
     });
-    delete entry.fcost; // 어느 탕에서 나갔는지 바꿨으니 원가도 다시 정해지게
-    entry.deductBreakdown = newBreakdown;
-    entry.invDeductedAmount = newBreakdown.filter(b => b.rollId != null).reduce((s, b) => s + b.qty, 0);
-    await persistRolls();
+    if (breakdownSig(newBreakdown) !== breakdownSig(entry.deductBreakdown)) { // 탕별 내역을 실제로 바꾼 경우에만 반영 (안 건드렸으면 원가/재고 기록은 그대로 둠)
+      delete entry.fcost; // 어느 탕에서 나갔는지 바꿨으니 원가도 다시 정해지게
+      entry.deductBreakdown = newBreakdown;
+      entry.invDeductedAmount = newBreakdown.filter(b => b.rollId != null).reduce((s, b) => s + b.qty, 0);
+      await persistRolls();
+    }
   }
 
+  if (costEdit) { // 원가 칸을 고친 경우: 직접 정한 값으로 덮어쓰거나(비우면) 자동 계산으로 되돌림 - 재고/미수금엔 영향 없음
+    delete entry.fcost;
+    if (costEdit.clear) delete entry.manualCostPerY; else entry.manualCostPerY = costEdit.set;
+  }
   await rememberPrice(entry.customer, entry.item, entry.color, priceRaw);
   const overpaidSaleEdit = await creditOverpaymentIfAny(entry);
   await persistShipmentLog();
