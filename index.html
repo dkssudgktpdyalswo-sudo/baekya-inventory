@@ -1179,7 +1179,7 @@
 const PASSWORD = "3059";
 const ADMIN_PASSWORD = "9503"; // 매출/미수금 탭 전용 - 필요하면 이 값만 바꿔서 변경 가능
 const DATA_VERSION = "2026-08-03-v4"; // 재고/이월장부 씨앗 데이터를 바꿀 때마다 이 값을 새로 바꿔주세요
-const APP_CODE_VERSION = "2026-10-23-c"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
+const APP_CODE_VERSION = "2026-10-28-a"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
 const SCHEMA_STAMP = 2; // 서버 저장규칙이 확인하는 "최신 앱 도장" - 절대 자주 바꾸지 않음(이 값을 아는 코드만 저장 가능하게 서버에서 막을 때 씀)
 const CONFIRMED_EMPTY = '__CONFIRMED_EMPTY__'; // "서버가 확실하게 문서가 없다고 확인해줬다"는 걸 표시하는 특수값
                                                  // (한번도 확인 안 한 null과 구분해서, 그 사이 다른 사람이 첫 데이터를 만들었으면 충돌로 감지하기 위함)
@@ -2403,9 +2403,26 @@ function render() {
   else renderSales();
 }
 
-let _knownItemNames = [];
+let _knownItemNames = []; // 지금 재고(rolls)가 있는 품목 - 재고 차감/원가 계산 등 "재고 연동" 판단에 씀
+let _suggestItemNames = []; // 자동완성 후보용: 재고가 다 나가서 0이어도 스왓치/원가표/매출/발주에 있는 품목까지 전부
 function updateItemNameList() {
   _knownItemNames = Array.from(new Set(rolls.map(r => String(r.item).trim()))).sort((a, b) => a.localeCompare(b, 'ko'));
+  const all = new Set(_knownItemNames);
+  for (const s of swatchInfo) if (s.item) all.add(String(s.item).trim());
+  for (const c of costs) if (!c.color && c.item) all.add(String(c.item).trim());
+  for (const e of shipmentLog) if (e.item && !e.isFee && e.item !== '이월 미수금' && e.item !== '추가금') all.add(String(e.item).trim());
+  for (const o of orders) if (o.item) all.add(String(o.item).trim());
+  all.delete('');
+  _suggestItemNames = Array.from(all).sort((a, b) => a.localeCompare(b, 'ko'));
+}
+function isKnownItemForReturn(item) { // 반품은 재고가 0이어도(품목이 이미 다 나간 경우도) 우리가 취급하던 품목이면 재고로 다시 넣어줌
+  const t = String(item || '').trim();
+  if (!t) return false;
+  if (hasKnownItem(t)) return true;
+  if (swatchInfo.some(s => String(s.item).trim() === t)) return true;
+  if (costs.some(c => !c.color && String(c.item).trim() === t)) return true;
+  if (shipmentLog.some(e => !e.isFee && !e.isReturn && !e.isDefect && e.item === t && (e.yardsShipped || 0) > 0)) return true;
+  return false;
 }
 
 const CHOSUNG_LIST = ['ㄱ','ㄲ','ㄴ','ㄷ','ㄸ','ㄹ','ㅁ','ㅂ','ㅃ','ㅅ','ㅆ','ㅇ','ㅈ','ㅉ','ㅊ','ㅋ','ㅌ','ㅍ','ㅎ'];
@@ -2464,15 +2481,20 @@ function showSuggestionsGeneric(inputEl, candidates, labelMap) {
   box.style.width = rect.width + 'px';
   box.classList.remove('hidden');
 }
-function showItemSuggestions(inputEl) { showSuggestionsGeneric(inputEl, _knownItemNames); }
+function showItemSuggestions(inputEl) { showSuggestionsGeneric(inputEl, _suggestItemNames); }
 function showColorSuggestions(colorInputEl, itemInputIdOrEl) {
   const itemEl = typeof itemInputIdOrEl === 'string' ? document.getElementById(itemInputIdOrEl) : itemInputIdOrEl;
   const rawItemVal = String((itemEl && itemEl.value) || '').trim();
   if (!rawItemVal) { document.getElementById('itemSuggestBox').classList.add('hidden'); return; }
   const itemVal = resolveInventoryItem(rawItemVal);
   const colorsFromRolls = rolls.filter(r => String(r.item).trim() === itemVal).map(r => String(r.color).trim());
-  const colorsFromSwatch = swatchInfo.filter(s => String(s.item).trim() === itemVal && (s.order != null || s.chinaCode != null) && s.color != null).map(s => String(s.color).trim());
-  const colors = Array.from(new Set([...colorsFromRolls, ...colorsFromSwatch])); // 재고 0이어도 스왓치 등록된 컬러는 후보에 계속 나오게 함 (재고 탭 카드랑 일관되게)
+  const colorsFromSwatch = swatchInfo.filter(s => String(s.item).trim() === itemVal && (s.order != null || s.chinaCode != null || s.keepCard) && s.color != null).map(s => String(s.color).trim());
+  const sameItem = (x) => { const t = String(x || '').trim(); return t === itemVal || t === rawItemVal; };
+  const colorsFromHistory = [ // 재고가 다 나가서 0이고 스왓치 등록도 없는 컬러도, 이미 팔았거나 발주했던 이력이 있으면 후보에 나오게 함 (반품/불량 등록할 때 필요)
+    ...shipmentLog.filter(e => !e.isFee && sameItem(e.item) && e.color).map(e => String(e.color).trim()),
+    ...orders.filter(o => sameItem(o.item) && o.color).map(o => String(o.color).trim())
+  ];
+  const colors = Array.from(new Set([...colorsFromRolls, ...colorsFromSwatch, ...colorsFromHistory].filter(Boolean))); // 재고 0이어도 스왓치 등록된 컬러는 후보에 계속 나오게 함 (재고 탭 카드랑 일관되게)
   const orderOf = (color) => {
     const sw = swatchInfo.find(s => String(s.item).trim() === itemVal && s.color != null && String(s.color).trim() === color && s.order != null);
     if (sw) return sw.order;
@@ -3973,12 +3995,19 @@ async function renameInventoryItem(oldName) {
     showToast(`"${oldName}" → "${newName}"(으)로 이름을 바꿨습니다`);
   }
 }
+function askAdminPassword(msg) { // 관리자 비밀번호를 물어봄 (맞으면 true). 취소하면 조용히 false, 틀리면 안내 후 false
+  const pw = prompt(msg || '관리자 비밀번호를 입력하세요.');
+  if (pw === null) return false;
+  if (pw !== ADMIN_PASSWORD) { showToast('비밀번호가 틀렸습니다'); return false; }
+  return true;
+}
 async function deleteAllRollsForColor(item, color) {
   const t_item = String(item).trim();
   const t_color = String(color).trim();
   const count = rolls.filter(r => String(r.item).trim() === t_item && String(r.color).trim() === t_color).length;
   const targetSwatch = swatchInfo.find(s => String(s.item).trim() === t_item && String(s.color).trim() === t_color);
   if (count === 0 && !targetSwatch) { showToast('삭제할 게 없어요'); return; }
+  if (!askAdminPassword(`"${item} ${color}" 컬러 전체 삭제는 관리자만 할 수 있어요.\n관리자 비밀번호를 입력하세요.`)) return; // 실수로 지우지 않게 잠가둠 (비밀번호가 맞아야 아래 확인창이 뜸)
   if (!confirm(`"${item} ${color}"을(를) 완전히 삭제할까요?${count > 0 ? ` (재고 ${count}개 포함)` : ''}\n스왓치 번호·중국품번 등록 정보도 같이 지워지고, 뒤 번호들은 한 칸씩 당겨져요.`)) return;
   rolls = rolls.filter(r => !(String(r.item).trim() === t_item && String(r.color).trim() === t_color));
   const deletedOrder = targetSwatch ? targetSwatch.order : null;
@@ -7689,7 +7718,7 @@ async function renderBackupManagerList() {
     const itemsHtml = Object.keys(keyLabels).map(k => {
       const docIdsForKey = info.items[k];
       if (!docIdsForKey) return `<span style="display:inline-block; margin:2px 6px 2px 0; font-size:12px; color:var(--muted);">✕ ${keyLabels[k]}</span>`;
-      return `<span style="display:inline-flex; align-items:center; gap:4px; margin:2px 6px 2px 0; font-size:12px; color:var(--text); background:#f1eee7; border-radius:6px; padding:2px 6px;">✓ ${keyLabels[k]} <button onclick="restoreBackupSingleDoc('${escAttr(label)}','${escJsonAttr(docIdsForKey)}','${k}')" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:5px;padding:1px 6px;font-size:10px;">이것만 복구</button></span>`;
+      return `<span style="display:inline-flex; align-items:center; gap:4px; margin:2px 6px 2px 0; font-size:12px; color:var(--text); background:#f1eee7; border-radius:6px; padding:2px 6px;">✓ ${keyLabels[k]} <button onclick="restoreBackupSingleDoc('${escAttr(label)}','${escJsonAttr(docIdsForKey)}','${k}','${k === 'rolls' && info.items.swatchInfo ? escJsonAttr(info.items.swatchInfo) : ''}')" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:5px;padding:1px 6px;font-size:10px;">이것만 복구</button></span>`;
     }).join('');
     const docIdsJson = escJsonAttr(Object.values(info.items).flat());
     card.innerHTML = `
@@ -7970,17 +7999,35 @@ async function fetchAndJoinBackupChunks(docIds) {
   parts.sort((a, b) => a.chunkIndex - b.chunkIndex);
   return parts.map(p => p.data).join('');
 }
-async function restoreBackupSingleDoc(label, docIdsJson, key) {
+async function restoreBackupSingleDoc(label, docIdsJson, key, swatchIdsJson) {
   let docIds;
   try { docIds = JSON.parse(docIdsJson); } catch (e) { return; }
+  let swatchDocIds = null; // 재고만 복구할 때, 같은 시점의 스왓치정보 백업이 있으면 같이 복구할지 물어보기 위함
+  if (key === 'rolls' && swatchIdsJson) { try { const a = JSON.parse(swatchIdsJson); if (Array.isArray(a) && a.length > 0) swatchDocIds = a; } catch (e) {} }
   const keyLabels = { rolls: '재고', orders: '이월장부', shipmentLog: '매출장부', swatchInfo: '스왓치정보', settings: '사업자정보/설정', costs: '원가표', priceBook: '단가장부', depositMemos: '선입금메모', customerList: '거래처목록', expenses: '지출내역', customerNotes: '거래처고정메모' };
   const keyLabel = keyLabels[key] || key;
   if (!confirm(`"${label}" 시점의 "${keyLabel}"만 복구할게요.\n다른 항목(재고, 매출 등)은 전혀 안 건드려요.\n\n⚠️ 지금 있는 "${keyLabel}"의 최신 내용은 덮어써져요. 계속할까요?`)) return;
+  // 재고와 스왓치 순번은 짝이라, 재고만 옛날 것으로 되돌리면 그 사이에 바뀐 순번(컬러 삭제로 당겨진 번호 등)이 안 맞아서 순번이 사라져 보일 수 있음 - 같은 시점의 순번도 같이 되돌릴지 물어봄
+  const alsoSwatch = !!swatchDocIds && confirm(`같은 시점("${label}")의 "스왓치정보"(스왓치 순번·중국품번)도 같이 복구할까요?\n\n[확인] = 같이 복구 (재고와 순번이 같은 시점으로 맞춰져요)\n[취소] = 재고만 복구 (순번은 지금 것 그대로)`);
   try {
     const joined = await fetchAndJoinBackupChunks(docIds);
     if (joined == null) { showToast('이 백업을 찾을 수 없어요'); return; }
+    let swatchJoined = null;
+    if (alsoSwatch) {
+      swatchJoined = await fetchAndJoinBackupChunks(swatchDocIds);
+      if (swatchJoined == null) { showToast('같은 시점의 스왓치정보 백업을 찾을 수 없어서, 아무것도 복구하지 않았어요'); return; } // 둘 다 읽은 뒤에야 쓰기 시작함
+    }
     await db.collection('inventory').doc(key).set({ data: joined, stamp: SCHEMA_STAMP });
-    alert(`"${keyLabel}"만 복구했어요. 화면을 새로고침할게요.`);
+    if (alsoSwatch) {
+      try {
+        await db.collection('inventory').doc('swatchInfo').set({ data: swatchJoined, stamp: SCHEMA_STAMP });
+      } catch (e2) {
+        alert(`"${keyLabel}"은 복구했지만 "스왓치정보" 복구 중 오류가 났어요. 화면을 새로고침한 뒤 백업 화면에서 "스왓치정보 이것만 복구"를 다시 눌러주세요.`);
+        location.reload();
+        return;
+      }
+    }
+    alert(alsoSwatch ? `"${keyLabel}"와 "스왓치정보"를 복구했어요. 화면을 새로고침할게요.` : `"${keyLabel}"만 복구했어요. 화면을 새로고침할게요.`);
     location.reload();
   } catch (e) {
     showToast('복구 중 오류가 났어요');
@@ -11978,9 +12025,10 @@ async function confirmReturnInner() {
     let returnRollId = null;
     const chosenTang = parseInt(rowEl.querySelector('.ret-row-tang').value) || 1;
     if (!isDefectType) {
-      if (hasKnownItem(item)) {
+      if (isKnownItemForReturn(item)) {
         const resolvedColor = resolveInventoryColor(item, color);
-        const existingCat = (rolls.find(r => String(r.item).trim() === String(item).trim()) || {}).cat || '';
+        const t_it = String(item).trim();
+        const existingCat = (rolls.find(r => String(r.item).trim() === t_it) || {}).cat || (swatchInfo.find(s => String(s.item).trim() === t_it && s.cat) || {}).cat || (costs.find(c => !c.color && String(c.item).trim() === t_it && c.cat) || {}).cat || '';
         // 반품은 기존 재고에 합치지 않고, 항상 새 개별 항목으로 넣음 (같은 탕 번호여도 따로 구분되게)
         const newRoll = { id: nextId++, cat: existingCat, item, color: resolvedColor, tang: chosenTang, qty: yardsAmount };
         rolls.push(newRoll);
