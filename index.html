@@ -1179,7 +1179,7 @@
 const PASSWORD = "3059";
 const ADMIN_PASSWORD = "9503"; // 매출/미수금 탭 전용 - 필요하면 이 값만 바꿔서 변경 가능
 const DATA_VERSION = "2026-08-03-v4"; // 재고/이월장부 씨앗 데이터를 바꿀 때마다 이 값을 새로 바꿔주세요
-const APP_CODE_VERSION = "2026-10-28-a"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
+const APP_CODE_VERSION = "2026-10-28-b"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
 const SCHEMA_STAMP = 2; // 서버 저장규칙이 확인하는 "최신 앱 도장" - 절대 자주 바꾸지 않음(이 값을 아는 코드만 저장 가능하게 서버에서 막을 때 씀)
 const CONFIRMED_EMPTY = '__CONFIRMED_EMPTY__'; // "서버가 확실하게 문서가 없다고 확인해줬다"는 걸 표시하는 특수값
                                                  // (한번도 확인 안 한 null과 구분해서, 그 사이 다른 사람이 첫 데이터를 만들었으면 충돌로 감지하기 위함)
@@ -4027,6 +4027,7 @@ async function deleteAllRollsForItem(item) {
   const count = rolls.filter(r => String(r.item).trim() === t_item).length;
   const hasSwatch = swatchInfo.some(s => String(s.item).trim() === t_item);
   if (count === 0 && !hasSwatch) { showToast('삭제할 게 없어요'); return; }
+  if (!askAdminPassword(`"${item}" 품목 전체 삭제는 관리자만 할 수 있어요.\n관리자 비밀번호를 입력하세요.`)) return; // 실수로 지우지 않게 잠가둠 (비밀번호가 맞아야 아래 확인창이 뜸)
   if (!confirm(`"${item}" 품목 전체를 삭제할까요?${count > 0 ? ` (컬러 상관없이 재고 ${count}개 포함)` : ''}\n스왓치 번호·중국품번 등록 정보도 같이 지워져요.\n이 작업은 되돌릴 수 없어요.`)) return;
   rolls = rolls.filter(r => String(r.item).trim() !== t_item);
   swatchInfo = swatchInfo.filter(s => String(s.item).trim() !== t_item);
