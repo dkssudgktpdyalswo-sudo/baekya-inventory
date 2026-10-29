@@ -1179,7 +1179,7 @@
 const PASSWORD = "3059";
 const ADMIN_PASSWORD = "9503"; // 매출/미수금 탭 전용 - 필요하면 이 값만 바꿔서 변경 가능
 const DATA_VERSION = "2026-08-03-v4"; // 재고/이월장부 씨앗 데이터를 바꿀 때마다 이 값을 새로 바꿔주세요
-const APP_CODE_VERSION = "2026-10-28-b"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
+const APP_CODE_VERSION = "2026-10-29-a"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
 const SCHEMA_STAMP = 2; // 서버 저장규칙이 확인하는 "최신 앱 도장" - 절대 자주 바꾸지 않음(이 값을 아는 코드만 저장 가능하게 서버에서 막을 때 씀)
 const CONFIRMED_EMPTY = '__CONFIRMED_EMPTY__'; // "서버가 확실하게 문서가 없다고 확인해줬다"는 걸 표시하는 특수값
                                                  // (한번도 확인 안 한 null과 구분해서, 그 사이 다른 사람이 첫 데이터를 만들었으면 충돌로 감지하기 위함)
@@ -2489,12 +2489,7 @@ function showColorSuggestions(colorInputEl, itemInputIdOrEl) {
   const itemVal = resolveInventoryItem(rawItemVal);
   const colorsFromRolls = rolls.filter(r => String(r.item).trim() === itemVal).map(r => String(r.color).trim());
   const colorsFromSwatch = swatchInfo.filter(s => String(s.item).trim() === itemVal && (s.order != null || s.chinaCode != null || s.keepCard) && s.color != null).map(s => String(s.color).trim());
-  const sameItem = (x) => { const t = String(x || '').trim(); return t === itemVal || t === rawItemVal; };
-  const colorsFromHistory = [ // 재고가 다 나가서 0이고 스왓치 등록도 없는 컬러도, 이미 팔았거나 발주했던 이력이 있으면 후보에 나오게 함 (반품/불량 등록할 때 필요)
-    ...shipmentLog.filter(e => !e.isFee && sameItem(e.item) && e.color).map(e => String(e.color).trim()),
-    ...orders.filter(o => sameItem(o.item) && o.color).map(o => String(o.color).trim())
-  ];
-  const colors = Array.from(new Set([...colorsFromRolls, ...colorsFromSwatch, ...colorsFromHistory].filter(Boolean))); // 재고 0이어도 스왓치 등록된 컬러는 후보에 계속 나오게 함 (재고 탭 카드랑 일관되게)
+  const colors = Array.from(new Set([...colorsFromRolls, ...colorsFromSwatch].filter(Boolean))); // 재고에 직접 등록된 컬러(재고 롤 + 스왓치 카드)만 후보로 나옴. 매출/발주/중국발주에 임의로 적은 컬러는 안 나옴. 재고가 0이어도 스왓치 카드가 있으면 계속 나옴
   const orderOf = (color) => {
     const sw = swatchInfo.find(s => String(s.item).trim() === itemVal && s.color != null && String(s.color).trim() === color && s.order != null);
     if (sw) return sw.order;
