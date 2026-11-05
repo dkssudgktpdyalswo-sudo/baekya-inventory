@@ -1125,6 +1125,7 @@
     <label>사유/메모</label>
     <input id="rde-note" placeholder="예: 색상 불일치">
     <div class="modal-actions">
+      <button class="btn-cancel" style="background:#fdecea;color:var(--danger);" onclick="deleteReturnDefectFromModal()">삭제</button>
       <button class="btn-cancel" onclick="closeReturnDefectEditModal()">취소</button>
       <button class="btn-save" onclick="confirmReturnDefectEdit()">저장</button>
     </div>
@@ -1179,7 +1180,7 @@
 const PASSWORD = "3059";
 const ADMIN_PASSWORD = "9503"; // 매출/미수금 탭 전용 - 필요하면 이 값만 바꿔서 변경 가능
 const DATA_VERSION = "2026-08-03-v4"; // 재고/이월장부 씨앗 데이터를 바꿀 때마다 이 값을 새로 바꿔주세요
-const APP_CODE_VERSION = "2026-10-29-a"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
+const APP_CODE_VERSION = "2026-11-04-b"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
 const SCHEMA_STAMP = 2; // 서버 저장규칙이 확인하는 "최신 앱 도장" - 절대 자주 바꾸지 않음(이 값을 아는 코드만 저장 가능하게 서버에서 막을 때 씀)
 const CONFIRMED_EMPTY = '__CONFIRMED_EMPTY__'; // "서버가 확실하게 문서가 없다고 확인해줬다"는 걸 표시하는 특수값
                                                  // (한번도 확인 안 한 null과 구분해서, 그 사이 다른 사람이 첫 데이터를 만들었으면 충돌로 감지하기 위함)
@@ -3057,7 +3058,7 @@ function renderInv() {
     }
     return { list, viaBase };
   };
-  const fmtPending = (pd) => `${pd.viaBase ? '무지 ' : ''}${pd.list.slice(0, 2).map(o => `${o.arrivalDate ? `${esc(String(formatChinaArrivalLabel(o.arrivalDate)).replace(/\(.\)$/, ''))} ` : ''}${esc(o.qty)}`).join(' · ')}${pd.list.length > 2 ? ` 외${pd.list.length - 2}` : ''} 예정${pd.viaBase ? ' · 가공필요' : ''}`; // 표시 예: "10/25 3절 예정" (요일 뺌)
+  const fmtPending = (pd) => `${pd.viaBase ? '무지 ' : ''}${pd.list.map(o => `<span style="white-space:nowrap;">${o.arrivalDate ? `${esc(String(formatChinaArrivalLabel(o.arrivalDate)).replace(/\(.\)$/, ''))} ` : ''}${esc(o.qty)}</span>`).join(' · ')} 예정${pd.viaBase ? ' · 가공필요' : ''}`; // 표시 예: "10/25 3절 · 11/2 5절 예정" (요일 뺌). 발주가 여러 건이어도 전부 보여주고, 길면 건 단위로 줄바꿈(안 잘림)
 
   for (const ig of itemGroups) {
     const itemTotal = ig.colors.reduce((s, g) => s + g.rolls.reduce((s2, r) => s2 + (r.defective ? 0 : r.qty), 0), 0);
@@ -3103,7 +3104,7 @@ function renderInv() {
           <div class="info">
             <div class="name">${esc(g.color)}${sw && sw.chinaCode ? ` <span style="font-size:11px; color:var(--muted); font-weight:400;">(중국품번 ${esc(sw.chinaCode)})</span>` : ''}</div>
             <div class="sub">${total > 0 ? `롤 ${normalRolls.length}개` : '재고 없음'}${carry ? ` · <span class="carry-chip">이월 ${fmtCarry(carry)}</span>` : ''}${defectiveTotal > 0 ? ` · <span style="color:var(--danger);font-weight:700;">불량 ${defectiveTotal.toLocaleString()}y</span>` : ''}</div>
-            ${pend.list.length > 0 ? `<div style="font-size:11px; color:#2f6b46; font-weight:600; margin-top:1px;">${fmtPending(pend)}</div>` : ''}
+            ${pend.list.length > 0 ? `<div style="font-size:11px; color:#2f6b46; font-weight:600; margin-top:1px; line-height:1.35; word-break:keep-all; overflow-wrap:anywhere;">${fmtPending(pend)}</div>` : ''}
             <div style="margin-top:4px; display:flex; gap:4px; flex-wrap:wrap;">
               <button onclick="event.stopPropagation(); openSwatchEditModal('${escAttr(g.cat)}','${escAttr(g.item)}','${escAttr(g.color)}')" style="border:none;background:#f1eee7;color:var(--muted);border-radius:6px;padding:3px 8px;font-size:11px;">스왓치·중국품번 수정</button>
               <button class="btn-key" onclick="event.stopPropagation(); openRollAddModalFor('${escAttr(g.item)}', '${escAttr(g.color)}')" style="border:none;background:#eaf3ec;color:#2f6b46;border-radius:6px;padding:3px 8px;font-size:11px;">입고</button>
@@ -6916,10 +6917,16 @@ function quickEditPayment(entryId, idx) {
   document.querySelector(`input[name="payment-edit-method"][value="${p.method || 'cash'}"]`).checked = true;
   document.getElementById('paymentEditModal').classList.add('open');
 }
+async function deleteReturnDefectFromModal() { // 거래처원장 등에서 반품/불량 수정창을 열었을 때 바로 삭제 (확인창에서 취소하면 수정창은 그대로 열려있음)
+  const id = _returnDefectEditId;
+  if (id == null) return;
+  const done = await deleteReturnDefectEntry(id);
+  if (done) closeReturnDefectEditModal();
+}
 async function deleteReturnDefectEntry(id) {
   const e = shipmentLog.find(x => x.id === id);
-  if (!e) return;
-  if (!confirm(`이 ${e.isDefect ? '불량' : '반품'} 기록을 삭제할까요?${e.isReturn ? ' (재고에 반품으로 다시 들어갔던 만큼 도로 빠져요)' : ''}`)) return;
+  if (!e) return false;
+  if (!confirm(`이 ${e.isDefect ? '불량' : '반품'} 기록을 삭제할까요?${e.isReturn ? ' (재고에 반품으로 다시 들어갔던 만큼 도로 빠져요)' : ''}`)) return false;
 
   if (e.isReturn) {
     // 반품 등록할 때 재고로 다시 채워넣었던 만큼, 삭제할 땐 도로 빼야 함
@@ -6946,7 +6953,9 @@ async function deleteReturnDefectEntry(id) {
   shipmentLog = shipmentLog.filter(x => x.id !== id);
   await persistShipmentLog();
   render();
+  if (salesSpecialView === 'customerLedger') renderCustomerLedgerTable();
   showToast('삭제했어요');
+  return true;
 }
 async function editDiscountEntry(id) {
   const e = shipmentLog.find(x => x.id === id);
