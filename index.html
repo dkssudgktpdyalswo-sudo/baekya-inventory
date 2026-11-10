@@ -8323,6 +8323,7 @@ function renderReportMenuView() {
     ['월간 리포트', '이번달/지난달 매출·순이익 비교', showMonthlyReport],
     ['연간 리포트', '올해 전체 매출·순이익 흐름', showYearlyReport],
     ['회계장부 (고정비)', '직원 월급, 임대료 등 고정비 관리 (달마다 따로 저장)', () => openFixedCostModal(monthKeyFromOffset(0))],
+    ['급여 정산', '출고량 보너스·영업 수당 포함 월별 급여 계산', showPayroll],
   ];
   for (const [title, desc, fn] of items) {
     const card = document.createElement('div');
@@ -8332,6 +8333,247 @@ function renderReportMenuView() {
     list.appendChild(card);
   }
 }
+// ===== 급여 정산 (리포트 메뉴 안, 비밀번호 7080으로 잠김) =====
+// 출고량 보너스형 직원(배송/창고 등) + 영업사원(담당 거래처 기준 수당)을 월별로 계산해서 보여줌. 설정은 settings.payroll에 저장
+let payrollOffset = 0; // 0=이번달, -1=지난달 ...
+let payrollDraft = null; // 설정창에서 직원 추가/삭제 중인 임시 값 (저장 전까지 서버엔 안 감)
+const PAYROLL_DEFAULT = {
+  bonusRule: { minYards: 1000, first: 10000, step: 20000, stepYards: 1000 }, // 1,000마 이상 1만원, 이후 1,000마마다 +2만원
+  staff: [ { name: '배송 직원', base: 2900000, mult: 1 }, { name: '창고장', base: 3200000, mode: 'tiers', tiers: [ { yards: 3000, amount: 30000 }, { yards: 5000, amount: 80000 } ] } ], // mult: 보너스 배율 / mode 'tiers': 그날 출고량이 넘은 가장 높은 구간 금액만 지급
+  sales: [ { name: '영업사원', stage: 1, base1: 2820000, existingRate: 50, newRate: 100, newMonths: 12, base2: 2500000, profitPct: 15, customers: [] } ]
+};
+function getPayroll() {
+  const p = settings.payroll || {};
+  return {
+    bonusRule: { ...PAYROLL_DEFAULT.bonusRule, ...(p.bonusRule || {}) },
+    staff: Array.isArray(p.staff) ? p.staff : PAYROLL_DEFAULT.staff.map(s => ({ ...s })),
+    sales: Array.isArray(p.sales) ? p.sales : PAYROLL_DEFAULT.sales.map(s => ({ ...s, customers: [] }))
+  };
+}
+async function savePayroll(p) {
+  settings = { ...settings, payroll: p };
+  const ok = await persistSettings();
+  if (ok !== false) showToast('급여 설정을 저장했어요');
+  render();
+}
+function payrollDayBonus(yards, rule) {
+  if (yards < rule.minYards) return 0;
+  return rule.first + rule.step * Math.floor((yards - rule.minYards) / rule.stepYards);
+}
+function showPayroll() { payrollOffset = 0; salesSpecialView = 'payroll'; openGroups = new Set(); render(); }
+function exitPayroll() { salesSpecialView = 'reportMenu'; openGroups = new Set(); render(); }
+function shiftPayroll(d) { payrollOffset += d; render(); }
+function payrollIsShipment(e) { return !e.isReturn && !e.isDefect && !e.manualClose && !e.isFee && e.yardsShipped > 0; }
+function payrollMonthsBetween(fromDate, toDate) {
+  // 'YY.MM.DD' 두 날짜 사이가 몇 개월인지 (대략, 일 단위까지 비교)
+  const [y1, m1, d1] = String(fromDate).split('.').map(Number);
+  const [y2, m2, d2] = String(toDate).split('.').map(Number);
+  let months = (y2 - y1) * 12 + (m2 - m1);
+  if (d2 < d1) months -= 1;
+  return months;
+}
+function payWon(n) { return Math.round(n).toLocaleString() + '원'; }
+async function renderPayrollView() {
+  const myToken = ++_reportRenderToken;
+  const list = document.getElementById('list');
+  list.innerHTML = '';
+  const now = new Date();
+  const target = new Date(now.getFullYear(), now.getMonth() + payrollOffset, 1);
+  const mk = `${String(target.getFullYear()).slice(2)}.${String(target.getMonth() + 1).padStart(2, '0')}`;
+  const archiveKey = `${target.getFullYear()}-${String(target.getMonth() + 1).padStart(2, '0')}`;
+
+  const top = document.createElement('div');
+  top.style.cssText = 'display:flex; gap:8px; align-items:center; margin-bottom:10px; flex-wrap:wrap;';
+  const mkBtn = (txt, fn, style) => { const b = document.createElement('button'); b.textContent = txt; b.style.cssText = style || 'border:none;background:#eee;color:#555;border-radius:8px;padding:7px 12px;font-size:12px;'; b.onclick = fn; return b; };
+  top.appendChild(mkBtn('← 돌아가기', exitPayroll, 'border:none;background:#eee;color:#555;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;'));
+  top.appendChild(mkBtn('◀ 이전달', () => shiftPayroll(-1)));
+  const nb = mkBtn('다음달 ▶', () => shiftPayroll(1)); nb.disabled = payrollOffset >= 0; top.appendChild(nb);
+  top.appendChild(mkBtn('급여 설정', openPayrollSettings, 'border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;'));
+  list.appendChild(top);
+  const loading = document.createElement('div');
+  loading.className = 'empty'; loading.textContent = '출고 기록 불러오는 중...';
+  list.appendChild(loading);
+
+  // 라이브 기록 + 그 달 보관함을 id 기준으로 중복 없이 합침
+  const archived = await fetchArchivedEntriesForMonth(archiveKey);
+  if (myToken !== _reportRenderToken) return;
+  const byId = new Map();
+  for (const e of (archived || [])) byId.set(e.id, e);
+  for (const e of shipmentLog) byId.set(e.id, e);
+  const entries = Array.from(byId.values()).filter(e => String(e.date).slice(0, 5) === mk && payrollIsShipment(e));
+  computeProfitFieldsForEntries(entries.map(e => e)); // _profit 계산 (원본 항목에 계산 필드만 붙음 - 화면 표시용)
+  loading.remove();
+
+  const p = getPayroll();
+  const rule = p.bonusRule;
+  let html = `<div style="font-size:18px; font-weight:700; margin:4px 0 4px;">${monthKeyLabel(mk)} 급여 정산</div>`;
+  if (archived === null) html += `<div style="background:#fff4e5; color:#8a5300; border-radius:8px; padding:8px 10px; font-size:12px; margin-bottom:8px;">⚠️ 보관함을 못 불러와서 이 달 출고량이 일부 빠졌을 수 있어요. 잠시 후 다시 열어주세요.</div>`;
+
+  // --- 1) 일별 출고량 + 출고량 보너스 ---
+  const daily = new Map();
+  for (const e of entries) daily.set(e.date, Math.round(((daily.get(e.date) || 0) + e.yardsShipped) * 100) / 100);
+  const days = Array.from(daily.keys()).sort();
+  let totalYards = 0, totalBonus = 0;
+  const dayRows = days.map(d => { const y = daily.get(d); const b = payrollDayBonus(y, rule); totalYards += y; totalBonus += b; return { d, y, b }; });
+
+  const card = (inner) => `<div style="background:#fff; border:1px solid var(--border); border-radius:10px; padding:14px; margin-bottom:12px;">${inner}</div>`;
+  const row = (l, r, bold) => `<div style="display:flex; justify-content:space-between; padding:4px 0; font-size:13px;${bold ? 'font-weight:700;' : ''}"><span>${l}</span><span>${r}</span></div>`;
+
+  // 출고량 보너스형 직원
+  for (const s of p.staff) {
+    let bonus, bonusRows, kind;
+    if (s.mode === 'tiers') {
+      const tiers = (s.tiers || []).slice().sort((a, b) => a.yards - b.yards);
+      const cnt = tiers.map(() => 0);
+      for (const r of dayRows) { let hit = -1; tiers.forEach((t, ti) => { if (r.y >= t.yards) hit = ti; }); if (hit >= 0) cnt[hit]++; }
+      bonus = tiers.reduce((sum, t, ti) => sum + cnt[ti] * t.amount, 0);
+      bonusRows = tiers.map((t, ti) => row(`${t.yards.toLocaleString()}마 이상인 날 ${cnt[ti]}일 × ${payWon(t.amount)}`, payWon(cnt[ti] * t.amount))).join('');
+      kind = '하루 구간 보너스형';
+    } else {
+      bonus = Math.round(totalBonus * (s.mult != null ? s.mult : 1));
+      bonusRows = row(`출고량 보너스 (${days.length}일 · 총 ${Math.round(totalYards).toLocaleString()}마)`, payWon(bonus));
+      kind = `출고량 보너스형${s.mult != null && s.mult !== 1 ? ` · 보너스 ${s.mult * 100}%` : ''}`;
+    }
+    html += card(`<div style="font-weight:700; font-size:15px; margin-bottom:6px;">${esc(s.name)} <span style="font-size:11px; color:var(--muted); font-weight:400;">${kind}</span></div>
+      ${row('기본급', payWon(s.base))}
+      ${bonusRows}
+      <div style="border-top:1px solid var(--border); margin-top:4px;"></div>
+      ${row('세전 합계', payWon(s.base + bonus), true)}`);
+  }
+
+  // 영업사원
+  for (const sp of p.sales) {
+    const custMap = new Map((sp.customers || []).map(c => [String(c.name).trim(), c]));
+    let exY = 0, newY = 0, exPaidY = 0, newPaidY = 0, profit = 0, paidProfit = 0;
+    const perCust = new Map();
+    for (const e of entries) {
+      const c = custMap.get(String(e.customer || '').trim());
+      if (!c) continue;
+      const due = (e.saleAmount || 0) - (e.discount || 0);
+      const paidRatio = due > 0 ? Math.min(1, getPaidAmount(e) / due) : 0;
+      const isNew = !!c.isNew && c.since && payrollMonthsBetween(c.since, e.date) < (sp.newMonths || 12) && String(e.date) >= String(c.since);
+      if (isNew) { newY += e.yardsShipped; newPaidY += e.yardsShipped * paidRatio; } else { exY += e.yardsShipped; exPaidY += e.yardsShipped * paidRatio; }
+      const pr = e._profit != null ? e._profit : 0;
+      profit += pr; paidProfit += pr * paidRatio;
+      const k = c.name;
+      const cur = perCust.get(k) || { y: 0, paidY: 0, isNew };
+      cur.y += e.yardsShipped; cur.paidY += e.yardsShipped * paidRatio; perCust.set(k, cur);
+    }
+    let base, comm, commAll, detail;
+    if ((sp.stage || 1) === 2) {
+      base = sp.base2; comm = paidProfit * (sp.profitPct / 100); commAll = profit * (sp.profitPct / 100);
+      detail = row(`순이익 ${payWon(profit)} 중 입금분 ${payWon(paidProfit)} × ${sp.profitPct}%`, payWon(comm));
+    } else {
+      base = sp.base1; comm = exPaidY * sp.existingRate + newPaidY * sp.newRate; commAll = exY * sp.existingRate + newY * sp.newRate;
+      detail = row(`기존 거래처 ${Math.round(exY).toLocaleString()}마 (입금분 ${Math.round(exPaidY).toLocaleString()}마) × ${sp.existingRate}원`, payWon(exPaidY * sp.existingRate))
+             + row(`신규 거래처 ${Math.round(newY).toLocaleString()}마 (입금분 ${Math.round(newPaidY).toLocaleString()}마) × ${sp.newRate}원`, payWon(newPaidY * sp.newRate));
+    }
+    const pending = commAll - comm;
+    const custList = Array.from(perCust.entries()).sort((a, b) => b[1].y - a[1].y).map(([n, v]) => `<div style="display:flex; justify-content:space-between; font-size:12px; color:var(--muted); padding:2px 0;"><span>${esc(n)}${v.isNew ? ' <b style="color:#1a7a4a;">신규</b>' : ''}</span><span>${Math.round(v.y).toLocaleString()}마${v.paidY < v.y - 0.5 ? ` (입금 ${Math.round(v.paidY).toLocaleString()}마)` : ''}</span></div>`).join('');
+    const totalOwn = exY + newY;
+    html += card(`<div style="font-weight:700; font-size:15px; margin-bottom:6px;">${esc(sp.name)} <span style="font-size:11px; color:var(--muted); font-weight:400;">영업 ${sp.stage === 2 ? '2단계 (순이익 비율)' : '1단계 (야드당)'} · 본인 주문 ${Math.round(totalOwn).toLocaleString()}마</span></div>
+      ${row('기본급', payWon(base))}
+      ${detail}
+      <div style="border-top:1px solid var(--border); margin-top:4px;"></div>
+      ${row('세전 합계 (입금분 기준)', payWon(base + comm), true)}
+      ${pending > 0.5 ? `<div style="font-size:11px; color:#8a5300; margin-top:4px;">아직 입금 안 된 출고분 수당 ${payWon(pending)} - 입금되면 이 달 화면에 자동 반영돼요</div>` : ''}
+      ${(sp.customers || []).length === 0 ? '<div style="font-size:12px; color:var(--danger); margin-top:6px;">담당 거래처가 아직 없어요. "급여 설정"에서 거래처를 등록해주세요.</div>' : ''}
+      ${sp.stage !== 2 && totalOwn > 0 ? `<div style="font-size:11px; color:var(--muted); margin-top:4px;">2단계 전환 기준: 3개월 연속 월 5,000마 이상</div>` : ''}
+      ${custList ? `<details style="margin-top:6px;"><summary style="font-size:12px; color:var(--primary-dark);">거래처별 보기</summary>${custList}</details>` : ''}`);
+  }
+
+  // 일별 내역
+  html += card(`<div style="font-weight:700; font-size:15px; margin-bottom:6px;">일별 출고량과 보너스</div>
+    <div style="font-size:11px; color:var(--muted); margin-bottom:6px;">${rule.minYards.toLocaleString()}마 이상 ${payWon(rule.first)}, 이후 ${rule.stepYards.toLocaleString()}마마다 +${payWon(rule.step)} (반품·불량·추가금 제외)</div>
+    ${dayRows.length === 0 ? '<div class="empty">이 달 출고 기록이 없어요</div>' : dayRows.map(r => row(`${r.d}`, `${Math.round(r.y).toLocaleString()}마 · <b>${r.b ? payWon(r.b) : '-'}</b>`)).join('')}
+    <div style="border-top:1px solid var(--border); margin-top:4px;"></div>
+    ${row(`합계 (${dayRows.length}일)`, `${Math.round(totalYards).toLocaleString()}마 · ${payWon(totalBonus)}`, true)}`);
+
+  const wrap = document.createElement('div');
+  wrap.innerHTML = html;
+  list.appendChild(wrap);
+}
+function openPayrollSettings() {
+  const p = payrollDraft || getPayroll();
+  const ov = document.createElement('div');
+  ov.className = 'modal-overlay open';
+  ov.id = 'payrollSettingsModal';
+  const inp = (id, val, w) => `<input id="${id}" value="${esc(val)}" style="width:${w || 110}px; padding:6px; border:1px solid var(--border); border-radius:6px; font-size:13px;">`;
+  const lbl = (t, field) => `<div style="display:flex; justify-content:space-between; align-items:center; margin:6px 0; font-size:13px;"><span>${t}</span>${field}</div>`;
+  const staffHtml = p.staff.map((s, i) => `<div style="border:1px dashed var(--border); border-radius:8px; padding:8px; margin-bottom:8px;">
+      ${lbl('이름', inp(`ps-name-${i}`, s.name, 140))}
+      ${lbl('기본급 (원, 세전)', inp(`ps-base-${i}`, s.base))}
+      ${s.mode === 'tiers'
+        ? lbl('하루 구간 (출고량:금액, 쉼표로 구분)', inp(`ps-tiers-${i}`, (s.tiers || []).map(t => `${t.yards}:${t.amount}`).join(', '), 170))
+        : lbl('보너스 배율 (1=전액, 0.5=절반)', inp(`ps-mult-${i}`, s.mult != null ? s.mult : 1, 60))}
+      <button onclick="payrollRemoveStaff(${i})" style="border:none;background:none;color:var(--muted);font-size:11px;text-decoration:underline;">이 직원 삭제</button></div>`).join('');
+  const salesHtml = p.sales.map((s, i) => `<div style="border:1px dashed var(--border); border-radius:8px; padding:8px; margin-bottom:8px;">
+      ${lbl('이름', inp(`pp-name-${i}`, s.name, 140))}
+      ${lbl('지금 단계', `<select id="pp-stage-${i}" style="width:160px; padding:6px; border-radius:6px;"><option value="1" ${s.stage !== 2 ? 'selected' : ''}>1단계 (야드당)</option><option value="2" ${s.stage === 2 ? 'selected' : ''}>2단계 (순이익 비율)</option></select>`)}
+      ${lbl('1단계 기본급 (원, 세전)', inp(`pp-base1-${i}`, s.base1))}
+      ${lbl('1단계 기존 거래처 (원/마)', inp(`pp-ex-${i}`, s.existingRate, 70))}
+      ${lbl('1단계 신규 거래처 (원/마)', inp(`pp-new-${i}`, s.newRate, 70))}
+      ${lbl('신규 인정 기간 (개월)', inp(`pp-months-${i}`, s.newMonths || 12, 60))}
+      ${lbl('2단계 기본급 (원, 세전)', inp(`pp-base2-${i}`, s.base2))}
+      ${lbl('2단계 순이익 비율 (%)', inp(`pp-pct-${i}`, s.profitPct, 60))}
+      <div style="font-size:12px; margin:8px 0 4px;">담당 거래처 (한 줄에 하나)<br><span style="color:var(--muted); font-size:11px;">기존: <b>거래처명</b> / 신규: <b>거래처명 / 신규 / 첫거래일(YY.MM.DD)</b></span></div>
+      <textarea id="pp-cust-${i}" rows="6" style="width:100%; padding:6px; border:1px solid var(--border); border-radius:6px; font-size:13px;">${esc((s.customers || []).map(c => c.isNew ? `${c.name} / 신규 / ${c.since || ''}` : c.name).join('\n'))}</textarea>
+      <button onclick="payrollRemoveSales(${i})" style="border:none;background:none;color:var(--muted);font-size:11px;text-decoration:underline;">이 영업사원 삭제</button></div>`).join('');
+  ov.innerHTML = `<div class="modal" style="max-height:88vh; overflow:auto;">
+    <div style="font-weight:700; font-size:17px; margin-bottom:10px;">급여 설정</div>
+    <div style="font-weight:700; margin:10px 0 4px;">출고량 보너스 기준</div>
+    ${lbl('최소 출고량 (마)', inp('pr-min', p.bonusRule.minYards, 80))}
+    ${lbl('최소 넘으면 (원)', inp('pr-first', p.bonusRule.first, 80))}
+    ${lbl('추가 구간 (마)', inp('pr-stepy', p.bonusRule.stepYards, 80))}
+    ${lbl('구간마다 추가 (원)', inp('pr-step', p.bonusRule.step, 80))}
+    <div style="font-weight:700; margin:14px 0 4px;">출고량 보너스형 직원</div>${staffHtml}
+    <button onclick="payrollAddStaff()" style="border:none;background:#eee;border-radius:8px;padding:6px 10px;font-size:12px;">+ 보너스형 직원 추가</button>
+    <button onclick="payrollAddTierStaff()" style="border:none;background:#eee;border-radius:8px;padding:6px 10px;font-size:12px;">+ 구간형 직원 추가</button>
+    <div style="font-weight:700; margin:14px 0 4px;">영업사원</div>${salesHtml}
+    <button onclick="payrollAddSales()" style="border:none;background:#eee;border-radius:8px;padding:6px 10px;font-size:12px;">+ 영업사원 추가</button>
+    <div style="display:flex; gap:8px; margin-top:16px;">
+      <button onclick="closePayrollSettings()" style="flex:1; border:none;background:#eee;border-radius:8px;padding:10px;">취소</button>
+      <button onclick="submitPayrollSettings()" style="flex:1; border:none;background:var(--primary-dark);color:#fff;border-radius:8px;padding:10px;font-weight:700;">저장</button>
+    </div></div>`;
+  document.body.appendChild(ov);
+}
+function closePayrollSettings() { payrollDraft = null; const m = document.getElementById('payrollSettingsModal'); if (m) m.remove(); }
+function readPayrollForm() {
+  // 지금 창에 적힌 값을 읽어서 급여 설정으로 만듦 (직원 추가/삭제할 때도 적던 값 안 날아가게)
+  const p = payrollDraft || getPayroll();
+  const num = (id, def) => { const el = document.getElementById(id); if (!el) return def; const v = parseFloat(String(el.value).replace(/,/g, '')); return isNaN(v) ? def : v; };
+  const str = (id, def) => { const el = document.getElementById(id); return el ? el.value.trim() || def : def; };
+  return {
+    bonusRule: { minYards: num('pr-min', p.bonusRule.minYards), first: num('pr-first', p.bonusRule.first), stepYards: num('pr-stepy', p.bonusRule.stepYards) || 1000, step: num('pr-step', p.bonusRule.step) },
+    staff: p.staff.map((s, i) => {
+      const o = { name: str(`ps-name-${i}`, s.name), base: num(`ps-base-${i}`, s.base) };
+      if (s.mode === 'tiers') {
+        const el = document.getElementById(`ps-tiers-${i}`);
+        const tiers = el ? el.value.split(',').map(x => x.trim()).filter(Boolean).map(x => { const [a, b] = x.split(':').map(v => parseFloat(String(v).replace(/,/g, ''))); return { yards: a, amount: b }; }).filter(t => t.yards > 0 && t.amount >= 0) : (s.tiers || []);
+        return { ...o, mode: 'tiers', tiers };
+      }
+      return { ...o, mult: num(`ps-mult-${i}`, s.mult != null ? s.mult : 1) };
+    }),
+    sales: p.sales.map((s, i) => ({
+      name: str(`pp-name-${i}`, s.name), stage: parseInt((document.getElementById(`pp-stage-${i}`) || {}).value || s.stage || 1),
+      base1: num(`pp-base1-${i}`, s.base1), existingRate: num(`pp-ex-${i}`, s.existingRate), newRate: num(`pp-new-${i}`, s.newRate), newMonths: num(`pp-months-${i}`, s.newMonths || 12),
+      base2: num(`pp-base2-${i}`, s.base2), profitPct: num(`pp-pct-${i}`, s.profitPct),
+      customers: (() => { const el = document.getElementById(`pp-cust-${i}`); if (!el) return s.customers || []; return el.value.split('\n').map(l => l.trim()).filter(Boolean).map(l => { const parts = l.split('/').map(x => x.trim()); return parts[1] === '신규' ? { name: parts[0], isNew: true, since: parts[2] || '' } : { name: parts[0], isNew: false }; }); })()
+    }))
+  };
+}
+async function submitPayrollSettings() {
+  const p = readPayrollForm();
+  for (const s of p.sales) for (const c of s.customers) if (c.isNew && !/^\d\d\.\d\d\.\d\d$/.test(c.since)) { showToast(`${c.name}: 신규 거래처 첫거래일을 YY.MM.DD로 적어주세요`); return; }
+  closePayrollSettings();
+  await savePayroll(p);
+}
+function payrollAddStaff() { const p = readPayrollForm(); p.staff.push({ name: '새 직원', base: 2900000, mult: 1 }); closePayrollSettings(); payrollDraft = p; openPayrollSettings(); }
+function payrollRemoveStaff(i) { if (!confirm('이 직원을 목록에서 뺄까요? (저장을 눌러야 반영돼요)')) return; const p = readPayrollForm(); p.staff.splice(i, 1); closePayrollSettings(); payrollDraft = p; openPayrollSettings(); }
+function payrollAddTierStaff() { const p = readPayrollForm(); p.staff.push({ name: '새 직원', base: 3200000, mode: 'tiers', tiers: [ { yards: 3000, amount: 30000 }, { yards: 5000, amount: 80000 } ] }); closePayrollSettings(); payrollDraft = p; openPayrollSettings(); }
+function payrollAddSales() { const p = readPayrollForm(); p.sales.push({ ...PAYROLL_DEFAULT.sales[0], name: '새 영업사원', customers: [] }); closePayrollSettings(); payrollDraft = p; openPayrollSettings(); }
+function payrollRemoveSales(i) { if (!confirm('이 영업사원을 목록에서 뺄까요? (저장을 눌러야 반영돼요)')) return; const p = readPayrollForm(); p.sales.splice(i, 1); closePayrollSettings(); payrollDraft = p; openPayrollSettings(); }
+
 function showMonthlyReport() {
   monthlyReportOffset = 0;
   salesSpecialView = 'monthlyReport';
@@ -9443,6 +9685,11 @@ function renderSales() {
   if (salesSpecialView === 'yearlyReport') {
     document.getElementById('stats').innerHTML = '';
     renderYearlyReportView();
+    return;
+  }
+  if (salesSpecialView === 'payroll') {
+    document.getElementById('stats').innerHTML = '';
+    renderPayrollView();
     return;
   }
   if (salesSpecialView === 'backupManager') {
