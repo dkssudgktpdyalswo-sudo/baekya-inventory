@@ -775,6 +775,18 @@
 </div>
 
 <!-- 기간별 내역서 모달 -->
+<!-- 내역서 이미지 미리보기 / 카톡 보내기 모달 -->
+<div class="modal-overlay" id="shotModal">
+  <div class="modal">
+    <h3 id="shot-title">내역서 이미지</h3>
+    <div style="display:flex; gap:6px; margin-bottom:10px;">
+      <button type="button" onclick="shareShotFiles()" style="flex:1;border:none;background:#fee500;color:#191919;border-radius:8px;padding:10px 4px;font-size:13px;font-weight:700;">💬 카톡으로 보내기</button>
+      <button type="button" onclick="saveShotFiles()" style="flex:1;border:none;background:#e8edf5;color:#3d4f6b;border-radius:8px;padding:10px 4px;font-size:13px;font-weight:600;">🖼 이미지 저장</button>
+    </div>
+    <div id="shot-imgs"></div>
+    <div class="modal-actions"><button class="btn-cancel" onclick="closeShotModal()">닫기</button></div>
+  </div>
+</div>
 <!-- 오늘 내역서(거래처 선택) 모달 -->
 <!-- 사업자 정보 설정 모달 -->
 <div class="modal-overlay" id="bizInfoModal">
@@ -952,6 +964,11 @@
       <button onclick="setStatementPreset('this-month')" style="border:none;background:#eee;border-radius:8px;padding:6px 10px;font-size:12px;">이번달 전체</button>
       <button onclick="setStatementPreset('last-month')" style="border:none;background:#eee;border-radius:8px;padding:6px 10px;font-size:12px;">지난달 전체</button>
     </div>
+    <div style="display:flex; gap:6px; margin-top:12px;">
+      <button type="button" onclick="generateStatementFromModal('share')" style="flex:1;border:none;background:#fee500;color:#191919;border-radius:8px;padding:10px 4px;font-size:13px;font-weight:700;">💬 카톡으로 보내기</button>
+      <button type="button" onclick="generateStatementFromModal('save')" style="flex:1;border:none;background:#e8edf5;color:#3d4f6b;border-radius:8px;padding:10px 4px;font-size:13px;font-weight:600;">🖼 이미지 저장</button>
+    </div>
+    <div style="font-size:11px;color:var(--muted);margin-top:4px;">카톡·이미지는 거래처를 하나 골랐을 때만 돼요</div>
     <div class="modal-actions">
       <button class="btn-cancel" onclick="closeStatementModal()">취소</button>
       <button class="btn-save" onclick="generateStatementFromModal()">내역서 뽑기</button>
@@ -1247,7 +1264,7 @@
 const PASSWORD = "3059";
 const ADMIN_PASSWORD = "9503"; // 매출/미수금 탭 전용 - 필요하면 이 값만 바꿔서 변경 가능
 const DATA_VERSION = "2026-08-03-v4"; // 재고/이월장부 씨앗 데이터를 바꿀 때마다 이 값을 새로 바꿔주세요
-const APP_CODE_VERSION = "2026-11-19-t"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
+const APP_CODE_VERSION = "2026-11-19-u"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
 const SCHEMA_STAMP = 2; // 서버 저장규칙이 확인하는 "최신 앱 도장" - 절대 자주 바꾸지 않음(이 값을 아는 코드만 저장 가능하게 서버에서 막을 때 씀)
 const CONFIRMED_EMPTY = '__CONFIRMED_EMPTY__'; // "서버가 확실하게 문서가 없다고 확인해줬다"는 걸 표시하는 특수값
                                                  // (한번도 확인 안 한 null과 구분해서, 그 사이 다른 사람이 첫 데이터를 만들었으면 충돌로 감지하기 위함)
@@ -6047,8 +6064,9 @@ function setStatementPreset(preset) {
   document.getElementById('stmt-end').value = fmt(endD);
 }
 
-async function generateStatementFromModal() {
+async function generateStatementFromModal(mode) {
   const customer = document.getElementById('stmt-customer').value.trim();
+  if (mode && !customer) { showToast('카톡으로 보내거나 이미지로 저장하려면 거래처를 먼저 골라주세요'); return; }
   const startV = document.getElementById('stmt-start').value;
   const endV = document.getElementById('stmt-end').value;
   if (!startV || !endV) { showToast('기간을 선택해주세요'); return; }
@@ -6056,7 +6074,7 @@ async function generateStatementFromModal() {
   const endDate = fromDateInputValue(endV);
   closeStatementModal();
   if (customer) {
-    await printStatementForRange(customer, startDate, endDate);
+    await printStatementForRange(customer, startDate, endDate, mode);
   } else {
     await printAllCustomersStatement(startDate, endDate);
   }
@@ -6331,7 +6349,7 @@ function buildStatementHTMLInner(customerName, startDate, endDate, entryIdFilter
   const rows = [...saleRows, ...paymentRows];
 
   // 한 반쪽에 최대 이만큼만 넣고, 그 이상이면 폰트를 더 줄이지 않고 다음 장으로 자연스럽게 넘김
-  const ROWS_PER_PAGE = 14;
+  const ROWS_PER_PAGE = options.shareImage ? 22 : 14; // 이미지로 보낼 땐 한 장에 더 많이 (폰에서 길게 스크롤해서 보니까)
   const noteLines = (txt) => {
     const w = Array.from(String(txt || '')).reduce((sum, ch) => sum + (ch.charCodeAt(0) > 255 ? 1 : 0.55), 0); // 한글은 1칸, 영문/숫자는 약 반 칸
     return Math.max(1, Math.ceil(w / 15));
@@ -6343,12 +6361,14 @@ function buildStatementHTMLInner(customerName, startDate, endDate, entryIdFilter
   else if (n <= 10) { rowFontPx = 9; rowPadPx = 2.2; }
   else { rowFontPx = 7.5; rowPadPx = 1.6; }
 
-  const sizes = compact
+  const sizes = options.shareImage
+    ? { pad: '14px 16px', titleSize: '24px', titleGap: '6px', metaSize: '13px', metaGap: '8px', boxGap: '8px', boxFont: '13px', innerFont: '12px', rowFont: '13.5px', rowPad: '6px', totalsFont: '14px', totalsGap: '8px', bankSize: '13px', bankGap: '8px' }
+    : compact
     ? { pad: '2mm 4mm 3mm 4mm', titleSize: '13px', titleGap: '2px', metaSize: '8px', metaGap: '2px', boxGap: '1px', boxFont: '8px', innerFont: '8px', rowFont: rowFontPx + 'px', rowPad: rowPadPx + 'px', totalsFont: '8px', totalsGap: '1px', bankSize: '8px', bankGap: '1px' }
     : { pad: '3mm 5mm 3mm 5mm', titleSize: '16px', titleGap: '4px', metaSize: '10px', metaGap: '4px', boxGap: '3px', boxFont: '10px', innerFont: '10px', rowFont: '10px', rowPad: '3px', totalsFont: '10px', totalsGap: '3px', bankSize: '10px', bankGap: '3px' };
 
   // 비고란은 글자를 더 줄이거나 ...로 자르지 않고, 길면 2줄로 내려서 보여줌 (최소 8.5px 아래로는 안 작아지게)
-  const noteFontPx = compact ? Math.max(rowFontPx, 8.5) : 10;
+  const noteFontPx = options.shareImage ? 12.5 : (compact ? Math.max(rowFontPx, 8.5) : 10);
   const buildRowsHtml = (rowsForPage) => rowsForPage.map(r => {
     const style = r.color === 'blue' ? 'color:#1a56db;' : r.color === 'red' ? 'color:#c0392b;' : '';
     const fmt = (v) => v == null ? '' : (v < 0 ? `-${Math.abs(v).toLocaleString()}` : v.toLocaleString());
@@ -6398,8 +6418,8 @@ function buildStatementHTMLInner(customerName, startDate, endDate, entryIdFilter
     </table>
   `;
 
-  const renderCopy = (copyLabel, rowsHtmlForPage) => `
-    <div class="${compact ? 'compact-statement' : ''}" style="padding:${sizes.pad}; font-family:-apple-system,'Malgun Gothic',sans-serif; box-sizing:border-box; height:50%; overflow:hidden; display:flex; flex-direction:column;">
+  const renderCopy = (copyLabel, rowsHtmlForPage, fit) => `
+    <div class="${compact ? 'compact-statement' : ''}" style="padding:${sizes.pad}; font-family:-apple-system,'Malgun Gothic',sans-serif; box-sizing:border-box; ${fit ? '' : 'height:50%; overflow:hidden;'} display:flex; flex-direction:column;">
       <div style="flex:none;">
         <div style="display:flex; justify-content:space-between; align-items:baseline; margin-bottom:${sizes.titleGap};">
           <h2 style="margin:0; font-size:${sizes.titleSize}; letter-spacing:2px; color:#1a5f8a;">거 래 명 세 표</h2>
@@ -6459,6 +6479,7 @@ function buildStatementHTMLInner(customerName, startDate, endDate, entryIdFilter
 
   return pages.map((pageRows, pageIdx) => {
     const rowsHtmlForPage = buildRowsHtml(pageRows);
+    if (options.shareImage) return `<div class="stm-img-page" style="width:794px;background:#fff;">${renderCopy('공급받는자용', rowsHtmlForPage, true)}</div>`; // 이미지용: 한 장에 한 부만, 높이는 내용만큼
     const pageHtml = `
     <div style="width:100%; height:285mm; display:flex; flex-direction:column;">
       ${renderCopy('공급자 보관용', rowsHtmlForPage)}
@@ -6469,11 +6490,100 @@ function buildStatementHTMLInner(customerName, startDate, endDate, entryIdFilter
   }).join('');
 }
 
-async function printStatementForRange(customerName, startDate, endDate) {
-  const html = await buildStatementHTML(customerName, startDate, endDate);
-  if (html == null) { showToast('해당 기간에 인쇄할 내역이 없습니다'); return; }
-  document.getElementById('printArea').innerHTML = html;
-  setTimeout(() => window.print(), 100);
+// ===== 내역서를 이미지로 만들어 카톡 공유 / 저장 =====
+let _h2cPromise = null;
+function loadHtml2Canvas() { // 처음 쓸 때만 불러옴 (평소 앱 속도에는 영향 없음)
+  if (window.html2canvas) return Promise.resolve(window.html2canvas);
+  if (_h2cPromise) return _h2cPromise;
+  _h2cPromise = new Promise((resolve, reject) => {
+    const sc = document.createElement('script');
+    sc.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
+    sc.onload = () => window.html2canvas ? resolve(window.html2canvas) : (_h2cPromise = null, reject(new Error('h2c')));
+    sc.onerror = () => { _h2cPromise = null; reject(new Error('h2c-load')); };
+    document.head.appendChild(sc);
+  });
+  return _h2cPromise;
+}
+const SHOT_CSS = '#shotRoot table{width:100%;border-collapse:collapse}#shotRoot th,#shotRoot td{border:1px solid #ccc;padding:6px 8px;font-size:13px;text-align:left}#shotRoot th{color:#1a5f8a}'
+  + '#shotRoot .stm-img-page th,#shotRoot .stm-img-page td{font-size:inherit}'
+  + '#shotRoot .ledger-print{padding:22px 18px !important}#shotRoot .ledger-print th,#shotRoot .ledger-print td{padding:6px 8px !important;font-size:14px !important;border-color:#999 !important}#shotRoot .ledger-print th{background:#eee !important;color:#000 !important}';
+let _shotFiles = [], _shotUrls = [], _shotCustomer = '';
+async function renderStatementImages(html, customer) {
+  const h2c = await loadHtml2Canvas();
+  const root = document.createElement('div');
+  root.id = 'shotRoot';
+  root.style.cssText = 'position:fixed;left:-10000px;top:0;width:794px;background:#fff;color:#000;font-family:-apple-system,"Malgun Gothic",sans-serif;';
+  root.innerHTML = `<style>${SHOT_CSS}</style>${html}`;
+  document.body.appendChild(root);
+  const files = [];
+  try {
+    const pageEls = Array.from(root.querySelectorAll('.stm-img-page'));
+    const targets = pageEls.length > 0 ? pageEls : [root];
+    const stamp = todayStr().replace(/[^0-9]/g, '');
+    const safeName = String(customer).replace(/[\\/:*?"<>|\s]+/g, '_');
+    for (let i = 0; i < targets.length; i++) {
+      const el = targets[i];
+      const h = Math.max(el.scrollHeight, 100);
+      const scale = Math.max(1, Math.min(2.5, Math.sqrt(12000000 / (794 * h)))); // 아주 긴 내역서도 폰 브라우저의 그림 크기 한도를 안 넘게
+      const canvas = await h2c(el, { scale, backgroundColor: '#ffffff', useCORS: true, logging: false, width: 794, windowWidth: 794 });
+      const blob = await new Promise(res => canvas.toBlob(res, 'image/png'));
+      if (!blob) throw new Error('blob');
+      files.push(new File([blob], `${safeName}_내역서_${stamp}${targets.length > 1 ? '_' + (i + 1) : ''}.png`, { type: 'image/png' }));
+    }
+  } finally { root.remove(); }
+  return files;
+}
+function openShotModal(files, customer) {
+  _shotUrls.forEach(u => URL.revokeObjectURL(u));
+  _shotFiles = files; _shotCustomer = customer;
+  _shotUrls = files.map(f => URL.createObjectURL(f));
+  document.getElementById('shot-title').textContent = `${customer} 내역서 이미지 (${files.length}장)`;
+  document.getElementById('shot-imgs').innerHTML = _shotUrls.map(u => `<img src="${u}" style="width:100%;border:1px solid #ddd;border-radius:6px;margin-bottom:8px;display:block;">`).join('');
+  document.getElementById('shotModal').classList.add('open');
+}
+function closeShotModal() {
+  document.getElementById('shotModal').classList.remove('open');
+  document.getElementById('shot-imgs').innerHTML = '';
+  _shotUrls.forEach(u => URL.revokeObjectURL(u)); _shotUrls = []; _shotFiles = [];
+}
+function saveShotFiles() {
+  if (_shotFiles.length === 0) return;
+  _shotFiles.forEach((f, i) => setTimeout(() => {
+    const a = document.createElement('a');
+    a.href = _shotUrls[i]; a.download = f.name;
+    document.body.appendChild(a); a.click(); a.remove();
+  }, i * 350));
+  showToast(`이미지 ${_shotFiles.length}장을 저장했어요 (폰은 다운로드/사진첩 확인)`);
+}
+async function shareShotFiles() {
+  if (_shotFiles.length === 0) return;
+  const data = { files: _shotFiles, title: `${_shotCustomer} 거래내역서` };
+  try {
+    if (navigator.canShare && navigator.canShare(data)) { await navigator.share(data); return; }
+    showToast('이 기기에서는 공유창을 열 수 없어서 이미지로 저장했어요');
+    saveShotFiles();
+  } catch (e) {
+    if (e && e.name === 'AbortError') return; // 공유창을 직접 닫은 것
+    showToast('공유창을 열지 못했어요 - 아래 "카톡으로 보내기"를 다시 눌러보거나 이미지 저장을 써주세요');
+  }
+}
+async function deliverStatementHtml(html, mode, customer) {
+  if (!mode) {
+    document.getElementById('printArea').innerHTML = html;
+    setTimeout(() => window.print(), 100);
+    return;
+  }
+  showToast('내역서 이미지를 만드는 중이에요...');
+  let files;
+  try { files = await renderStatementImages(html, customer); }
+  catch (e) { showToast('이미지를 만들지 못했어요 (인터넷 연결을 확인해주세요)'); return; }
+  openShotModal(files, customer);
+  if (mode === 'share') await shareShotFiles(); else saveShotFiles();
+}
+async function printStatementForRange(customerName, startDate, endDate, mode) {
+  const html = await buildStatementHTML(customerName, startDate, endDate, undefined, undefined, undefined, mode ? { shareImage: true } : undefined);
+  if (html == null) { showToast('해당 기간에 보낼 내역이 없습니다'); return; }
+  await deliverStatementHtml(html, mode, customerName);
 }
 async function printStatementForEntries(customerName, entryIds, includePayments, taxOverrideIds) {
   const html = await buildStatementHTML(customerName, null, null, entryIds, includePayments === undefined ? true : includePayments, null, null, taxOverrideIds);
@@ -7068,6 +7178,8 @@ function renderCustomerLedgerView() {
       <button onclick="printCurrentLedgerStatement()" style="border:none;background:#eaf3ec;color:#2f6b46;border-radius:7px;padding:8px 12px;font-size:12px;font-weight:600;white-space:nowrap;">명세서 인쇄</button>
       <button class="btn-key" onclick="if(ledgerCustomer) payCustomerUnpaid(ledgerCustomer)" style="border:none;background:#eaf3ec;color:#2f6b46;border-radius:7px;padding:8px 12px;font-size:12px;font-weight:600;white-space:nowrap;">입금 처리</button>
       <button onclick="printLedgerPeriod()" style="border:none;background:#e8edf5;color:#3d4f6b;border-radius:7px;padding:8px 12px;font-size:12px;font-weight:600;white-space:nowrap;">기간별 인쇄</button>
+      <button onclick="printLedgerPeriod('share')" style="border:none;background:#fee500;color:#191919;border-radius:7px;padding:8px 12px;font-size:12px;font-weight:700;white-space:nowrap;">💬 카톡으로 보내기</button>
+      <button onclick="printLedgerPeriod('save')" style="border:none;background:#e8edf5;color:#3d4f6b;border-radius:7px;padding:8px 12px;font-size:12px;font-weight:600;white-space:nowrap;">🖼 이미지 저장</button>
     </div>
     <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; padding-top:6px; border-top:1px dashed var(--border); font-size:11px; color:var(--muted);">
       <span onclick="if(ledgerCustomer) renameCustomer(ledgerCustomer)" style="text-decoration:underline; cursor:pointer;">이름 수정</span>
@@ -7416,7 +7528,7 @@ async function printCurrentLedgerStatement() {
   });
   await printStatementForEntries(customer, entryIds, paymentKeys, document.getElementById('ledger-print-add-tax').checked ? new Set(entryIds) : null);
 }
-async function printLedgerPeriod() {
+async function printLedgerPeriod(mode) {
   const customer = (ledgerCustomer || document.getElementById('ledger-customer').value).trim();
   const startDate = fromDateInputValue(document.getElementById('ledger-start').value);
   const endDate = fromDateInputValue(document.getElementById('ledger-end').value);
@@ -7537,8 +7649,7 @@ async function printLedgerPeriod() {
       <div style="text-align:center; font-size:11px; color:#999; margin-top:16px;">항상 좋은 거래 감사드립니다.</div>
     </div>
   `;
-  document.getElementById('printArea').innerHTML = html;
-  setTimeout(() => window.print(), 100);
+  await deliverStatementHtml(html, mode, customer);
 }
 function buildCustomerLedgerEvents(t_c) {
   // 이 거래처의 모든 사건(매출/반품·불량/입금)을 날짜순으로 하나의 흐름으로 만듦 (화면표시/인쇄 둘 다 이 함수 하나만 씀)
