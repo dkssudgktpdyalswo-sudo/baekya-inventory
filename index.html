@@ -80,7 +80,8 @@
     color: white; font-weight: 800; font-size: 14px; display: flex; align-items: center; justify-content: center;
   }
   .swatch-num-empty { background: #e2ddd4; color: var(--muted); font-size: 12px; }
-  .swatch-num-fall { background: #8a5a3b; } /* F/W 스왓치 번호 = 밤색 (S/S는 기본 파랑) */
+  .swatch-num-fall { background: var(--primary); } /* F/W 스왓치 번호 = 파랑 (기존 번호와 동일) */
+  .swatch-num-ss { background: #2f8f6b; } /* S/S 스왓치 번호 = 초록 */
   .swatch-nums { display: flex; gap: 4px; flex: none; }
   .season-tog { display: flex; gap: 6px; padding: 0 14px 10px; align-items: center; flex-wrap: wrap; }
   .season-tog .chip { cursor: pointer; }
@@ -1216,7 +1217,7 @@
 const PASSWORD = "3059";
 const ADMIN_PASSWORD = "9503"; // 매출/미수금 탭 전용 - 필요하면 이 값만 바꿔서 변경 가능
 const DATA_VERSION = "2026-08-03-v4"; // 재고/이월장부 씨앗 데이터를 바꿀 때마다 이 값을 새로 바꿔주세요
-const APP_CODE_VERSION = "2026-11-19-g"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
+const APP_CODE_VERSION = "2026-11-19-l"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
 const SCHEMA_STAMP = 2; // 서버 저장규칙이 확인하는 "최신 앱 도장" - 절대 자주 바꾸지 않음(이 값을 아는 코드만 저장 가능하게 서버에서 막을 때 씀)
 const CONFIRMED_EMPTY = '__CONFIRMED_EMPTY__'; // "서버가 확실하게 문서가 없다고 확인해줬다"는 걸 표시하는 특수값
                                                  // (한번도 확인 안 한 null과 구분해서, 그 사이 다른 사람이 첫 데이터를 만들었으면 충돌로 감지하기 위함)
@@ -2496,7 +2497,7 @@ function isChosungOnly(str) {
 }
 
 let _itemSuggestTarget = null;
-function showSuggestionsGeneric(inputEl, candidates, labelMap) {
+function showSuggestionsGeneric(inputEl, candidates, labelMap, labelHtmlMap) {
   _itemSuggestTarget = inputEl;
   const q = inputEl.value.trim();
   const box = document.getElementById('itemSuggestBox');
@@ -2510,15 +2511,18 @@ function showSuggestionsGeneric(inputEl, candidates, labelMap) {
   }
   if (matches.length === 0) { box.classList.add('hidden'); return; }
   box.innerHTML = matches.slice(0, 200).map(n => {
-    const label = labelMap && labelMap[n] != null
-      ? `<span style="display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:50%;background:var(--primary);color:#fff;font-size:11px;font-weight:800;margin-right:6px;vertical-align:middle;">${esc(labelMap[n])}</span>${esc(n)}`
+    const label = labelHtmlMap && labelHtmlMap[n]
+      ? `${labelHtmlMap[n]}${esc(n)}`
+      : labelMap && labelMap[n] != null
+      ? `<span style="display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:50%;background:var(--primary);color:#fff;font-size:11px;font-weight:800;margin-right:7px;vertical-align:middle;">${esc(labelMap[n])}</span>${esc(n)}`
       : esc(n);
-    return `<div onmousedown="selectItemSuggestion('${escAttr(n)}')" style="padding:9px 12px; font-size:14px; border-bottom:1px solid var(--border); cursor:pointer;">${label}</div>`;
+    return `<div onmousedown="selectItemSuggestion('${escAttr(n)}')" style="padding:7px 10px; font-size:13px; border-bottom:1px solid var(--border); cursor:pointer; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${label}</div>`;
   }).join('');
   const rect = inputEl.getBoundingClientRect();
-  box.style.left = rect.left + 'px';
+  const bw = Math.min(Math.max(rect.width, 200), window.innerWidth - 16); // 입력칸이 좁아도 한 줄로 보이게 목록은 최소 200px
+  box.style.left = Math.max(8, Math.min(rect.left, window.innerWidth - bw - 8)) + 'px';
   box.style.top = (rect.bottom + 2) + 'px';
-  box.style.width = rect.width + 'px';
+  box.style.width = bw + 'px';
   box.classList.remove('hidden');
 }
 function showItemSuggestions(inputEl) { showSuggestionsGeneric(inputEl, _suggestItemNames); }
@@ -2538,6 +2542,8 @@ function showColorSuggestions(colorInputEl, itemInputIdOrEl) {
       const baseSw = swatchInfo.find(s => String(s.item).trim() === itemVal && s.color != null && String(s.color).trim() === base && s.order != null);
       if (baseSw) return baseSw.order + 0.5; // 무지 바로 다음에 오도록
     }
+    const spSw = swatchInfo.find(s => String(s.item).trim() === itemVal && s.color != null && String(s.color).trim() === color && s.orderSpring != null);
+    if (spSw) return 1e6 + spSw.orderSpring; // F/W 번호 없이 S/S 번호만 있는 컬러는 F/W 컬러들 뒤에 S/S 번호순
     return Infinity;
   };
   colors.sort((a, b) => {
@@ -2547,11 +2553,18 @@ function showColorSuggestions(colorInputEl, itemInputIdOrEl) {
   });
   if (colors.length === 0) { document.getElementById('itemSuggestBox').classList.add('hidden'); return; }
   const labelMap = {};
+  const labelHtmlMap = {};
+  const hasSpring = itemHasSpring(itemVal);
+  const dot = (txt, bg, fg) => `<span style="display:inline-flex;align-items:center;justify-content:center;width:22px;height:18px;background:${bg};color:${fg};font-size:11px;font-weight:800;">${txt}</span>`;
   for (const c of colors) {
-    const sw = swatchInfo.find(s => String(s.item).trim() === itemVal && s.color != null && String(s.color).trim() === c && s.order != null);
-    if (sw) labelMap[c] = sw.order;
+    const sw = swatchInfo.find(s => String(s.item).trim() === itemVal && s.color != null && String(s.color).trim() === c);
+    if (hasSpring) { // S/S 번호가 있는 품목: 재고 화면처럼 S/S(파랑)·F/W(밤색) 번호를 같이 보여줌, 없는 쪽은 '-'
+      const ss = sw && sw.orderSpring != null ? dot(sw.orderSpring, '#2f8f6b', '#fff') : dot('-', '#e2ddd4', 'var(--muted)');
+      const fw = sw && sw.order != null ? dot(sw.order, 'var(--primary)', '#fff') : dot('-', '#e2ddd4', 'var(--muted)');
+      labelHtmlMap[c] = `<span style="display:inline-flex;border-radius:9px;overflow:hidden;margin-right:7px;vertical-align:middle;">${ss}${fw}</span>`; // 반반: 왼쪽 S/S(초록) · 오른쪽 F/W(파랑)
+    } else if (sw && sw.order != null) labelMap[c] = sw.order;
   }
-  showSuggestionsGeneric(colorInputEl, colors, labelMap);
+  showSuggestionsGeneric(colorInputEl, colors, labelMap, labelHtmlMap);
 }
 let _customerPickerTargetId = null;
 function openCustomerPicker(targetInputId) {
@@ -3153,7 +3166,7 @@ function renderInv() {
       </div>
       ${hasSpring && itemOpen ? `<div class="season-tog" onclick="event.stopPropagation();">
         ${['전체', 'S/S', 'F/W'].map(v => `<span class="chip${(seasonView || '전체') === v ? ' active' : ''}" onclick="setSeasonView('${escAttr(ik)}','${v}')">${v}</span>`).join('')}
-        <span class="season-legend"><i style="background:var(--primary)"></i>S/S 번호<i style="background:#8a5a3b"></i>F/W 번호</span>
+        <span class="season-legend"><i style="background:#2f8f6b"></i>S/S 번호<i style="background:var(--primary)"></i>F/W 번호</span>
       </div>` : ''}
       <div class="rolls ${itemOpen ? 'open' : ''}" id="item-${escAttr(ik)}"></div>
     `;
@@ -3175,7 +3188,7 @@ function renderInv() {
       cdiv.innerHTML = `
         <div class="group-head" onclick="event.stopPropagation(); toggleGroup('${escAttr(ck)}')">
           ${hasSpring
-            ? `<div class="swatch-nums">${seasonView !== 'F/W' ? (sw && sw.orderSpring != null ? `<div class="swatch-num" title="S/S 스왓치 ${sw.orderSpring}번">${sw.orderSpring}</div>` : `<div class="swatch-num swatch-num-empty">-</div>`) : ''}${seasonView !== 'S/S' ? (sw && sw.order != null ? `<div class="swatch-num swatch-num-fall" title="F/W 스왓치 ${sw.order}번">${sw.order}</div>` : `<div class="swatch-num swatch-num-empty">-</div>`) : ''}</div>`
+            ? `<div class="swatch-nums">${seasonView !== 'F/W' ? (sw && sw.orderSpring != null ? `<div class="swatch-num swatch-num-ss" title="S/S 스왓치 ${sw.orderSpring}번">${sw.orderSpring}</div>` : `<div class="swatch-num swatch-num-empty">-</div>`) : ''}${seasonView !== 'S/S' ? (sw && sw.order != null ? `<div class="swatch-num swatch-num-fall" title="F/W 스왓치 ${sw.order}번">${sw.order}</div>` : `<div class="swatch-num swatch-num-empty">-</div>`) : ''}</div>`
             : (sw && sw.order != null ? `<div class="swatch-num">${sw.order}</div>` : `<div class="swatch-num swatch-num-empty">-</div>`)}
           <div class="info">
             <div class="name">${esc(g.color)}${sw && sw.chinaCode ? ` <span style="font-size:11px; color:var(--muted); font-weight:400;">(중국품번 ${esc(sw.chinaCode)})</span>` : ''}</div>
@@ -12522,8 +12535,8 @@ function openSwatchBulkModal(cat, item) {
       </div>
       <div class="swb-orig" style="font-size:11px;color:var(--muted);margin-top:2px;display:none;"></div>
       <div style="display:flex;gap:6px;margin-top:6px;">
-        <div style="flex:1;"><label style="display:block;font-size:10.5px;font-weight:700;color:#8a5a3b;margin:0 0 2px;line-height:14px;height:14px;">F/W</label><input class="swb-fw" type="number" min="0" value="${escAttr(r.fw)}" oninput="swbRecalc()" style="${sty}text-align:center;"></div>
-        <div style="flex:1;"><label style="display:block;font-size:10.5px;font-weight:700;color:var(--primary);margin:0 0 2px;line-height:14px;height:14px;">S/S</label><input class="swb-ss" type="number" min="0" value="${escAttr(r.ss)}" oninput="swbRecalc()" style="${sty}text-align:center;"></div>
+        <div style="flex:1;"><label style="display:block;font-size:10.5px;font-weight:700;color:var(--primary);margin:0 0 2px;line-height:14px;height:14px;">F/W</label><input class="swb-fw" type="number" min="0" value="${escAttr(r.fw)}" oninput="swbRecalc()" style="${sty}text-align:center;"></div>
+        <div style="flex:1;"><label style="display:block;font-size:10.5px;font-weight:700;color:#2f8f6b;margin:0 0 2px;line-height:14px;height:14px;">S/S</label><input class="swb-ss" type="number" min="0" value="${escAttr(r.ss)}" oninput="swbRecalc()" style="${sty}text-align:center;"></div>
         <div style="flex:1.5;"><label style="display:block;font-size:10.5px;font-weight:700;color:var(--muted);margin:0 0 2px;line-height:14px;height:14px;">중국품번</label><input class="swb-china" value="${escAttr(r.china)}" placeholder="비움" oninput="swbRecalc()" style="${sty}text-align:center;"></div>
       </div>
     </div>`).join('');
