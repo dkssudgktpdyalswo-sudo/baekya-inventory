@@ -1247,7 +1247,7 @@
 const PASSWORD = "3059";
 const ADMIN_PASSWORD = "9503"; // 매출/미수금 탭 전용 - 필요하면 이 값만 바꿔서 변경 가능
 const DATA_VERSION = "2026-08-03-v4"; // 재고/이월장부 씨앗 데이터를 바꿀 때마다 이 값을 새로 바꿔주세요
-const APP_CODE_VERSION = "2026-11-19-q"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
+const APP_CODE_VERSION = "2026-11-19-s"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
 const SCHEMA_STAMP = 2; // 서버 저장규칙이 확인하는 "최신 앱 도장" - 절대 자주 바꾸지 않음(이 값을 아는 코드만 저장 가능하게 서버에서 막을 때 씀)
 const CONFIRMED_EMPTY = '__CONFIRMED_EMPTY__'; // "서버가 확실하게 문서가 없다고 확인해줬다"는 걸 표시하는 특수값
                                                  // (한번도 확인 안 한 null과 구분해서, 그 사이 다른 사람이 첫 데이터를 만들었으면 충돌로 감지하기 위함)
@@ -12764,7 +12764,7 @@ function spsSlipHtml(slip, today, withTax) {
   const tax = withTax ? Math.round(total * 0.1) : 0;
   const grand = total + tax;
   const totalText = grand > 0 ? `원정 (₩ ${grand.toLocaleString()})` : '-';
-  return `<div class="sp"><div class="kind">샘플 내역서</div>
+  return `<div class="sp${withTax ? ' tx' : ''}"><div class="kind">샘플 내역서</div>
     <div class="logo"><img src="${SAMPLE_LOGO_SRC}" alt="BAEKYA"></div>
     <div class="head"><div class="sup"><span class="badge">공급자</span><br>
       <span class="k">등록번호</span>${esc(biz.number)}<br>
@@ -12772,9 +12772,9 @@ function spsSlipHtml(slip, today, withTax) {
       <span class="k">소재지</span>${esc(biz.address)}<br>
       <span class="k">전화</span><b>${esc(d.tel)}</b> &nbsp;FAX ${esc(d.fax)}<br>
       <span class="k">업태·종목</span>${esc(biz.type)} · ${esc(biz.item)}</div>
-      <div class="rt"><div class="date">${dateStr}</div><div class="to"><b>${esc(slip.cust)}</b>귀하${pageTag}</div><div class="sub">아래와 같이 샘플을 제공합니다</div></div></div>
+      <div class="rt"><div class="date">${dateStr}</div><div class="to"><b>${esc(slip.cust)}</b><span class="hon">귀하</span>${pageTag}</div><div class="sub">아래와 같이 샘플을 제공합니다</div></div></div>
     <div class="tot"><span>샘플 가액 합계${withTax ? ' <span style="font-weight:400;font-size:7.4px;">(세액 포함)</span>' : ''}</span><span class="v">${totalText}</span></div>
-    <table class="t"><thead><tr><th style="width:11%">월/일</th><th style="width:16%">품목</th><th style="width:25%">컬러</th><th style="width:13%">수량</th><th style="width:15%">단가</th><th>금액</th></tr></thead><tbody>${trs.join('')}</tbody></table>
+    <table class="t"><thead><tr><th style="width:11%">월/일</th><th style="width:16%">품목</th><th style="width:22%">컬러</th><th style="width:14%">수량</th><th style="width:15%">단가</th><th>금액</th></tr></thead><tbody>${trs.join('')}</tbody></table>
     <div class="sum">
       <div class="row"><div class="cell"><span>수량 합계</span><b>${spsNum(yards)}y (${rows.length}건)</b></div><div class="cell"><span>${withTax ? '공급가액' : '샘플 가액'}</span><b>${total.toLocaleString()}</b></div></div>
       ${withTax ? `<div class="row"><div class="cell"><span>세액(10%)</span><b>${tax.toLocaleString()}</b></div><div class="cell"><span>합계</span><b>${grand.toLocaleString()}</b></div></div>` : ''}
@@ -12802,33 +12802,35 @@ const SPS_CSS_RULES = [
   ['.sup b', 'font-weight:800;'],
   ['.rt', 'text-align:right;font-size:8.6px;line-height:1.4;'],
   ['.rt .date', 'letter-spacing:.5px;margin-top:3px;'],
-  ['.rt .to', 'font-size:11.5px;font-weight:700;margin-top:9px;'],
-  ['.rt .to b', 'margin-right:4px;'],
+  ['.rt .to', 'font-size:15px;font-weight:700;margin-top:6px;line-height:1.25;'],
+  ['.rt .to b', 'margin-right:4px;font-weight:800;'],
+  ['.rt .to .hon', 'font-size:9.5px;font-weight:500;'],
   ['.rt .sub', 'font-weight:700;margin-top:7px;font-size:8.6px;'],
-  ['.tot', 'border:1px solid #222;margin:7px 0 5px;display:flex;justify-content:space-between;align-items:center;padding:4px 8px;font-size:8.5px;font-weight:700;'],
-  ['.tot .v', 'font-size:10.5px;font-weight:800;'],
+  ['.tot', 'border:1px solid #222;margin:7px 0 5px;display:flex;justify-content:space-between;align-items:center;padding:6px 9px;font-size:9.5px;font-weight:700;'],
+  ['.tot .v', 'font-size:15px;font-weight:800;'],
   ['table.t', 'width:100%;border-collapse:collapse;table-layout:fixed;border:1px solid #222;'],
-  ['table.t th', 'border:0;border-bottom:1px solid #222;border-right:1px solid #c4c4c4;background:#f1f1f1;font-size:8.6px;font-weight:700;padding:0;height:17px;line-height:1;vertical-align:middle;color:#1c1c1c;text-align:center;'],
-  ['table.t td', 'border:0;border-bottom:1px solid #dadada;border-right:1px solid #cfcfcf;font-size:9.2px;padding:0 4px;height:18px;line-height:1;vertical-align:middle;white-space:nowrap;'],
+  ['table.t th', 'border:0;border-bottom:1px solid #222;border-right:1px solid #c4c4c4;background:#f1f1f1;font-size:10px;font-weight:700;padding:0;height:21px;line-height:1;vertical-align:middle;color:#1c1c1c;text-align:center;'],
+  ['table.t td', 'border:0;border-bottom:1px solid #dadada;border-right:1px solid #cfcfcf;font-size:11.5px;padding:0 4px;height:25px;line-height:1;vertical-align:middle;white-space:nowrap;'],
+  ['.tx table.t td', 'height:22px;'], // 세액 포함은 합계 줄이 하나 늘어나서 줄 높이를 조금 줄여 맞춤
   ['table.t th:last-child, table.t td:last-child', 'border-right:0;'],
   ['table.t tbody tr:last-child td', 'border-bottom:0;'],
   ['table.t .ell', 'display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;'],
   ['.c', 'text-align:center !important;'],
   ['.r', 'text-align:right !important;'],
-  ['.sum', 'border:1px solid #222;border-top:0;font-size:8.8px;'],
+  ['.sum', 'border:1px solid #222;border-top:0;font-size:9.5px;'],
   ['.sum .row', 'display:flex;border-top:1px solid #c4c4c4;'],
   ['.sum .row:first-child', 'border-top:0;'],
-  ['.sum .cell', 'flex:1;padding:3px 6px;display:flex;justify-content:space-between;align-items:center;border-left:1px solid #c4c4c4;'],
+  ['.sum .cell', 'flex:1;padding:4px 6px;display:flex;justify-content:space-between;align-items:center;border-left:1px solid #c4c4c4;'],
   ['.sum .cell:first-child', 'border-left:0;'],
   ['.sum .cell b', 'font-weight:800;'],
-  ['.band', 'position:absolute;left:17px;right:17px;bottom:12px;display:flex;gap:11px;align-items:stretch;'],
-  ['.qr', 'flex:none;width:60px;text-align:center;'],
-  ['.qr img', 'width:60px;height:60px;display:block;border:1px solid #bbb;padding:1.5px;background:#fff;image-rendering:pixelated;'],
-  ['.qr div', 'font-size:7.4px;color:#333;margin-top:2px;white-space:nowrap;'],
-  ['.info', 'flex:1;font-size:8.6px;line-height:1.55;display:flex;flex-direction:column;justify-content:center;padding-bottom:10px;'],
-  ['.info .acct', 'font-size:9.4px;'],
+  ['.band', 'position:absolute;left:17px;right:17px;bottom:10px;display:flex;gap:9px;align-items:stretch;'],
+  ['.qr', 'flex:none;width:46px;text-align:center;'],
+  ['.qr img', 'width:46px;height:46px;display:block;border:1px solid #bbb;padding:1.5px;background:#fff;image-rendering:pixelated;'],
+  ['.qr div', 'font-size:6.4px;color:#333;margin-top:2px;white-space:nowrap;'],
+  ['.info', 'flex:1;font-size:8px;line-height:1.45;display:flex;flex-direction:column;justify-content:center;padding-bottom:8px;'],
+  ['.info .acct', 'font-size:8.8px;'],
   ['.info b', 'font-weight:800;'],
-  ['.info .nt', 'margin-top:5px;padding-top:4px;border-top:1px solid #ccc;font-size:7.4px;color:#444;line-height:1.45;'],
+  ['.info .nt', 'margin-top:3px;padding-top:3px;border-top:1px solid #ccc;font-size:6.8px;color:#444;line-height:1.4;'],
 ];
 function spsCss() {
   return '@page{size:A4 portrait;margin:0}' + SPS_CSS_RULES.map(([sel, decl]) => {
