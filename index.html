@@ -1247,7 +1247,7 @@
 const PASSWORD = "3059";
 const ADMIN_PASSWORD = "9503"; // 매출/미수금 탭 전용 - 필요하면 이 값만 바꿔서 변경 가능
 const DATA_VERSION = "2026-08-03-v4"; // 재고/이월장부 씨앗 데이터를 바꿀 때마다 이 값을 새로 바꿔주세요
-const APP_CODE_VERSION = "2026-11-19-s"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
+const APP_CODE_VERSION = "2026-11-19-t"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
 const SCHEMA_STAMP = 2; // 서버 저장규칙이 확인하는 "최신 앱 도장" - 절대 자주 바꾸지 않음(이 값을 아는 코드만 저장 가능하게 서버에서 막을 때 씀)
 const CONFIRMED_EMPTY = '__CONFIRMED_EMPTY__'; // "서버가 확실하게 문서가 없다고 확인해줬다"는 걸 표시하는 특수값
                                                  // (한번도 확인 안 한 null과 구분해서, 그 사이 다른 사람이 첫 데이터를 만들었으면 충돌로 감지하기 위함)
@@ -12791,8 +12791,8 @@ const SPS_CSS_RULES = [
   ['*', 'box-sizing:border-box;'],
   ['.cv', 'position:absolute;left:105mm;top:0;bottom:0;border-left:.3mm dashed #bbb;'],
   ['.ch', 'position:absolute;top:148.3mm;left:0;right:0;border-top:.3mm dashed #bbb;'],
-  ['.sp', 'width:105mm;height:148.3mm;padding:14px 17px 10px;position:relative;overflow:hidden;'],
-  ['.kind', 'position:absolute;top:10px;right:17px;font-size:8px;font-weight:700;letter-spacing:.5px;'],
+  ['.sp', 'width:105mm;height:148.3mm;padding:26px 17px 10px;position:relative;overflow:hidden;'],
+  ['.kind', 'position:absolute;top:20px;right:17px;font-size:8px;font-weight:700;letter-spacing:.5px;'],
   ['.logo', 'text-align:center;margin:8px 0 8px;line-height:0;'],
   ['.logo img', 'height:24px;'],
   ['.head', 'display:flex;justify-content:space-between;align-items:flex-start;'],
@@ -12811,7 +12811,7 @@ const SPS_CSS_RULES = [
   ['table.t', 'width:100%;border-collapse:collapse;table-layout:fixed;border:1px solid #222;'],
   ['table.t th', 'border:0;border-bottom:1px solid #222;border-right:1px solid #c4c4c4;background:#f1f1f1;font-size:10px;font-weight:700;padding:0;height:21px;line-height:1;vertical-align:middle;color:#1c1c1c;text-align:center;'],
   ['table.t td', 'border:0;border-bottom:1px solid #dadada;border-right:1px solid #cfcfcf;font-size:11.5px;padding:0 4px;height:25px;line-height:1;vertical-align:middle;white-space:nowrap;'],
-  ['.tx table.t td', 'height:22px;'], // 세액 포함은 합계 줄이 하나 늘어나서 줄 높이를 조금 줄여 맞춤
+  ['.tx table.t td', 'height:22.5px;'], // 세액 포함은 합계 줄이 하나 늘어나서 줄 높이를 조금 줄여 맞춤
   ['table.t th:last-child, table.t td:last-child', 'border-right:0;'],
   ['table.t tbody tr:last-child td', 'border-bottom:0;'],
   ['table.t .ell', 'display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;'],
