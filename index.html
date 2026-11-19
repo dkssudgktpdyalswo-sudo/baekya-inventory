@@ -262,6 +262,7 @@
   <div id="invTools" class="hidden" style="display:flex; gap:6px; margin-top:6px; flex-wrap:wrap;">
     <button id="sortToggleBtn" onclick="toggleSortMode()" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;"></button>
     <button onclick="showStockCheck()" style="border:none;background:#fce8d6;color:#a15c1e;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">재고 실사 (오늘 출고분)</button>
+    <button onclick="openCatalogModal()" style="border:none;background:#fee500;color:#191919;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:700;">📤 카톡용 재고표</button>
   </div>
   <div id="orderTools" class="hidden" style="display:flex; gap:6px; margin-top:6px; flex-wrap:wrap; align-items:center;">
     <button id="orderGroupToggleBtn" onclick="toggleOrderGroupMode()" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;"></button>
@@ -775,13 +776,63 @@
 </div>
 
 <!-- 기간별 내역서 모달 -->
+<!-- 카톡용 재고표 / 신상 입고 모달 -->
+<div class="modal-overlay" id="catalogModal">
+  <div class="modal">
+    <h3>📤 카톡용 재고표</h3>
+    <div style="display:flex; gap:6px;">
+      <button type="button" id="cat-mode-stock" onclick="catSetMode('stock')">재고표</button>
+      <button type="button" id="cat-mode-new" onclick="catSetMode('new')">신상 입고</button>
+    </div>
+    <label>제목</label>
+    <input id="cat-title" type="text" style="width:100%;">
+    <label>재고 표시</label>
+    <select id="cat-display" onchange="catOnDisplayChange()" style="width:100%;">
+      <option value="status">상태만 (재고있음 · 소량 · 품절)</option>
+      <option value="qty">야드수까지</option>
+      <option value="none">표시 안 함</option>
+    </select>
+    <div id="cat-low-wrap" style="font-size:12px; color:var(--muted); margin-top:6px;">소량 기준 <input id="cat-low" type="number" min="1" style="width:70px; padding:4px;"> y 미만이면 "소량"</div>
+    <div style="margin-top:8px;">
+      <label style="display:flex; align-items:center; gap:6px; font-size:13px; color:#333; margin:6px 0;"><input type="checkbox" style="width:auto; flex:none; margin:0;" id="cat-bestcolor"> 베스트 컬러 표시 (품목별로 많이 나간 3컬러)</label>
+      <label style="display:flex; align-items:center; gap:6px; font-size:13px; color:#333; margin:6px 0;"><input type="checkbox" style="width:auto; flex:none; margin:0;" id="cat-bestitem"> 베스트 품목 표시 (많이 나간 3개 품목)</label>
+      <div style="font-size:12px; color:var(--muted); margin:2px 0 6px 22px;">집계 기간
+        <select id="cat-bestdays" style="padding:3px;"><option value="30">최근 30일</option><option value="90">최근 90일</option><option value="365">최근 1년</option></select>
+      </div>
+      <label style="display:flex; align-items:center; gap:6px; font-size:13px; color:#333; margin:6px 0;"><input type="checkbox" style="width:auto; flex:none; margin:0;" id="cat-swatch"> 스왓치 번호 표시</label>
+      <label style="display:flex; align-items:center; gap:6px; font-size:13px; color:#333; margin:6px 0;"><input type="checkbox" style="width:auto; flex:none; margin:0;" id="cat-mix"> 혼용률 표시</label>
+    </div>
+    <div id="cat-stock-scope">
+      <label style="display:flex; align-items:center; gap:6px; font-size:13px; color:#333; margin:6px 0;"><input type="checkbox" style="width:auto; flex:none; margin:0;" id="cat-hideout" onchange="catUpdateCount()"> 품절 컬러는 숨기기</label>
+      <label>분류 (눌러서 빼거나 넣기)</label>
+      <div id="cat-cats"></div>
+    </div>
+    <div id="cat-new-scope" style="display:none;">
+      <label>신상으로 보낼 컬러 고르기</label>
+      <div style="display:flex; gap:6px; flex-wrap:wrap; margin-bottom:6px;">
+        <button type="button" onclick="catQuick('pending')" style="border:none;background:#eaf3ec;color:#2f6b46;border-radius:8px;padding:6px 10px;font-size:12px;font-weight:600;">발주중인 것 전부</button>
+        <button type="button" onclick="catQuick('recent')" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:8px;padding:6px 10px;font-size:12px;font-weight:600;">최근 7일 입고</button>
+        <button type="button" onclick="catQuick('clear')" style="border:none;background:#eee;color:#555;border-radius:8px;padding:6px 10px;font-size:12px;">전체 해제</button>
+      </div>
+      <input id="cat-search" type="text" placeholder="품번 또는 컬러 검색" oninput="renderCatalogScope()" style="width:100%;">
+      <div id="cat-picker" style="max-height:220px; overflow-y:auto; margin-top:6px; border:1px solid var(--border); border-radius:8px; padding:6px 8px;"></div>
+    </div>
+    <label>하단 문구</label>
+    <input id="cat-msg" type="text" style="width:100%;">
+    <div id="cat-count" style="font-size:12px; color:var(--primary-dark); font-weight:600; margin-top:10px;"></div>
+    <div style="display:flex; gap:6px; margin-top:8px;">
+      <button type="button" onclick="generateCatalog('preview')" style="flex:1;border:none;background:#e8edf5;color:#3d4f6b;border-radius:8px;padding:10px 4px;font-size:13px;font-weight:600;">미리보기</button>
+      <button type="button" onclick="generateCatalog('share')" style="flex:1;border:none;background:#fee500;color:#191919;border-radius:8px;padding:10px 4px;font-size:13px;font-weight:700;">💬 카톡으로 보내기</button>
+    </div>
+    <div class="modal-actions"><button class="btn-cancel" onclick="closeCatalogModal()">닫기</button></div>
+  </div>
+</div>
 <!-- 내역서 이미지 미리보기 / 카톡 보내기 모달 -->
 <div class="modal-overlay" id="shotModal">
   <div class="modal">
     <h3 id="shot-title">내역서 이미지</h3>
     <div style="display:flex; gap:6px; margin-bottom:10px;">
       <button type="button" onclick="shareShotFiles()" style="flex:1;border:none;background:#fee500;color:#191919;border-radius:8px;padding:10px 4px;font-size:13px;font-weight:700;">💬 카톡으로 보내기</button>
-      <button type="button" onclick="saveShotFiles()" style="flex:1;border:none;background:#e8edf5;color:#3d4f6b;border-radius:8px;padding:10px 4px;font-size:13px;font-weight:600;">🖼 이미지 저장</button>
     </div>
     <div id="shot-imgs"></div>
     <div class="modal-actions"><button class="btn-cancel" onclick="closeShotModal()">닫기</button></div>
@@ -966,9 +1017,8 @@
     </div>
     <div style="display:flex; gap:6px; margin-top:12px;">
       <button type="button" onclick="generateStatementFromModal('share')" style="flex:1;border:none;background:#fee500;color:#191919;border-radius:8px;padding:10px 4px;font-size:13px;font-weight:700;">💬 카톡으로 보내기</button>
-      <button type="button" onclick="generateStatementFromModal('save')" style="flex:1;border:none;background:#e8edf5;color:#3d4f6b;border-radius:8px;padding:10px 4px;font-size:13px;font-weight:600;">🖼 이미지 저장</button>
     </div>
-    <div style="font-size:11px;color:var(--muted);margin-top:4px;">카톡·이미지는 거래처를 하나 골랐을 때만 돼요</div>
+    <div style="font-size:11px;color:var(--muted);margin-top:4px;">카톡 보내기는 거래처를 하나 골랐을 때만 돼요</div>
     <div class="modal-actions">
       <button class="btn-cancel" onclick="closeStatementModal()">취소</button>
       <button class="btn-save" onclick="generateStatementFromModal()">내역서 뽑기</button>
@@ -1264,7 +1314,7 @@
 const PASSWORD = "3059";
 const ADMIN_PASSWORD = "9503"; // 매출/미수금 탭 전용 - 필요하면 이 값만 바꿔서 변경 가능
 const DATA_VERSION = "2026-08-03-v4"; // 재고/이월장부 씨앗 데이터를 바꿀 때마다 이 값을 새로 바꿔주세요
-const APP_CODE_VERSION = "2026-11-20-a"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
+const APP_CODE_VERSION = "2026-11-20-c"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
 const SCHEMA_STAMP = 2; // 서버 저장규칙이 확인하는 "최신 앱 도장" - 절대 자주 바꾸지 않음(이 값을 아는 코드만 저장 가능하게 서버에서 막을 때 씀)
 const CONFIRMED_EMPTY = '__CONFIRMED_EMPTY__'; // "서버가 확실하게 문서가 없다고 확인해줬다"는 걸 표시하는 특수값
                                                  // (한번도 확인 안 한 null과 구분해서, 그 사이 다른 사람이 첫 데이터를 만들었으면 충돌로 감지하기 위함)
@@ -6066,7 +6116,7 @@ function setStatementPreset(preset) {
 
 async function generateStatementFromModal(mode) {
   const customer = document.getElementById('stmt-customer').value.trim();
-  if (mode && !customer) { showToast('카톡으로 보내거나 이미지로 저장하려면 거래처를 먼저 골라주세요'); return; }
+  if (mode && !customer) { showToast('카톡으로 보내려면 거래처를 먼저 골라주세요'); return; }
   const startV = document.getElementById('stmt-start').value;
   const endV = document.getElementById('stmt-end').value;
   if (!startV || !endV) { showToast('기간을 선택해주세요'); return; }
@@ -6514,8 +6564,9 @@ const PRINT_LEDGER_CSS = SHOT_CSS.replace(/#shotRoot/g, '#printArea')
   + '#printArea .stm-img-page.ledger-print th{background:#eee !important;color:#000 !important}'
   + '#printArea .stm-img-page.ledger-print td.dhdr{padding:1px 8px !important;font-size:11.5px !important}'
   + '#printArea .stm-img-page{-webkit-print-color-adjust:exact;print-color-adjust:exact}';
-let _shotFiles = [], _shotUrls = [], _shotCustomer = '';
-async function renderStatementImages(html, customer) {
+let _shotFiles = [], _shotUrls = [], _shotCustomer = '', _shotKind = '내역서';
+async function renderStatementImages(html, customer, kind) {
+  kind = kind || '내역서';
   const h2c = await loadHtml2Canvas();
   const root = document.createElement('div');
   root.id = 'shotRoot';
@@ -6535,16 +6586,17 @@ async function renderStatementImages(html, customer) {
       const canvas = await h2c(el, { scale, backgroundColor: '#ffffff', useCORS: true, logging: false, width: 794, windowWidth: 794 });
       const blob = await new Promise(res => canvas.toBlob(res, 'image/png'));
       if (!blob) throw new Error('blob');
-      files.push(new File([blob], `${safeName}_내역서_${stamp}${targets.length > 1 ? '_' + (i + 1) : ''}.png`, { type: 'image/png' }));
+      files.push(new File([blob], `${safeName ? safeName + '_' : ''}${kind}_${stamp}${targets.length > 1 ? '_' + (i + 1) : ''}.png`, { type: 'image/png' }));
     }
   } finally { root.remove(); }
   return files;
 }
-function openShotModal(files, customer) {
+function openShotModal(files, customer, kind) {
+  kind = kind || '내역서';
   _shotUrls.forEach(u => URL.revokeObjectURL(u));
-  _shotFiles = files; _shotCustomer = customer;
+  _shotFiles = files; _shotCustomer = customer; _shotKind = kind;
   _shotUrls = files.map(f => URL.createObjectURL(f));
-  document.getElementById('shot-title').textContent = `${customer} 내역서 이미지 (${files.length}장)`;
+  document.getElementById('shot-title').textContent = `${[customer, kind].filter(Boolean).join(' ')} 이미지 (${files.length}장)`;
   document.getElementById('shot-imgs').innerHTML = _shotUrls.map(u => `<img src="${u}" style="width:100%;border:1px solid #ddd;border-radius:6px;margin-bottom:8px;display:block;">`).join('');
   document.getElementById('shotModal').classList.add('open');
 }
@@ -6567,14 +6619,14 @@ function saveShotFiles() {
 }
 async function shareShotFiles() {
   if (_shotFiles.length === 0) return;
-  const data = { files: _shotFiles, title: `${_shotCustomer} 거래내역서` };
+  const data = { files: _shotFiles, title: _shotKind === '내역서' ? `${_shotCustomer} 거래내역서` : [_shotCustomer, _shotKind].filter(Boolean).join(' ') };
   try {
     if (navigator.canShare && navigator.canShare(data)) { await navigator.share(data); return; }
-    showToast('이 기기에서는 공유창을 열 수 없어서 이미지로 저장했어요');
+    showToast('이 기기에서는 공유창을 열 수 없어서 이미지 파일로 내려받았어요');
     saveShotFiles();
   } catch (e) {
     if (e && e.name === 'AbortError') return; // 공유창을 직접 닫은 것
-    showToast('공유창을 열지 못했어요 - 아래 "카톡으로 보내기"를 다시 눌러보거나 이미지 저장을 써주세요');
+    showToast('공유창을 열지 못했어요 - 위의 "카톡으로 보내기"를 다시 눌러주세요');
   }
 }
 async function deliverStatementHtml(html, mode, customer) {
@@ -6590,6 +6642,314 @@ async function deliverStatementHtml(html, mode, customer) {
   openShotModal(files, customer);
   if (mode === 'share') await shareShotFiles(); else saveShotFiles();
 }
+// ===== 카톡용 재고표 / 신상 입고 이미지 =====
+// 재고 탭의 "📤 카톡용 재고표" 버튼 → 창에서 고르고 → 같은 크기(794x1123)의 여러 장 이미지로 만들어 카톡 공유 (내역서 이미지와 같은 방식)
+// 원가/입고단가는 절대 안 나옴. 읽기만 하는 기능이라 재고 데이터는 건드리지 않음.
+const CAT_DOT_COLORS = [['차콜','#4a4a4f'],['검백','#555a66'],['검정','#1b1b1d'],['블랙','#1b1b1d'],['흰','#f4f4f0'],['아이보리','#f1ead7'],['오프화이트','#efeadd'],['크림','#f3e9cc'],['베이지','#d8c7a8'],['네이비','#1f2a5a'],['곤색','#1f2a5a'],['인디고','#25304f'],['그레이','#9a9a9f'],['회색','#9a9a9f'],['멜란지','#a9a9ad'],['카키','#6f7048'],['올리브','#6b6b3a'],['브라운','#6b4a32'],['모카','#7a5a44'],['코코아','#7a5236'],['밤색','#6a4430'],['카멜','#b98a54'],['와인','#6d1f2f'],['버건디','#6d1f2f'],['빨강','#d0302b'],['레드','#d0302b'],['핑크','#f2a5b8'],['살구','#f6b99a'],['오렌지','#f08a2c'],['노랑','#f4d03f'],['옐로','#f4d03f'],['머스타드','#c9a227'],['연두','#9cc94a'],['초록','#2f8f5a'],['그린','#2f8f5a'],['민트','#8fd6c3'],['하늘','#8ec5ea'],['소라','#9fd0ea'],['블루','#2f6fc0'],['파랑','#2f6fc0'],['청','#3b6aa8'],['보라','#7b4fa3'],['퍼플','#7b4fa3'],['라벤더','#b9a4d8']];
+function catDotColor(name) { // 이름에서 색을 짐작할 수 있을 때만 색 점을 보여줌 (모르면 점 없이)
+  const t = String(name || '');
+  for (const [k, h] of CAT_DOT_COLORS) if (t.includes(k)) return h;
+  return null;
+}
+function catalogUniverse() { // 품목(분류+품목) 단위 목록: [{cat,item,mix,colors:[{cat,item,color,stock,newestIn,pending,sw,nk}]}]
+  const groups = buildGroups();
+  const mixMap = buildMixMap();
+  const pendIdx = buildChinaPendingMap(new Set(groups.map(g => `${String(g.item).trim()}|${String(g.color).trim()}`)));
+  { // 재고도 스왓치도 아직 없고 중국발주만 있는 신상 컬러도 목록에 넣음 (재고 탭이 "재고 없음 · 발주중"으로 보여주는 것과 같은 규칙)
+    const haveNorm = new Set(groups.map(g => pendIdx.normKey(`${g.item}|${g.color}`)));
+    const base = groups.slice();
+    for (const [nk, ords] of pendIdx.pendingMap) {
+      if (haveNorm.has(nk) || !ords.length) continue;
+      const it = String(resolveInventoryItem(ords[0].item) || '').trim();
+      const co = String(resolveInventoryColor(it, ords[0].color) || '').trim();
+      if (!it || !co) continue;
+      const g0 = base.find(x => String(x.item).trim() === it);
+      const sw0 = g0 ? null : swatchInfo.find(x => String(x.item).trim() === it && x.cat);
+      groups.push({ cat: g0 ? g0.cat : (sw0 ? sw0.cat : ''), item: it, color: co, rolls: [] });
+      haveNorm.add(nk);
+    }
+  }
+  const byItem = new Map();
+  for (const g of groups) {
+    const item = String(g.item || '').trim(), color = String(g.color || '').trim();
+    if (!item || !color) continue;
+    let stock = 0, newestIn = '';
+    for (const r of g.rolls) {
+      if (r.defective || !(r.qty > 0)) continue;
+      stock += r.qty;
+      if (r.inDate && r.inDate > newestIn) newestIn = r.inDate;
+    }
+    const nk = pendIdx.normKey(`${item}|${color}`);
+    const e = { cat: g.cat || '', item, color, stock: Math.round(stock * 100) / 100, newestIn, pending: (pendIdx.pendingMap.get(nk) || []).length > 0, sw: findSwatchFor(g.cat, item, color), nk };
+    const ik = e.cat + '|' + item;
+    if (!byItem.has(ik)) byItem.set(ik, []);
+    byItem.get(ik).push(e);
+  }
+  const items = [];
+  for (const colors of byItem.values()) {
+    const orderOfColor = (name) => { const c = colors.find(x => x.color === name); return c && c.sw && c.sw.order != null ? c.sw.order : null; };
+    const key = (e) => { // 재고 탭과 같은 순서: 스왓치 번호 순, 기모 같은 가공 컬러는 무지 바로 뒤
+      const kb = splitKimoColorName(e.color);
+      let o = e.sw && e.sw.order != null ? e.sw.order : null;
+      if (o == null && kb != null) o = orderOfColor(kb);
+      return { o: o != null ? o : Infinity, k: kb != null ? 1 : 0 };
+    };
+    colors.sort((a, b) => { const x = key(a), y = key(b); if (x.o !== y.o) return x.o - y.o; if (x.k !== y.k) return x.k - y.k; return a.color.localeCompare(b.color, 'ko'); });
+    items.push({ cat: colors[0].cat, item: colors[0].item, colors, mix: mixMap.get(normalizeNameForMatch(colors[0].item)) || '' });
+  }
+  items.sort((a, b) => (a.cat !== b.cat) ? String(a.cat).localeCompare(String(b.cat), 'ko') : a.item.localeCompare(b.item, 'ko'));
+  return items;
+}
+function catalogBest(days) { // 최근 N일 판매 야드: 컬러별 / 품목별 (반품·불량은 빼고, 추가금·샘플은 제외)
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - days);
+  const cutoffStr = `${String(cutoff.getFullYear()).slice(2)}.${String(cutoff.getMonth() + 1).padStart(2, '0')}.${String(cutoff.getDate()).padStart(2, '0')}`;
+  const colorYards = new Map(), itemYards = new Map();
+  for (const e of shipmentLog) {
+    if (e.isFee || e.isSample || e.manualClose || !e.item || e.item === '이월 미수금') continue;
+    if (!e.date || e.date < cutoffStr) continue;
+    let y = e.yardsShipped != null ? Number(e.yardsShipped) : (((e.unit || 'y') === 'y') ? Number(e.amount) : 0);
+    if (!isFinite(y)) continue;
+    y = Math.abs(y) * ((e.isReturn || e.isDefect) ? -1 : 1);
+    const ni = normalizeNameForMatch(e.item);
+    const ck = ni + '|' + normalizeNameForMatch(e.color || '');
+    colorYards.set(ck, (colorYards.get(ck) || 0) + y);
+    itemYards.set(ni, (itemYards.get(ni) || 0) + y);
+  }
+  return { colorYards, itemYards };
+}
+function selectCatalogItems(cfg, universe) { // 이번에 이미지에 넣을 품목/컬러만 골라냄
+  const out = [];
+  for (const it of universe) {
+    let colors;
+    if (cfg.mode === 'new') colors = it.colors.filter(c => cfg.sel.has(c.item + '|' + c.color));
+    else {
+      if (cfg.cats && !cfg.cats.has(it.cat || '미분류')) continue;
+      colors = cfg.hideOut ? it.colors.filter(c => c.stock > 0) : it.colors;
+    }
+    if (colors.length > 0) out.push({ ...it, colors });
+  }
+  return out;
+}
+function catalogBizBlockHtml() {
+  const lines = [];
+  if (settings.bizName) lines.push(`<div style="font-size:13px; font-weight:700;">${esc(settings.bizName)}</div>`);
+  const l2 = [settings.bizOwner ? `대표 ${settings.bizOwner}` : '', settings.bizNumber || ''].filter(Boolean).join(' · ');
+  if (l2) lines.push(`<div>${esc(l2)}</div>`);
+  if (settings.bizAddress) lines.push(`<div>${esc(settings.bizAddress)}</div>`);
+  return lines.length ? `<div style="text-align:right; font-size:11.5px; line-height:1.5; color:#333;">${lines.join('')}</div>` : '';
+}
+async function buildCatalogPages(cfg, items) {
+  const PAGE_W = 794, PAGE_H = 1123;
+  const fontFam = "-apple-system,'Malgun Gothic',sans-serif";
+  const fmtY = (n) => Number(n.toFixed(1)).toLocaleString();
+  // 베스트: 이번에 보여줄 품목/컬러 안에서 뽑음 (품절이라 숨긴 걸 베스트로 잡으면 광고가 이상해지니)
+  let bestColor = new Set(), bestItem = new Set();
+  if (cfg.bestColor || cfg.bestItem) {
+    const { colorYards, itemYards } = catalogBest(cfg.bestDays);
+    if (cfg.bestColor) {
+      for (const it of items) {
+        if (it.colors.length <= 3) continue; // 컬러가 3개 이하인 품목은 전부 BEST가 돼버려서 의미가 없으니 표시 안 함
+        it.colors.map(c => ({ c, y: colorYards.get(c.nk) || 0 })).filter(x => x.y > 0).sort((a, b) => b.y - a.y).slice(0, 3).forEach(x => bestColor.add(x.c.item + '|' + x.c.color));
+      }
+    }
+    if (cfg.bestItem && items.length > 3) { // 품목이 3개 이하면 전부 BEST가 되니 표시 안 함
+      items.map(it => ({ it, y: itemYards.get(normalizeNameForMatch(it.item)) || 0 })).filter(x => x.y > 0).sort((a, b) => b.y - a.y).slice(0, 3).forEach(x => bestItem.add(x.it.cat + '|' + x.it.item));
+    }
+  }
+  const pill = (txt, bg, fg) => `<span style="background:${bg}; color:${fg}; font-size:11px; font-weight:800; padding:1px 7px; border-radius:9px; white-space:nowrap;">${txt}</span>`;
+  const chipHtml = (c) => {
+    const dot = catDotColor(c.color);
+    const out = c.stock <= 0;
+    let st = '';
+    if (cfg.display === 'qty') st = out ? pill('품절', '#eee', '#999') : `<b style="font-weight:700; color:#333; font-size:13px;">${fmtY(c.stock)}y</b>`;
+    else if (cfg.display === 'status') st = out ? pill('품절', '#eee', '#999') : (c.stock < cfg.low ? pill('소량', '#fff0cf', '#9a6200') : pill('재고있음', '#e3f4e6', '#1f7a3a'));
+    const swl = cfg.showSwatch ? swLabel(c.sw) : null;
+    return `<span style="display:inline-flex; align-items:center; gap:6px; border:1px solid #d6d6d6; border-radius:16px; padding:4px 10px 4px 8px; font-size:14px; background:#fff;${out && cfg.display !== 'none' ? ' opacity:.6;' : ''}">`
+      + (dot ? `<i style="width:13px; height:13px; border-radius:50%; background:${dot}; border:1px solid rgba(0,0,0,.25); flex:none;"></i>` : '')
+      + `<span>${esc(c.color)}</span>`
+      + (swl ? pill(esc(swl), '#e8f0fe', '#1a56b0') : '')
+      + (bestColor.has(c.item + '|' + c.color) ? pill('BEST', '#ffe9e3', '#d4401a') : '')
+      + st + `</span>`;
+  };
+  const cardHtml = (it) => `<div class="cat-card" style="border:1px solid #d9d9d9; border-radius:10px; padding:10px 12px; margin-bottom:10px; background:#fff;">
+      <div style="display:flex; align-items:center; gap:8px; margin-bottom:${cfg.showMix && it.mix ? '2' : '8'}px;">
+        <span style="font-size:17px; font-weight:700;">${esc(it.item)}</span>${bestItem.has(it.cat + '|' + it.item) ? pill('BEST', '#ffe9e3', '#d4401a') : ''}
+      </div>
+      ${cfg.showMix && it.mix ? `<div style="font-size:12px; color:#8a8a8a; margin-bottom:8px;">혼용률 ${esc(it.mix)}</div>` : ''}
+      <div style="display:flex; flex-wrap:wrap; gap:6px;">${it.colors.map(chipHtml).join('')}</div>
+    </div>`;
+  const cards = items.map(cardHtml);
+
+  const biz = esc(settings.bizName || '');
+  const sub = cfg.mode === 'new' ? `${todayStr()} 기준 · 새로 들어온 원단` : `기준일 ${todayStr()}${cfg.catLabel ? ' · ' + esc(cfg.catLabel) : ''}`;
+  const hdrFirst = cfg.mode === 'new'
+    ? `<div style="background:#1f2a44; color:#fff; padding:26px 28px 20px; margin-bottom:16px;"><div style="font-size:12px; letter-spacing:3px; opacity:.75;">${biz}</div><div style="font-size:30px; font-weight:800; margin:6px 0 4px;">${esc(cfg.title)}</div><div style="font-size:14px; opacity:.9;">${sub}</div></div>`
+    : `<div style="padding:26px 28px 0;"><div style="display:flex; justify-content:space-between; align-items:flex-end; border-bottom:2px solid #222; padding-bottom:10px; margin-bottom:14px;"><div><div style="font-size:24px; font-weight:700;">${esc(cfg.title)}</div><div style="font-size:12.5px; color:#666; margin-top:3px;">${sub}</div></div>${catalogBizBlockHtml()}</div></div>`;
+  const hdrNext = `<div style="padding:22px 28px 0;"><div style="display:flex; justify-content:space-between; align-items:baseline; border-bottom:2px solid #222; padding-bottom:6px; margin-bottom:12px;"><div style="font-size:16px; font-weight:700;">${esc(cfg.title)} <span style="font-size:12px; font-weight:400; color:#666;">(이어서)</span></div><div style="font-size:13px; color:#555;">${biz}</div></div></div>`;
+  const footer = (n, N) => `<div style="margin:auto 28px 0; padding:12px 0 ${N > 1 ? 4 : 18}px; border-top:1px solid #eee; font-size:12.5px; color:#666; display:flex; justify-content:space-between; gap:12px;"><span>${biz}${settings.bizAddress ? ' · ' + esc(settings.bizAddress) : ''}</span><span style="text-align:right;">${esc(cfg.msg)}</span></div>${N > 1 ? `<div style="text-align:center; font-size:11.5px; color:#aaa; padding-bottom:14px;">${n} / ${N}</div>` : ''}`;
+
+  // 실제 화면에서 높이를 재서 한 장에 몇 품목이 들어가는지 계산 (컬러가 많아 줄이 꺾이는 품목도 정확히)
+  let h1 = 110, h2 = 60, fH = 70, cardH = cards.map((_, i) => 46 + Math.ceil(items[i].colors.length / 3) * 34);
+  const host = document.createElement('div');
+  host.id = 'shotRoot';
+  host.style.cssText = `position:fixed; left:-10000px; top:0; width:${PAGE_W}px; visibility:hidden; font-family:${fontFam};`;
+  host.innerHTML = `<style>${SHOT_CSS}</style><div id="m1">${hdrFirst}</div><div id="m2">${hdrNext}</div><div id="mf">${footer(1, 2)}</div><div id="mc" style="padding:0 28px;">${cards.join('')}</div>`;
+  document.body.appendChild(host);
+  try {
+    const a = host.querySelector('#m1').getBoundingClientRect().height;
+    const b = host.querySelector('#m2').getBoundingClientRect().height;
+    const f = host.querySelector('#mf').getBoundingClientRect().height;
+    const cs = Array.from(host.querySelectorAll('#mc > .cat-card')).map(e => e.getBoundingClientRect().height + 10);
+    if (a > 0 && cs.length === cards.length) { h1 = a; h2 = b; fH = f; cardH = cs; }
+  } finally { host.remove(); }
+
+  const pages = [[]];
+  let used = 0;
+  const budgetOf = (pi) => PAGE_H - (pi === 0 ? h1 : h2) - fH - 18; // 여유 18px
+  cards.forEach((_, i) => {
+    const pi = pages.length - 1;
+    if (used + cardH[i] > budgetOf(pi) && pages[pi].length > 0) { pages.push([]); used = 0; }
+    pages[pages.length - 1].push(i);
+    used += cardH[i];
+  });
+  const N = pages.length;
+  return pages.map((idxs, pi) => `<div class="stm-img-page" style="width:${PAGE_W}px; min-height:${PAGE_H}px; box-sizing:border-box; display:flex; flex-direction:column; background:#fff; color:#222; font-family:${fontFam};">
+    ${pi === 0 ? hdrFirst : hdrNext}
+    <div style="padding:0 28px;">${idxs.map(i => cards[i]).join('')}</div>
+    ${footer(pi + 1, N)}
+  </div>`).join('');
+}
+
+let _catUniverse = [];
+let _catMode = 'stock';
+let _catSel = new Set(); // 신상 입고: 고른 컬러 "품목|컬러"
+let _catCats = new Set(); // 재고표: 고른 분류
+const CAT_DEFAULT_TITLE = { stock: '재고 현황', new: '신상 입고' };
+const CAT_DEFAULT_MSG = '주문·문의는 카톡으로 편하게 연락주세요';
+function catLoadPrefs() { try { return JSON.parse(localStorage.getItem('catalogPrefs') || '{}') || {}; } catch (e) { return {}; } }
+function catSavePrefs(cfg) { try { localStorage.setItem('catalogPrefs', JSON.stringify({ display: { stock: cfg.stockDisplay, new: cfg.newDisplay }, low: cfg.low, bestColor: cfg.bestColor, bestItem: cfg.bestItem, bestDays: cfg.bestDays, showSwatch: cfg.showSwatch, showMix: cfg.showMix, hideOut: cfg.hideOut, msg: cfg.msg })); } catch (e) { /* 저장 못 해도 상관없음 */ } }
+function openCatalogModal() {
+  _catUniverse = catalogUniverse();
+  const pr = catLoadPrefs();
+  const disp = pr.display || {};
+  _catPrefDisplay = { stock: disp.stock || 'status', new: disp.new || 'none' };
+  document.getElementById('cat-low').value = pr.low != null ? pr.low : 50;
+  document.getElementById('cat-bestcolor').checked = pr.bestColor !== false;
+  document.getElementById('cat-bestitem').checked = pr.bestItem !== false;
+  document.getElementById('cat-bestdays').value = String(pr.bestDays || 90);
+  document.getElementById('cat-swatch').checked = pr.showSwatch !== false;
+  document.getElementById('cat-mix').checked = pr.showMix !== false;
+  document.getElementById('cat-hideout').checked = pr.hideOut !== false;
+  document.getElementById('cat-msg').value = pr.msg || CAT_DEFAULT_MSG;
+  _catCats = new Set(_catUniverse.map(it => it.cat || '미분류'));
+  // 신상 기본 선택: 아직 안 들어온 중국발주 컬러 + 최근 7일 안에 입고된 컬러
+  const cut = new Date(); cut.setDate(cut.getDate() - 7);
+  const cutStr = `${String(cut.getFullYear()).slice(2)}.${String(cut.getMonth() + 1).padStart(2, '0')}.${String(cut.getDate()).padStart(2, '0')}`;
+  _catSel = new Set();
+  for (const it of _catUniverse) for (const c of it.colors) if (c.pending || (c.newestIn && c.newestIn >= cutStr)) _catSel.add(c.item + '|' + c.color);
+  document.getElementById('cat-search').value = '';
+  catSetMode(_catMode, true);
+  document.getElementById('catalogModal').classList.add('open');
+}
+let _catPrefDisplay = { stock: 'status', new: 'none' };
+function closeCatalogModal() { document.getElementById('catalogModal').classList.remove('open'); }
+function catSetMode(m, init) {
+  const prev = _catMode;
+  const sel = document.getElementById('cat-display');
+  if (!init && prev && sel.value) _catPrefDisplay[prev] = sel.value; // 모드를 바꾸기 전에 지금 고른 재고표시를 그 모드용으로 기억
+  _catMode = m;
+  const on = 'background:#1a5f8a;color:#fff;', off = 'background:#e8edf5;color:#3d4f6b;';
+  const base = 'flex:1;border:none;border-radius:8px;padding:9px 4px;font-size:13px;font-weight:700;';
+  document.getElementById('cat-mode-stock').style.cssText = base + (m === 'stock' ? on : off);
+  document.getElementById('cat-mode-new').style.cssText = base + (m === 'new' ? on : off);
+  document.getElementById('cat-title').value = CAT_DEFAULT_TITLE[m];
+  sel.value = _catPrefDisplay[m];
+  document.getElementById('cat-stock-scope').style.display = m === 'stock' ? '' : 'none';
+  document.getElementById('cat-new-scope').style.display = m === 'new' ? '' : 'none';
+  catOnDisplayChange();
+  renderCatalogScope();
+}
+function catOnDisplayChange() { document.getElementById('cat-low-wrap').style.display = document.getElementById('cat-display').value === 'status' ? '' : 'none'; }
+function renderCatalogScope() {
+  if (_catMode === 'stock') {
+    const cats = Array.from(new Set(_catUniverse.map(it => it.cat || '미분류'))).sort((a, b) => a.localeCompare(b, 'ko'));
+    document.getElementById('cat-cats').innerHTML = cats.map((c, i) => `<span onclick="catToggleCat(${i})" style="display:inline-block; margin:0 4px 4px 0; padding:5px 10px; border-radius:14px; font-size:12px; cursor:pointer; ${_catCats.has(c) ? 'background:#1a5f8a;color:#fff;' : 'background:#eee;color:#555;'}">${esc(c)}</span>`).join('');
+    window._catCatList = cats;
+  } else {
+    const q = document.getElementById('cat-search').value.trim();
+    const matchQ = (it, c) => !q || matchesSearchWords(q, it.item, c ? c.color : '');
+    let html = '';
+    _catUniverse.forEach((it, ii) => {
+      const cols = it.colors.map((c, ci) => ({ c, ci })).filter(x => matchQ(it, x.c));
+      if (cols.length === 0) return;
+      const allOn = it.colors.every(c => _catSel.has(c.item + '|' + c.color));
+      html += `<div style="margin:6px 0 8px;"><div onclick="catToggleItem(${ii})" style="font-size:13px; font-weight:700; cursor:pointer; margin-bottom:3px;">${allOn ? '☑' : '☐'} ${esc(it.item)} <span style="font-weight:400;color:var(--muted);font-size:11px;">${esc(it.cat || '미분류')}</span></div><div>`
+        + cols.map(x => { const on = _catSel.has(x.c.item + '|' + x.c.color); return `<span onclick="catToggleColor(${ii},${x.ci})" style="display:inline-block; margin:0 4px 4px 0; padding:4px 9px; border-radius:13px; font-size:12px; cursor:pointer; ${on ? 'background:#1a5f8a;color:#fff;' : 'background:#eee;color:#555;'}">${esc(x.c.color)}${x.c.pending ? ' ·발주중' : ''}</span>`; }).join('')
+        + `</div></div>`;
+    });
+    document.getElementById('cat-picker').innerHTML = html || '<div style="font-size:12px;color:var(--muted);padding:8px 0;">검색 결과가 없어요</div>';
+  }
+  catUpdateCount();
+}
+function catToggleCat(i) { const c = window._catCatList[i]; if (_catCats.has(c)) _catCats.delete(c); else _catCats.add(c); renderCatalogScope(); }
+function catToggleColor(ii, ci) { const c = _catUniverse[ii].colors[ci]; const k = c.item + '|' + c.color; if (_catSel.has(k)) _catSel.delete(k); else _catSel.add(k); renderCatalogScope(); }
+function catToggleItem(ii) { const it = _catUniverse[ii]; const keys = it.colors.map(c => c.item + '|' + c.color); const allOn = keys.every(k => _catSel.has(k)); keys.forEach(k => allOn ? _catSel.delete(k) : _catSel.add(k)); renderCatalogScope(); }
+function catQuick(kind) {
+  _catSel = new Set();
+  if (kind !== 'clear') {
+    const cut = new Date(); cut.setDate(cut.getDate() - 7);
+    const cutStr = `${String(cut.getFullYear()).slice(2)}.${String(cut.getMonth() + 1).padStart(2, '0')}.${String(cut.getDate()).padStart(2, '0')}`;
+    for (const it of _catUniverse) for (const c of it.colors) {
+      if (kind === 'pending' && c.pending) _catSel.add(c.item + '|' + c.color);
+      if (kind === 'recent' && c.newestIn && c.newestIn >= cutStr) _catSel.add(c.item + '|' + c.color);
+    }
+  }
+  renderCatalogScope();
+}
+function readCatalogCfg() {
+  const display = document.getElementById('cat-display').value;
+  const low = parseFloat(document.getElementById('cat-low').value);
+  const cfg = {
+    mode: _catMode,
+    title: document.getElementById('cat-title').value.trim() || CAT_DEFAULT_TITLE[_catMode],
+    display, low: low > 0 ? low : 50,
+    bestColor: document.getElementById('cat-bestcolor').checked,
+    bestItem: document.getElementById('cat-bestitem').checked,
+    bestDays: parseInt(document.getElementById('cat-bestdays').value) || 90,
+    showSwatch: document.getElementById('cat-swatch').checked,
+    showMix: document.getElementById('cat-mix').checked,
+    hideOut: document.getElementById('cat-hideout').checked,
+    msg: document.getElementById('cat-msg').value.trim() || CAT_DEFAULT_MSG,
+    sel: _catSel,
+    cats: null, catLabel: ''
+  };
+  const allCats = new Set(_catUniverse.map(it => it.cat || '미분류'));
+  if (_catMode === 'stock' && _catCats.size < allCats.size) { cfg.cats = _catCats; cfg.catLabel = Array.from(_catCats).join(', '); }
+  cfg.stockDisplay = _catMode === 'stock' ? display : _catPrefDisplay.stock;
+  cfg.newDisplay = _catMode === 'new' ? display : _catPrefDisplay.new;
+  return cfg;
+}
+function catUpdateCount() {
+  const cfg = readCatalogCfg();
+  const items = selectCatalogItems(cfg, _catUniverse);
+  const colors = items.reduce((s, it) => s + it.colors.length, 0);
+  document.getElementById('cat-count').textContent = items.length === 0 ? (cfg.mode === 'new' ? '신상으로 보낼 컬러를 골라주세요' : '보여줄 재고가 없어요') : `이미지에 들어갈 것: ${items.length}품목 · ${colors}컬러`;
+}
+async function generateCatalog(mode) {
+  const cfg = readCatalogCfg();
+  const items = selectCatalogItems(cfg, _catUniverse);
+  if (items.length === 0) { showToast(cfg.mode === 'new' ? '신상으로 보낼 컬러를 하나 이상 골라주세요' : '보여줄 재고가 없어요'); return; }
+  catSavePrefs(cfg);
+  showToast('이미지를 만드는 중이에요...');
+  const kind = cfg.mode === 'new' ? '신상입고' : '재고표';
+  let files;
+  try { files = await renderStatementImages(await buildCatalogPages(cfg, items), '', kind); }
+  catch (e) { showToast('이미지를 만들지 못했어요 (인터넷 연결을 확인해주세요)'); return; }
+  openShotModal(files, '', kind);
+  if (mode === 'share') await shareShotFiles();
+}
+
 async function printStatementForRange(customerName, startDate, endDate, mode) {
   const html = await buildStatementHTML(customerName, startDate, endDate, undefined, undefined, undefined, mode ? { shareImage: true } : undefined);
   if (html == null) { showToast('해당 기간에 보낼 내역이 없습니다'); return; }
@@ -7189,7 +7549,6 @@ function renderCustomerLedgerView() {
       <button class="btn-key" onclick="if(ledgerCustomer) payCustomerUnpaid(ledgerCustomer)" style="border:none;background:#eaf3ec;color:#2f6b46;border-radius:7px;padding:8px 12px;font-size:12px;font-weight:600;white-space:nowrap;">입금 처리</button>
       <button onclick="printLedgerPeriod()" style="border:none;background:#e8edf5;color:#3d4f6b;border-radius:7px;padding:8px 12px;font-size:12px;font-weight:600;white-space:nowrap;">기간별 인쇄</button>
       <button onclick="printLedgerPeriod('share')" style="border:none;background:#fee500;color:#191919;border-radius:7px;padding:8px 12px;font-size:12px;font-weight:700;white-space:nowrap;">💬 카톡으로 보내기</button>
-      <button onclick="printLedgerPeriod('save')" style="border:none;background:#e8edf5;color:#3d4f6b;border-radius:7px;padding:8px 12px;font-size:12px;font-weight:600;white-space:nowrap;">🖼 이미지 저장</button>
     </div>
     <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; padding-top:6px; border-top:1px dashed var(--border); font-size:11px; color:var(--muted);">
       <span onclick="if(ledgerCustomer) renameCustomer(ledgerCustomer)" style="text-decoration:underline; cursor:pointer;">이름 수정</span>
@@ -7736,7 +8095,7 @@ async function printLedgerPeriod(mode) {
   if (bizLine3) bizLines.push(`<div>${esc(bizLine3)}</div>`);
   const bizBlock = bizLines.length > 0 ? `<div style="text-align:right; font-size:11px; line-height:1.5; color:#333;">${bizLines.join('')}</div>` : '';
 
-  // 인쇄 / 카톡 공유 / 이미지 저장 모두 똑같은 모양(같은 크기의 장으로 나뉜 내역서)을 씀
+  // 인쇄 / 카톡 공유 모두 똑같은 모양(같은 크기의 장으로 나뉜 내역서)을 씀
   const pagesHtml = await buildLedgerImagePages({ customer, startDate, endDate, openingBalance, rows: rowsInRange, salesSum, paySum, deductSum, finalBalance: running, bizBlock }, { forPrint: !mode });
   await deliverStatementHtml(pagesHtml, mode, customer);
 }
