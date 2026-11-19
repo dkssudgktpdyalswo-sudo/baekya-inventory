@@ -784,28 +784,11 @@
       <button type="button" id="cat-mode-stock" onclick="catSetMode('stock')">재고표</button>
       <button type="button" id="cat-mode-new" onclick="catSetMode('new')">신상 입고</button>
     </div>
-    <label>제목</label>
-    <input id="cat-title" type="text" style="width:100%;">
-    <label>재고 표시</label>
-    <select id="cat-display" onchange="catOnDisplayChange()" style="width:100%;">
-      <option value="status">상태만 (재고있음 · 소량 · 품절)</option>
-      <option value="qty">야드수까지</option>
-      <option value="none">표시 안 함</option>
-    </select>
-    <div id="cat-low-wrap" style="font-size:12px; color:var(--muted); margin-top:6px;">소량 기준 <input id="cat-low" type="number" min="1" style="width:70px; padding:4px;"> y 미만이면 "소량"</div>
-    <div style="margin-top:8px;">
-      <label style="display:flex; align-items:center; gap:6px; font-size:13px; color:#333; margin:6px 0;"><input type="checkbox" style="width:auto; flex:none; margin:0;" id="cat-bestcolor"> 베스트 컬러 표시 (품목별로 많이 나간 3컬러)</label>
-      <label style="display:flex; align-items:center; gap:6px; font-size:13px; color:#333; margin:6px 0;"><input type="checkbox" style="width:auto; flex:none; margin:0;" id="cat-bestitem"> 베스트 품목 표시 (많이 나간 3개 품목)</label>
-      <div style="font-size:12px; color:var(--muted); margin:2px 0 6px 22px;">집계 기간
-        <select id="cat-bestdays" style="padding:3px;"><option value="30">최근 30일</option><option value="90">최근 90일</option><option value="365">최근 1년</option></select>
-      </div>
-      <label style="display:flex; align-items:center; gap:6px; font-size:13px; color:#333; margin:6px 0;"><input type="checkbox" style="width:auto; flex:none; margin:0;" id="cat-swatch"> 스왓치 번호 표시</label>
-      <label style="display:flex; align-items:center; gap:6px; font-size:13px; color:#333; margin:6px 0;"><input type="checkbox" style="width:auto; flex:none; margin:0;" id="cat-mix"> 혼용률 표시</label>
-    </div>
     <div id="cat-stock-scope">
-      <label style="display:flex; align-items:center; gap:6px; font-size:13px; color:#333; margin:6px 0;"><input type="checkbox" style="width:auto; flex:none; margin:0;" id="cat-hideout" onchange="catUpdateCount()"> 품절 컬러는 숨기기</label>
-      <label>분류 (눌러서 빼거나 넣기)</label>
-      <div id="cat-cats"></div>
+      <label>보낼 품목 (입력해서 고르기 · 안 고르면 전체)</label>
+      <input id="cat-item-search" type="text" placeholder="품번 입력 (예: 887)" oninput="renderCatalogScope()" style="width:100%;">
+      <div id="cat-item-results"></div>
+      <div id="cat-items-sel" style="margin-top:8px;"></div>
     </div>
     <div id="cat-new-scope" style="display:none;">
       <label>신상으로 보낼 컬러 고르기</label>
@@ -816,6 +799,24 @@
       </div>
       <input id="cat-search" type="text" placeholder="품번 또는 컬러 검색" oninput="renderCatalogScope()" style="width:100%;">
       <div id="cat-picker" style="max-height:220px; overflow-y:auto; margin-top:6px; border:1px solid var(--border); border-radius:8px; padding:6px 8px;"></div>
+    </div>
+    <label>소재 확대샷 (품목마다 사진 1장 · 있으면 첫 장에 들어가요)</label>
+    <div id="cat-photo-list" style="max-height:200px; overflow-y:auto;"></div>
+    <input type="file" id="cat-photo-input" accept="image/*" style="display:none;" onchange="catPhotoChosen(this)">
+    <label>제목</label>
+    <input id="cat-title" type="text" style="width:100%;">
+    <label>재고 표시</label>
+    <select id="cat-display" onchange="catOnDisplayChange()" style="width:100%;">
+      <option value="status">상태만 (재고있음 · 소량 · 품절)</option>
+      <option value="qty">야드수까지</option>
+      <option value="none">표시 안 함</option>
+    </select>
+    <div id="cat-low-wrap" style="font-size:12px; color:var(--muted); margin-top:6px;">소량 기준 <input id="cat-low" type="number" min="1" style="width:70px; padding:4px;"> y 미만이면 "소량"</div>
+    <div style="margin-top:8px;">
+      <label style="display:flex; align-items:center; gap:6px; font-size:13px; color:#333; margin:6px 0;"><input type="checkbox" style="width:auto; flex:none; margin:0;" id="cat-bestcolor"> 베스트 컬러 표시 (품목별로 가장 많이 나간 3컬러)</label>
+      <div style="font-size:12px; color:var(--muted); margin:2px 0 6px 22px;">집계 기간
+        <select id="cat-bestdays" style="padding:3px;"><option value="30">최근 30일</option><option value="90">최근 90일</option><option value="365">최근 1년</option></select>
+      </div>
     </div>
     <label>하단 문구</label>
     <input id="cat-msg" type="text" style="width:100%;">
@@ -1314,7 +1315,7 @@
 const PASSWORD = "3059";
 const ADMIN_PASSWORD = "9503"; // 매출/미수금 탭 전용 - 필요하면 이 값만 바꿔서 변경 가능
 const DATA_VERSION = "2026-08-03-v4"; // 재고/이월장부 씨앗 데이터를 바꿀 때마다 이 값을 새로 바꿔주세요
-const APP_CODE_VERSION = "2026-11-20-c"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
+const APP_CODE_VERSION = "2026-11-20-i"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
 const SCHEMA_STAMP = 2; // 서버 저장규칙이 확인하는 "최신 앱 도장" - 절대 자주 바꾸지 않음(이 값을 아는 코드만 저장 가능하게 서버에서 막을 때 씀)
 const CONFIRMED_EMPTY = '__CONFIRMED_EMPTY__'; // "서버가 확실하게 문서가 없다고 확인해줬다"는 걸 표시하는 특수값
                                                  // (한번도 확인 안 한 null과 구분해서, 그 사이 다른 사람이 첫 데이터를 만들었으면 충돌로 감지하기 위함)
@@ -6565,12 +6566,13 @@ const PRINT_LEDGER_CSS = SHOT_CSS.replace(/#shotRoot/g, '#printArea')
   + '#printArea .stm-img-page.ledger-print td.dhdr{padding:1px 8px !important;font-size:11.5px !important}'
   + '#printArea .stm-img-page{-webkit-print-color-adjust:exact;print-color-adjust:exact}';
 let _shotFiles = [], _shotUrls = [], _shotCustomer = '', _shotKind = '내역서';
-async function renderStatementImages(html, customer, kind) {
+async function renderStatementImages(html, customer, kind, width) {
   kind = kind || '내역서';
+  width = width || 794;
   const h2c = await loadHtml2Canvas();
   const root = document.createElement('div');
   root.id = 'shotRoot';
-  root.style.cssText = 'position:fixed;left:-10000px;top:0;width:794px;background:#fff;color:#000;font-family:-apple-system,"Malgun Gothic",sans-serif;';
+  root.style.cssText = `position:fixed;left:-10000px;top:0;width:${width}px;background:#fff;color:#000;font-family:-apple-system,"Malgun Gothic",sans-serif;`;
   root.innerHTML = `<style>${SHOT_CSS}</style>${html}`;
   document.body.appendChild(root);
   const files = [];
@@ -6582,8 +6584,8 @@ async function renderStatementImages(html, customer, kind) {
     for (let i = 0; i < targets.length; i++) {
       const el = targets[i];
       const h = Math.max(el.scrollHeight, 100);
-      const scale = Math.max(1, Math.min(2.5, Math.sqrt(12000000 / (794 * h)))); // 아주 긴 내역서도 폰 브라우저의 그림 크기 한도를 안 넘게
-      const canvas = await h2c(el, { scale, backgroundColor: '#ffffff', useCORS: true, logging: false, width: 794, windowWidth: 794 });
+      const scale = Math.max(1, Math.min(width < 700 ? 3 : 2.5, Math.sqrt(12000000 / (width * h)))); // 아주 긴 내역서도 폰 브라우저의 그림 크기 한도를 안 넘게
+      const canvas = await h2c(el, { scale, backgroundColor: '#ffffff', useCORS: true, logging: false, width, windowWidth: width });
       const blob = await new Promise(res => canvas.toBlob(res, 'image/png'));
       if (!blob) throw new Error('blob');
       files.push(new File([blob], `${safeName ? safeName + '_' : ''}${kind}_${stamp}${targets.length > 1 ? '_' + (i + 1) : ''}.png`, { type: 'image/png' }));
@@ -6724,7 +6726,7 @@ function selectCatalogItems(cfg, universe) { // 이번에 이미지에 넣을 �
     let colors;
     if (cfg.mode === 'new') colors = it.colors.filter(c => cfg.sel.has(c.item + '|' + c.color));
     else {
-      if (cfg.cats && !cfg.cats.has(it.cat || '미분류')) continue;
+      if (cfg.itemsSel && cfg.itemsSel.size > 0 && !cfg.itemsSel.has(it.cat + '|' + it.item)) continue;
       colors = cfg.hideOut ? it.colors.filter(c => c.stock > 0) : it.colors;
     }
     if (colors.length > 0) out.push({ ...it, colors });
@@ -6739,96 +6741,210 @@ function catalogBizBlockHtml() {
   if (settings.bizAddress) lines.push(`<div>${esc(settings.bizAddress)}</div>`);
   return lines.length ? `<div style="text-align:right; font-size:11.5px; line-height:1.5; color:#333;">${lines.join('')}</div>` : '';
 }
+// 같은 순번을 쓰는 "무지 / 기모" 짝은 한 타일에 묶음 (순번은 한 번만, 각각의 재고는 줄로 따로)
+function catBaseOfColor(name) { const b = splitKimoColorName(name) || getProcessingBaseColor(name); return (b && b !== name) ? b : null; }
+function catGroupsOf(it) {
+  const names = new Set(it.colors.map(c => c.color));
+  const groups = [], byMain = new Map();
+  for (const c of it.colors) {
+    const base = catBaseOfColor(c.color);
+    if (base && names.has(base)) continue; // 짝이 있는 변형(기모 등)은 아래에서 무지 타일에 붙임
+    const g = { main: c, variants: [] };
+    groups.push(g); byMain.set(c.color, g);
+  }
+  for (const c of it.colors) {
+    const base = catBaseOfColor(c.color);
+    if (base && byMain.has(base)) byMain.get(base).variants.push({ c, label: String(c.color).replace(base, '').trim() || c.color });
+  }
+  return groups;
+}
+const CAT_PER_PAGE = 10; // 폰에서 스크롤 없이 한눈에 보이도록 한 장에 최대 10타일 (5줄)
+function catSplitGroups(it) { // 타일이 많으면 비슷한 개수로 나눠서 여러 장으로 (줄이 맞도록 짝수 개씩)
+  const groups = catGroupsOf(it);
+  const P = Math.max(1, Math.ceil(groups.length / CAT_PER_PAGE));
+  let per = Math.ceil(groups.length / P);
+  if (P > 1 && per % 2) per++;
+  const out = [];
+  for (let i = 0; i < groups.length; i += per) out.push(groups.slice(i, i + per));
+  return out.length ? out : [[]];
+}
+// ── 소재 확대샷: 품목마다 사진 1장 (inventory/catphoto_* 문서로 따로 저장, 열 때만 읽음) ──
+const _catPhotos = {}; // 품목키 -> dataURL ('' = 사진 없음 확인됨)
+function catPhotoKey(it) { return normalizeNameForMatch(it.item); }
+function catPhotoDocId(key) { let h = 5381; for (let i = 0; i < key.length; i++) h = ((h * 33) ^ key.charCodeAt(i)) >>> 0; return 'catphoto_' + h.toString(36); }
+async function catPhotoLoad(keys) {
+  let changed = false;
+  if (typeof db === 'undefined' || !db) return false;
+  await Promise.all(keys.filter(k => !(k in _catPhotos)).map(async k => {
+    try {
+      const d = await db.collection('inventory').doc(catPhotoDocId(k)).get();
+      const v = d.exists && d.data() && d.data().key === k ? d.data().dataUrl : '';
+      _catPhotos[k] = v || ''; changed = true;
+    } catch (e) { /* 못 읽으면 이번엔 사진 없이 진행 (다음에 다시 시도) */ }
+  }));
+  return changed;
+}
+function catPhotoCompress(file) { // 폰 사진은 크니까 긴 변 1000px JPEG로 줄여서 저장 (보통 100~200KB)
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file); const img = new Image();
+    img.onload = () => {
+      try {
+        const r = Math.min(1, 1000 / Math.max(img.naturalWidth, img.naturalHeight));
+        const w = Math.max(1, Math.round(img.naturalWidth * r)), h = Math.max(1, Math.round(img.naturalHeight * r));
+        const cv = document.createElement('canvas'); cv.width = w; cv.height = h;
+        const ctx = cv.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, w, h); ctx.drawImage(img, 0, 0, w, h);
+        let q = 0.82, out = cv.toDataURL('image/jpeg', q);
+        while (out.length > 700000 && q > 0.4) { q -= 0.1; out = cv.toDataURL('image/jpeg', q); }
+        URL.revokeObjectURL(url); resolve(out);
+      } catch (e) { URL.revokeObjectURL(url); reject(e); }
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('img')); };
+    img.src = url;
+  });
+}
+let _catPhotoRows = [], _catPhotoPickIdx = -1;
+function catPhotoPick(i) { _catPhotoPickIdx = i; const f = document.getElementById('cat-photo-input'); f.value = ''; f.click(); }
+async function catPhotoChosen(inp) {
+  const file = inp.files && inp.files[0]; const row = _catPhotoRows[_catPhotoPickIdx];
+  if (!file || !row) return;
+  try {
+    const data = await catPhotoCompress(file);
+    if (typeof db === 'undefined' || !db) throw new Error('nodb');
+    await db.collection('inventory').doc(catPhotoDocId(row.key)).set({ kind: 'catPhoto', key: row.key, item: row.item, dataUrl: data, updatedAt: new Date().toISOString() });
+    _catPhotos[row.key] = data;
+    showToast(`${row.item} 사진을 저장했어요`);
+  } catch (e) { showToast('사진을 저장하지 못했어요 (사진 파일이나 인터넷 연결을 확인해주세요)'); }
+  catUpdateCount();
+}
+async function catPhotoRemove(i) {
+  const row = _catPhotoRows[i]; if (!row) return;
+  if (!confirm(`${row.item} 사진을 지울까요?`)) return;
+  try { await db.collection('inventory').doc(catPhotoDocId(row.key)).delete(); _catPhotos[row.key] = ''; showToast('사진을 지웠어요'); }
+  catch (e) { showToast('사진을 지우지 못했어요 (인터넷 연결을 확인해주세요)'); }
+  catUpdateCount();
+}
+function catRenderPhotos() {
+  const box = document.getElementById('cat-photo-list'); if (!box) return;
+  const cfg = readCatalogCfg();
+  const items = selectCatalogItems(cfg, _catUniverse);
+  if (items.length === 0) { box.innerHTML = ''; _catPhotoRows = []; return; }
+  if (items.length > 15) {
+    _catPhotoRows = [];
+    box.innerHTML = '<div style="font-size:12px; color:var(--muted);">품목을 15개 이하로 고르면 여기서 사진을 등록할 수 있어요 (이미 등록된 사진은 모두 첫 장에 들어가요)</div>';
+  } else {
+    _catPhotoRows = items.map(it => ({ key: catPhotoKey(it), item: it.item }));
+    box.innerHTML = _catPhotoRows.map((r, i) => {
+      const v = _catPhotos[r.key];
+      const thumb = v ? `<img src="${v}" style="width:44px; height:44px; object-fit:cover; border-radius:6px; flex:none;">` : `<div style="width:44px; height:44px; border-radius:6px; background:#eee; color:#aaa; display:flex; align-items:center; justify-content:center; font-size:18px; flex:none;">📷</div>`;
+      const st = v === undefined ? '<span style="color:var(--muted);">확인 중…</span>' : (v ? '<span style="color:#1f7a3a;">첫 장에 들어가요</span>' : '<span style="color:#9a6200;">사진 없음 (컬러표만 나가요)</span>');
+      return `<div style="display:flex; align-items:center; gap:8px; padding:5px 0; border-bottom:1px solid #f0f0f0;">${thumb}<div style="flex:1; min-width:0; font-size:13px;"><b>${esc(r.item)}</b><div style="font-size:11px;">${st}</div></div><button type="button" onclick="catPhotoPick(${i})" style="border:none; background:#e8edf5; color:#3d4f6b; border-radius:7px; padding:6px 9px; font-size:12px; font-weight:600;">${v ? '변경' : '등록'}</button>${v ? `<button type="button" onclick="catPhotoRemove(${i})" style="border:none; background:#f6e3e3; color:#a33; border-radius:7px; padding:6px 8px; font-size:12px;">삭제</button>` : ''}</div>`;
+    }).join('');
+    const missing = _catPhotoRows.map(r => r.key).filter(k => !(k in _catPhotos));
+    if (missing.length) catPhotoLoad(missing).then(ch => { if (ch) catUpdateCount(); });
+  }
+}
+const CAT_IMG_W = 600; // 폰 카톡 화면 폭에 맞춰 보면 약 0.6배로 보이니, 글씨를 크게(23px 안팎) 잡음
 async function buildCatalogPages(cfg, items) {
-  const PAGE_W = 794, PAGE_H = 1123;
   const fontFam = "-apple-system,'Malgun Gothic',sans-serif";
   const fmtY = (n) => Number(n.toFixed(1)).toLocaleString();
-  // 베스트: 이번에 보여줄 품목/컬러 안에서 뽑음 (품절이라 숨긴 걸 베스트로 잡으면 광고가 이상해지니)
-  let bestColor = new Set(), bestItem = new Set();
-  if (cfg.bestColor || cfg.bestItem) {
-    const { colorYards, itemYards } = catalogBest(cfg.bestDays);
-    if (cfg.bestColor) {
-      for (const it of items) {
-        if (it.colors.length <= 3) continue; // 컬러가 3개 이하인 품목은 전부 BEST가 돼버려서 의미가 없으니 표시 안 함
-        it.colors.map(c => ({ c, y: colorYards.get(c.nk) || 0 })).filter(x => x.y > 0).sort((a, b) => b.y - a.y).slice(0, 3).forEach(x => bestColor.add(x.c.item + '|' + x.c.color));
-      }
-    }
-    if (cfg.bestItem && items.length > 3) { // 품목이 3개 이하면 전부 BEST가 되니 표시 안 함
-      items.map(it => ({ it, y: itemYards.get(normalizeNameForMatch(it.item)) || 0 })).filter(x => x.y > 0).sort((a, b) => b.y - a.y).slice(0, 3).forEach(x => bestItem.add(x.it.cat + '|' + x.it.item));
+  const baseOfColor = catBaseOfColor, groupsOf = catGroupsOf;
+  // 베스트: 이번에 보여줄 품목/컬러 안에서 뽑음 (품절이라 숨긴 걸 베스트로 잡으면 광고가 이상해지니). 무지+기모는 한 컬러(순번)로 보고 판매량을 합쳐서 순위를 매김
+  const bestColor = new Set();
+  const colorYardsMap = catalogBest(cfg.bestDays).colorYards;
+  if (cfg.bestColor) {
+    for (const it of items) {
+      const groups = groupsOf(it);
+      if (groups.length <= 3) continue; // 컬러가 3개 이하인 품목은 전부 BEST가 돼버려서 의미가 없으니 표시 안 함
+      groups.map(g => ({ g, y: [g.main, ...g.variants.map(v => v.c)].reduce((s2, c) => s2 + (colorYardsMap.get(c.nk) || 0), 0) })).filter(x => x.y > 0).sort((a, b) => b.y - a.y).slice(0, 3).forEach(x => bestColor.add(x.g.main.item + '|' + x.g.main.color));
     }
   }
-  const pill = (txt, bg, fg) => `<span style="background:${bg}; color:${fg}; font-size:11px; font-weight:800; padding:1px 7px; border-radius:9px; white-space:nowrap;">${txt}</span>`;
-  const chipHtml = (c) => {
-    const dot = catDotColor(c.color);
-    const out = c.stock <= 0;
-    let st = '';
-    if (cfg.display === 'qty') st = out ? pill('품절', '#eee', '#999') : `<b style="font-weight:700; color:#333; font-size:13px;">${fmtY(c.stock)}y</b>`;
-    else if (cfg.display === 'status') st = out ? pill('품절', '#eee', '#999') : (c.stock < cfg.low ? pill('소량', '#fff0cf', '#9a6200') : pill('재고있음', '#e3f4e6', '#1f7a3a'));
-    const swl = cfg.showSwatch ? swLabel(c.sw) : null;
-    return `<span style="display:inline-flex; align-items:center; gap:6px; border:1px solid #d6d6d6; border-radius:16px; padding:4px 10px 4px 8px; font-size:14px; background:#fff;${out && cfg.display !== 'none' ? ' opacity:.6;' : ''}">`
-      + (dot ? `<i style="width:13px; height:13px; border-radius:50%; background:${dot}; border:1px solid rgba(0,0,0,.25); flex:none;"></i>` : '')
-      + `<span>${esc(c.color)}</span>`
-      + (swl ? pill(esc(swl), '#e8f0fe', '#1a56b0') : '')
-      + (bestColor.has(c.item + '|' + c.color) ? pill('BEST', '#ffe9e3', '#d4401a') : '')
-      + st + `</span>`;
+  const pill = (txt, bg, fg, size) => `<span style="display:inline-block; background:${bg}; color:${fg}; font-size:${size || 16}px; font-weight:800; padding:2px ${size && size < 16 ? 7 : 10}px; border-radius:12px; line-height:1.3; white-space:nowrap;">${txt}</span>`;
+  const swOf = (g) => { // 이 타일의 스왓치 번호: 무지 것, 없으면 기모 등 변형 것, 그래도 없으면 무지 이름으로 찾아봄
+    let sw = g.main.sw && (g.main.sw.order != null || g.main.sw.orderSpring != null) ? g.main.sw : null;
+    if (!sw) for (const v of g.variants) if (v.c.sw && (v.c.sw.order != null || v.c.sw.orderSpring != null)) { sw = v.c.sw; break; }
+    if (!sw) { const base = baseOfColor(g.main.color); if (base) { const f = findSwatchFor(g.main.cat, g.main.item, base); if (f && (f.order != null || f.orderSpring != null)) sw = f; } }
+    return sw;
   };
-  const cardHtml = (it) => `<div class="cat-card" style="border:1px solid #d9d9d9; border-radius:10px; padding:10px 12px; margin-bottom:10px; background:#fff;">
-      <div style="display:flex; align-items:center; gap:8px; margin-bottom:${cfg.showMix && it.mix ? '2' : '8'}px;">
-        <span style="font-size:17px; font-weight:700;">${esc(it.item)}</span>${bestItem.has(it.cat + '|' + it.item) ? pill('BEST', '#ffe9e3', '#d4401a') : ''}
-      </div>
-      ${cfg.showMix && it.mix ? `<div style="font-size:12px; color:#8a8a8a; margin-bottom:8px;">혼용률 ${esc(it.mix)}</div>` : ''}
-      <div style="display:flex; flex-wrap:wrap; gap:6px;">${it.colors.map(chipHtml).join('')}</div>
-    </div>`;
-  const cards = items.map(cardHtml);
-
+  const numBadge = (sw, itemSpring) => { // 스왓치 번호: 거래처가 스왓치북에서 바로 찾으니 컬러 네모 위에 크고 진하게 (F/W 파랑, S/S 초록 - 앱과 같은 색)
+    if (!sw) return ['', ''];
+    if (!itemSpring) return [sw.order != null ? `<div style="position:absolute; left:-12px; top:-12px; min-width:46px; height:46px; padding:0 6px; box-sizing:border-box; border-radius:23px; background:#1a5f8a; color:#fff; border:3px solid #fff; box-shadow:0 1px 4px rgba(0,0,0,.35); display:flex; align-items:center; justify-content:center; font-size:26px; font-weight:900;">${sw.order}</div>` : '', ''];
+    const pl = (txt, bg) => `<div style="background:${bg}; color:#fff; border:2px solid #fff; box-shadow:0 1px 4px rgba(0,0,0,.35); border-radius:14px; padding:1px 9px; font-size:19px; font-weight:900; line-height:1.3; white-space:nowrap;">${txt}</div>`;
+    return ['', `<div style="position:absolute; left:12px; top:-15px; display:flex; gap:6px;">${sw.order != null ? pl(`F/W ${sw.order}`, '#1a5f8a') : ''}${sw.orderSpring != null ? pl(`S/S ${sw.orderSpring}`, '#2f8f6b') : ''}</div>`];
+  };
+  const stockHtml = (c, compact) => { // compact: 무지/기모 두 줄 타일(한 칸 폭)에 맞춰 작게
+    const ps = compact ? 15 : 17;
+    if (cfg.display === 'qty') return c.stock > 0 ? `<span style="font-size:21px; font-weight:800; color:#222;">${fmtY(c.stock)}y</span>` : pill('품절', '#eee', '#888', ps);
+    if (cfg.display === 'status') return c.stock <= 0 ? pill('품절', '#eee', '#888', ps) : (c.stock < cfg.low ? pill('소량', '#fff0cf', '#9a6200', ps) : pill('재고있음', '#e3f4e6', '#1f7a3a', ps));
+    return '';
+  };
+  const tileHtml = (g, itemSpring) => {
+    const c = g.main;
+    const dot = catDotColor(c.color);
+    const isBest = bestColor.has(c.item + '|' + c.color);
+    const members = [{ c, label: g.variants.length ? '무지' : '' }, ...g.variants];
+    // 무지/기모 중 한쪽이 확실히 더 많이 나갔으면(60% 이상) 그쪽 줄에 "인기" 표시
+    let hotIdx = -1;
+    if (cfg.bestColor && g.variants.length > 0) {
+      const ys = members.map(m => colorYardsMap.get(m.c.nk) || 0);
+      const tot = ys.reduce((a, b) => a + b, 0);
+      if (tot > 0) { const mx = Math.max(...ys); if (mx / tot >= 0.6) hotIdx = ys.indexOf(mx); }
+    }
+    const body = g.variants.length === 0
+      ? `<div style="margin-top:6px; display:flex; gap:6px; flex-wrap:wrap; align-items:center;">${stockHtml(c)}</div>`
+      : members.map((m, i) => `<div style="margin-top:4px; display:flex; gap:5px; align-items:center; flex-wrap:wrap;"><span style="font-size:18px; font-weight:700; color:#444;">${esc(m.label)}</span>${i === hotIdx ? pill('인기', '#ffe9e3', '#d4401a', 14) : ''}${stockHtml(m.c, true)}</div>`).join('');
+    const [badgeSq, badgeTile] = numBadge(swOf(g), itemSpring);
+    return `<div style="position:relative; display:flex; gap:10px; align-items:center; ${isBest ? 'border:3px solid #e8442a; background:#fff4f1; padding:8px; box-shadow:0 2px 6px rgba(232,68,42,.25);' : 'border:1px solid #d9d9d9; background:#fff; padding:10px;'} border-radius:12px; min-width:0;">
+        ${badgeTile}
+        ${isBest ? '<div style="position:absolute; top:-12px; right:10px; background:#e8442a; color:#fff; font-size:18px; font-weight:900; letter-spacing:1px; padding:2px 12px; border-radius:14px; line-height:1.3;">★ BEST</div>' : ''}
+        <div style="position:relative; width:76px; height:76px; flex:none; border-radius:10px; background:${dot || '#eceae4'}; border:1px solid rgba(0,0,0,.18); display:flex; align-items:center; justify-content:center; color:#b5b09f; font-size:30px; font-weight:700;">${dot ? '' : esc(String(c.color).slice(0, 1))}${badgeSq}</div>
+        <div style="flex:1; min-width:0;">
+          <div style="font-size:23px; font-weight:800; line-height:1.2; word-break:keep-all; overflow-wrap:anywhere;">${esc(c.color)}</div>
+          ${body}
+        </div>
+      </div>`;
+  };
   const biz = esc(settings.bizName || '');
-  const sub = cfg.mode === 'new' ? `${todayStr()} 기준 · 새로 들어온 원단` : `기준일 ${todayStr()}${cfg.catLabel ? ' · ' + esc(cfg.catLabel) : ''}`;
-  const hdrFirst = cfg.mode === 'new'
-    ? `<div style="background:#1f2a44; color:#fff; padding:26px 28px 20px; margin-bottom:16px;"><div style="font-size:12px; letter-spacing:3px; opacity:.75;">${biz}</div><div style="font-size:30px; font-weight:800; margin:6px 0 4px;">${esc(cfg.title)}</div><div style="font-size:14px; opacity:.9;">${sub}</div></div>`
-    : `<div style="padding:26px 28px 0;"><div style="display:flex; justify-content:space-between; align-items:flex-end; border-bottom:2px solid #222; padding-bottom:10px; margin-bottom:14px;"><div><div style="font-size:24px; font-weight:700;">${esc(cfg.title)}</div><div style="font-size:12.5px; color:#666; margin-top:3px;">${sub}</div></div>${catalogBizBlockHtml()}</div></div>`;
-  const hdrNext = `<div style="padding:22px 28px 0;"><div style="display:flex; justify-content:space-between; align-items:baseline; border-bottom:2px solid #222; padding-bottom:6px; margin-bottom:12px;"><div style="font-size:16px; font-weight:700;">${esc(cfg.title)} <span style="font-size:12px; font-weight:400; color:#666;">(이어서)</span></div><div style="font-size:13px; color:#555;">${biz}</div></div></div>`;
-  const footer = (n, N) => `<div style="margin:auto 28px 0; padding:12px 0 ${N > 1 ? 4 : 18}px; border-top:1px solid #eee; font-size:12.5px; color:#666; display:flex; justify-content:space-between; gap:12px;"><span>${biz}${settings.bizAddress ? ' · ' + esc(settings.bizAddress) : ''}</span><span style="text-align:right;">${esc(cfg.msg)}</span></div>${N > 1 ? `<div style="text-align:center; font-size:11.5px; color:#aaa; padding-bottom:14px;">${n} / ${N}</div>` : ''}`;
-
-  // 실제 화면에서 높이를 재서 한 장에 몇 품목이 들어가는지 계산 (컬러가 많아 줄이 꺾이는 품목도 정확히)
-  let h1 = 110, h2 = 60, fH = 70, cardH = cards.map((_, i) => 46 + Math.ceil(items[i].colors.length / 3) * 34);
-  const host = document.createElement('div');
-  host.id = 'shotRoot';
-  host.style.cssText = `position:fixed; left:-10000px; top:0; width:${PAGE_W}px; visibility:hidden; font-family:${fontFam};`;
-  host.innerHTML = `<style>${SHOT_CSS}</style><div id="m1">${hdrFirst}</div><div id="m2">${hdrNext}</div><div id="mf">${footer(1, 2)}</div><div id="mc" style="padding:0 28px;">${cards.join('')}</div>`;
-  document.body.appendChild(host);
-  try {
-    const a = host.querySelector('#m1').getBoundingClientRect().height;
-    const b = host.querySelector('#m2').getBoundingClientRect().height;
-    const f = host.querySelector('#mf').getBoundingClientRect().height;
-    const cs = Array.from(host.querySelectorAll('#mc > .cat-card')).map(e => e.getBoundingClientRect().height + 10);
-    if (a > 0 && cs.length === cards.length) { h1 = a; h2 = b; fH = f; cardH = cs; }
-  } finally { host.remove(); }
-
-  const pages = [[]];
-  let used = 0;
-  const budgetOf = (pi) => PAGE_H - (pi === 0 ? h1 : h2) - fH - 18; // 여유 18px
-  cards.forEach((_, i) => {
-    const pi = pages.length - 1;
-    if (used + cardH[i] > budgetOf(pi) && pages[pi].length > 0) { pages.push([]); used = 0; }
-    pages[pages.length - 1].push(i);
-    used += cardH[i];
-  });
-  const N = pages.length;
-  return pages.map((idxs, pi) => `<div class="stm-img-page" style="width:${PAGE_W}px; min-height:${PAGE_H}px; box-sizing:border-box; display:flex; flex-direction:column; background:#fff; color:#222; font-family:${fontFam};">
-    ${pi === 0 ? hdrFirst : hdrNext}
-    <div style="padding:0 28px;">${idxs.map(i => cards[i]).join('')}</div>
-    ${footer(pi + 1, N)}
-  </div>`).join('');
+  const isNew = cfg.mode === 'new';
+  const footer = `<div style="padding:12px 20px 16px; text-align:center; border-top:1px solid #eee; margin-top:10px;">
+        <div style="font-size:17px; color:#444; font-weight:600;">${esc(cfg.msg)}</div>
+        ${settings.bizAddress ? `<div style="font-size:14px; color:#999; margin-top:4px;">${biz ? biz + ' · ' : ''}${esc(settings.bizAddress)}</div>` : ''}
+      </div>`;
+  const headOf = (it, pageNo, total) => `<div style="${isNew ? 'background:#1f2a44; color:#fff;' : 'border-bottom:3px solid #1f2a44;'} padding:18px 20px 14px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; font-size:16px; ${isNew ? 'color:rgba(255,255,255,.8);' : 'color:#666;'}"><span>${isNew ? '<b style="letter-spacing:2px;">NEW</b> · ' : ''}${biz ? biz + ' · ' : ''}${esc(cfg.title)} · ${todayStr()}</span><span>${total > 1 ? `${pageNo} / ${total}` : ''}</span></div>
+        <div style="display:flex; align-items:center; gap:10px; margin-top:8px; flex-wrap:wrap;"><span style="font-size:36px; font-weight:800; line-height:1.15; word-break:keep-all; overflow-wrap:anywhere;">${esc(it.item)}</span></div>
+        ${it.mix ? `<div style="font-size:17px; margin-top:5px; ${isNew ? 'color:rgba(255,255,255,.75);' : 'color:#777;'}">혼용률 ${esc(it.mix)}</div>` : ''}
+      </div>`;
+  const pageWrap = (inner) => `<div class="stm-img-page" style="width:${CAT_IMG_W}px; box-sizing:border-box; background:#fff; color:#222; font-family:${fontFam};">${inner}${footer}</div>`;
+  // 한 품목 = 첫 장은 소재 확대샷(사진이 있으면 항상) + 다음 장부터 스왓치 순번 순서의 컬러 타일 (한 장에 최대 10타일이라 폰에서 스크롤 없이 보임)
+  const pagesOfItem = (it) => {
+    const itemSpring = itemHasSpring(it.item);
+    const photo = _catPhotos[catPhotoKey(it)] || '';
+    const sp = catSplitGroups(it);
+    const total = (photo ? 1 : 0) + sp.length;
+    const out = [];
+    let no = 1;
+    if (photo) {
+      out.push(pageWrap(`${headOf(it, no++, total)}
+        <img src="${photo}" style="display:block; width:100%; max-height:760px; object-fit:cover;">
+        <div style="padding:10px 20px 0; text-align:center; font-size:17px; color:#555; font-weight:600;">다음 장에서 컬러 · 스왓치 순번을 확인하세요</div>`));
+    }
+    for (const gs of sp) {
+      out.push(pageWrap(`${headOf(it, no++, total)}
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:22px 14px; padding:26px 22px 6px;">${gs.map(g => tileHtml(g, itemSpring)).join('')}</div>`));
+    }
+    return out;
+  };
+  return items.map(pagesOfItem).flat().join('');
 }
 
 let _catUniverse = [];
 let _catMode = 'stock';
 let _catSel = new Set(); // 신상 입고: 고른 컬러 "품목|컬러"
-let _catCats = new Set(); // 재고표: 고른 분류
+let _catItems = new Set(); // 재고표: 고른 품목 "분류|품목" (비어 있으면 전체)
 const CAT_DEFAULT_TITLE = { stock: '재고 현황', new: '신상 입고' };
 const CAT_DEFAULT_MSG = '주문·문의는 카톡으로 편하게 연락주세요';
 function catLoadPrefs() { try { return JSON.parse(localStorage.getItem('catalogPrefs') || '{}') || {}; } catch (e) { return {}; } }
-function catSavePrefs(cfg) { try { localStorage.setItem('catalogPrefs', JSON.stringify({ display: { stock: cfg.stockDisplay, new: cfg.newDisplay }, low: cfg.low, bestColor: cfg.bestColor, bestItem: cfg.bestItem, bestDays: cfg.bestDays, showSwatch: cfg.showSwatch, showMix: cfg.showMix, hideOut: cfg.hideOut, msg: cfg.msg })); } catch (e) { /* 저장 못 해도 상관없음 */ } }
+function catSavePrefs(cfg) { try { localStorage.setItem('catalogPrefs', JSON.stringify({ display: { stock: cfg.stockDisplay, new: cfg.newDisplay }, low: cfg.low, bestColor: cfg.bestColor, bestDays: cfg.bestDays, msg: cfg.msg })); } catch (e) { /* 저장 못 해도 상관없음 */ } }
 function openCatalogModal() {
   _catUniverse = catalogUniverse();
   const pr = catLoadPrefs();
@@ -6836,13 +6952,10 @@ function openCatalogModal() {
   _catPrefDisplay = { stock: disp.stock || 'status', new: disp.new || 'none' };
   document.getElementById('cat-low').value = pr.low != null ? pr.low : 50;
   document.getElementById('cat-bestcolor').checked = pr.bestColor !== false;
-  document.getElementById('cat-bestitem').checked = pr.bestItem !== false;
   document.getElementById('cat-bestdays').value = String(pr.bestDays || 90);
-  document.getElementById('cat-swatch').checked = pr.showSwatch !== false;
-  document.getElementById('cat-mix').checked = pr.showMix !== false;
-  document.getElementById('cat-hideout').checked = pr.hideOut !== false;
   document.getElementById('cat-msg').value = pr.msg || CAT_DEFAULT_MSG;
-  _catCats = new Set(_catUniverse.map(it => it.cat || '미분류'));
+  _catItems = new Set();
+  document.getElementById('cat-item-search').value = '';
   // 신상 기본 선택: 아직 안 들어온 중국발주 컬러 + 최근 7일 안에 입고된 컬러
   const cut = new Date(); cut.setDate(cut.getDate() - 7);
   const cutStr = `${String(cut.getFullYear()).slice(2)}.${String(cut.getMonth() + 1).padStart(2, '0')}.${String(cut.getDate()).padStart(2, '0')}`;
@@ -6873,9 +6986,25 @@ function catSetMode(m, init) {
 function catOnDisplayChange() { document.getElementById('cat-low-wrap').style.display = document.getElementById('cat-display').value === 'status' ? '' : 'none'; }
 function renderCatalogScope() {
   if (_catMode === 'stock') {
-    const cats = Array.from(new Set(_catUniverse.map(it => it.cat || '미분류'))).sort((a, b) => a.localeCompare(b, 'ko'));
-    document.getElementById('cat-cats').innerHTML = cats.map((c, i) => `<span onclick="catToggleCat(${i})" style="display:inline-block; margin:0 4px 4px 0; padding:5px 10px; border-radius:14px; font-size:12px; cursor:pointer; ${_catCats.has(c) ? 'background:#1a5f8a;color:#fff;' : 'background:#eee;color:#555;'}">${esc(c)}</span>`).join('');
-    window._catCatList = cats;
+    const keyOf = (it) => it.cat + '|' + it.item;
+    const selIdx = [];
+    _catUniverse.forEach((it, i) => { if (_catItems.has(keyOf(it))) selIdx.push(i); });
+    document.getElementById('cat-items-sel').innerHTML = selIdx.length === 0
+      ? '<span style="font-size:12px; color:var(--muted);">고른 품목이 없으면 전체가 나가요</span>'
+      : selIdx.map(i => `<span onclick="catRemoveItem(${i})" style="display:inline-block; margin:0 4px 4px 0; padding:5px 10px; border-radius:14px; font-size:13px; cursor:pointer; background:#1a5f8a; color:#fff;">${esc(_catUniverse[i].item)} ✕</span>`).join('');
+    const q = document.getElementById('cat-item-search').value.trim();
+    let html = '';
+    if (q) {
+      let n = 0;
+      _catUniverse.forEach((it, i) => {
+        if (n >= 8 || _catItems.has(keyOf(it)) || !matchesSearchWords(q, it.item, it.cat)) return;
+        n++;
+        const tot = it.colors.reduce((s2, c) => s2 + c.stock, 0);
+        html += `<div onclick="catAddItem(${i})" style="padding:8px 6px; border-bottom:1px solid #eee; cursor:pointer; font-size:14px; display:flex; justify-content:space-between;"><span><b>${esc(it.item)}</b> <span style="font-size:11px; color:var(--muted);">${esc(it.cat || '미분류')}</span></span><span style="font-size:12px; color:${tot > 0 ? '#2f6b46' : '#999'};">${tot > 0 ? '재고 ' + Math.round(tot).toLocaleString() + 'y' : '재고 없음'}</span></div>`;
+      });
+      if (!html) html = '<div style="font-size:12px; color:var(--muted); padding:8px 6px;">검색 결과가 없어요</div>';
+    }
+    document.getElementById('cat-item-results').innerHTML = html;
   } else {
     const q = document.getElementById('cat-search').value.trim();
     const matchQ = (it, c) => !q || matchesSearchWords(q, it.item, c ? c.color : '');
@@ -6892,7 +7021,8 @@ function renderCatalogScope() {
   }
   catUpdateCount();
 }
-function catToggleCat(i) { const c = window._catCatList[i]; if (_catCats.has(c)) _catCats.delete(c); else _catCats.add(c); renderCatalogScope(); }
+function catAddItem(i) { const it = _catUniverse[i]; _catItems.add(it.cat + '|' + it.item); document.getElementById('cat-item-search').value = ''; renderCatalogScope(); }
+function catRemoveItem(i) { const it = _catUniverse[i]; _catItems.delete(it.cat + '|' + it.item); renderCatalogScope(); }
 function catToggleColor(ii, ci) { const c = _catUniverse[ii].colors[ci]; const k = c.item + '|' + c.color; if (_catSel.has(k)) _catSel.delete(k); else _catSel.add(k); renderCatalogScope(); }
 function catToggleItem(ii) { const it = _catUniverse[ii]; const keys = it.colors.map(c => c.item + '|' + c.color); const allOn = keys.every(k => _catSel.has(k)); keys.forEach(k => allOn ? _catSel.delete(k) : _catSel.add(k)); renderCatalogScope(); }
 function catQuick(kind) {
@@ -6915,36 +7045,37 @@ function readCatalogCfg() {
     title: document.getElementById('cat-title').value.trim() || CAT_DEFAULT_TITLE[_catMode],
     display, low: low > 0 ? low : 50,
     bestColor: document.getElementById('cat-bestcolor').checked,
-    bestItem: document.getElementById('cat-bestitem').checked,
     bestDays: parseInt(document.getElementById('cat-bestdays').value) || 90,
-    showSwatch: document.getElementById('cat-swatch').checked,
-    showMix: document.getElementById('cat-mix').checked,
-    hideOut: document.getElementById('cat-hideout').checked,
+    hideOut: true, // 재고표는 품절 컬러를 항상 숨김
     msg: document.getElementById('cat-msg').value.trim() || CAT_DEFAULT_MSG,
     sel: _catSel,
-    cats: null, catLabel: ''
+    itemsSel: _catMode === 'stock' ? _catItems : null
   };
-  const allCats = new Set(_catUniverse.map(it => it.cat || '미분류'));
-  if (_catMode === 'stock' && _catCats.size < allCats.size) { cfg.cats = _catCats; cfg.catLabel = Array.from(_catCats).join(', '); }
   cfg.stockDisplay = _catMode === 'stock' ? display : _catPrefDisplay.stock;
   cfg.newDisplay = _catMode === 'new' ? display : _catPrefDisplay.new;
   return cfg;
 }
+function catImageCount(items) { return items.reduce((n, it) => n + catSplitGroups(it).length + (_catPhotos[catPhotoKey(it)] ? 1 : 0), 0); }
 function catUpdateCount() {
   const cfg = readCatalogCfg();
   const items = selectCatalogItems(cfg, _catUniverse);
   const colors = items.reduce((s, it) => s + it.colors.length, 0);
-  document.getElementById('cat-count').textContent = items.length === 0 ? (cfg.mode === 'new' ? '신상으로 보낼 컬러를 골라주세요' : '보여줄 재고가 없어요') : `이미지에 들어갈 것: ${items.length}품목 · ${colors}컬러`;
+  document.getElementById('cat-count').textContent = items.length === 0 ? (cfg.mode === 'new' ? '신상으로 보낼 컬러를 골라주세요' : '보여줄 재고가 없어요') : `이미지 ${catImageCount(items)}장 (품목 ${items.length}개) · ${colors}컬러${cfg.mode === 'stock' && _catItems.size === 0 ? ' · 전체 품목' : ''}`;
+  catRenderPhotos();
 }
 async function generateCatalog(mode) {
   const cfg = readCatalogCfg();
   const items = selectCatalogItems(cfg, _catUniverse);
   if (items.length === 0) { showToast(cfg.mode === 'new' ? '신상으로 보낼 컬러를 하나 이상 골라주세요' : '보여줄 재고가 없어요'); return; }
-  catSavePrefs(cfg);
+  if (items.length > 30) { showToast(`품목이 ${items.length}개예요 - 카톡은 한 번에 사진 30장까지라서 품목을 골라주세요`); return; }
   showToast('이미지를 만드는 중이에요...');
+  await catPhotoLoad(items.map(catPhotoKey));
+  const nImg = catImageCount(items);
+  if (nImg > 30) { showToast(`이미지가 ${nImg}장이에요 - 카톡은 한 번에 사진 30장까지라서 품목을 줄여주세요`); return; }
+  catSavePrefs(cfg);
   const kind = cfg.mode === 'new' ? '신상입고' : '재고표';
   let files;
-  try { files = await renderStatementImages(await buildCatalogPages(cfg, items), '', kind); }
+  try { files = await renderStatementImages(await buildCatalogPages(cfg, items), '', kind, CAT_IMG_W); }
   catch (e) { showToast('이미지를 만들지 못했어요 (인터넷 연결을 확인해주세요)'); return; }
   openShotModal(files, '', kind);
   if (mode === 'share') await shareShotFiles();
