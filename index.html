@@ -1264,7 +1264,7 @@
 const PASSWORD = "3059";
 const ADMIN_PASSWORD = "9503"; // 매출/미수금 탭 전용 - 필요하면 이 값만 바꿔서 변경 가능
 const DATA_VERSION = "2026-08-03-v4"; // 재고/이월장부 씨앗 데이터를 바꿀 때마다 이 값을 새로 바꿔주세요
-const APP_CODE_VERSION = "2026-11-19-u"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
+const APP_CODE_VERSION = "2026-11-20-a"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
 const SCHEMA_STAMP = 2; // 서버 저장규칙이 확인하는 "최신 앱 도장" - 절대 자주 바꾸지 않음(이 값을 아는 코드만 저장 가능하게 서버에서 막을 때 씀)
 const CONFIRMED_EMPTY = '__CONFIRMED_EMPTY__'; // "서버가 확실하게 문서가 없다고 확인해줬다"는 걸 표시하는 특수값
                                                  // (한번도 확인 안 한 null과 구분해서, 그 사이 다른 사람이 첫 데이터를 만들었으면 충돌로 감지하기 위함)
@@ -6419,7 +6419,7 @@ function buildStatementHTMLInner(customerName, startDate, endDate, entryIdFilter
   `;
 
   const renderCopy = (copyLabel, rowsHtmlForPage, fit) => `
-    <div class="${compact ? 'compact-statement' : ''}" style="padding:${sizes.pad}; font-family:-apple-system,'Malgun Gothic',sans-serif; box-sizing:border-box; ${fit ? '' : 'height:50%; overflow:hidden;'} display:flex; flex-direction:column;">
+    <div class="${compact ? 'compact-statement' : ''}" style="padding:${sizes.pad}; font-family:-apple-system,'Malgun Gothic',sans-serif; box-sizing:border-box; ${fit ? 'min-height:1123px;' : 'height:50%; overflow:hidden;'} display:flex; flex-direction:column;">
       <div style="flex:none;">
         <div style="display:flex; justify-content:space-between; align-items:baseline; margin-bottom:${sizes.titleGap};">
           <h2 style="margin:0; font-size:${sizes.titleSize}; letter-spacing:2px; color:#1a5f8a;">거 래 명 세 표</h2>
@@ -6479,7 +6479,7 @@ function buildStatementHTMLInner(customerName, startDate, endDate, entryIdFilter
 
   return pages.map((pageRows, pageIdx) => {
     const rowsHtmlForPage = buildRowsHtml(pageRows);
-    if (options.shareImage) return `<div class="stm-img-page" style="width:794px;background:#fff;">${renderCopy('공급받는자용', rowsHtmlForPage, true)}</div>`; // 이미지용: 한 장에 한 부만, 높이는 내용만큼
+    if (options.shareImage) return `<div class="stm-img-page" style="width:794px;background:#fff;">${renderCopy(pages.length > 1 ? `공급받는자용 · ${pageIdx + 1}/${pages.length}` : '공급받는자용', rowsHtmlForPage, true)}</div>`; // 이미지용: 한 장에 한 부만, 높이는 내용만큼
     const pageHtml = `
     <div style="width:100%; height:285mm; display:flex; flex-direction:column;">
       ${renderCopy('공급자 보관용', rowsHtmlForPage)}
@@ -6504,9 +6504,16 @@ function loadHtml2Canvas() { // 처음 쓸 때만 불러옴 (평소 앱 속도�
   });
   return _h2cPromise;
 }
-const SHOT_CSS = '#shotRoot table{width:100%;border-collapse:collapse}#shotRoot th,#shotRoot td{border:1px solid #ccc;padding:6px 8px;font-size:13px;text-align:left}#shotRoot th{color:#1a5f8a}'
+const SHOT_CSS = '#shotRoot .ledger-print td.dhdr{padding:1px 8px !important;font-size:11.5px !important;line-height:1.25}'
+  + '#shotRoot table{width:100%;border-collapse:collapse}#shotRoot th,#shotRoot td{border:1px solid #ccc;padding:6px 8px;font-size:13px;text-align:left}#shotRoot th{color:#1a5f8a}'
   + '#shotRoot .stm-img-page th,#shotRoot .stm-img-page td{font-size:inherit}'
   + '#shotRoot .ledger-print{padding:22px 18px !important}#shotRoot .ledger-print th,#shotRoot .ledger-print td{padding:6px 8px !important;font-size:14px !important;border-color:#999 !important}#shotRoot .ledger-print th{background:#eee !important;color:#000 !important}';
+// 종이 인쇄용: 이미지와 똑같은 표 모양을 내려고, 앱 기본 인쇄 표 규칙(작은 글씨/좁은 칸)보다 우선하는 규칙
+const PRINT_LEDGER_CSS = SHOT_CSS.replace(/#shotRoot/g, '#printArea')
+  + '#printArea .stm-img-page.ledger-print th,#printArea .stm-img-page.ledger-print td{padding:6px 8px !important;font-size:14px !important;border-color:#999 !important}'
+  + '#printArea .stm-img-page.ledger-print th{background:#eee !important;color:#000 !important}'
+  + '#printArea .stm-img-page.ledger-print td.dhdr{padding:1px 8px !important;font-size:11.5px !important}'
+  + '#printArea .stm-img-page{-webkit-print-color-adjust:exact;print-color-adjust:exact}';
 let _shotFiles = [], _shotUrls = [], _shotCustomer = '';
 async function renderStatementImages(html, customer) {
   const h2c = await loadHtml2Canvas();
@@ -6548,12 +6555,15 @@ function closeShotModal() {
 }
 function saveShotFiles() {
   if (_shotFiles.length === 0) return;
-  _shotFiles.forEach((f, i) => setTimeout(() => {
+  const files = _shotFiles.slice(); // 저장 중에 창을 닫아도 끝까지 저장되게, 자기 몫의 파일/주소를 따로 들고 있음
+  files.forEach((f, i) => setTimeout(() => {
+    const url = URL.createObjectURL(f);
     const a = document.createElement('a');
-    a.href = _shotUrls[i]; a.download = f.name;
+    a.href = url; a.download = f.name;
     document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 15000);
   }, i * 350));
-  showToast(`이미지 ${_shotFiles.length}장을 저장했어요 (폰은 다운로드/사진첩 확인)`);
+  showToast(`이미지 ${files.length}장을 저장했어요 (폰은 다운로드/사진첩 확인)`);
 }
 async function shareShotFiles() {
   if (_shotFiles.length === 0) return;
@@ -7528,6 +7538,136 @@ async function printCurrentLedgerStatement() {
   });
   await printStatementForEntries(customer, entryIds, paymentKeys, document.getElementById('ledger-print-add-tax').checked ? new Set(entryIds) : null);
 }
+// 인쇄/이미지 공통: 거래명세서 줄의 "내용"(품목+색만) / 수량(전체 야드) / 단가 표시 - 개별 탕 야드수는 넣지 않음 (비고에 수기로 적으니)
+function ledgerDescText(ev) { return ev.desc; }
+function ledgerPriceText(ev) { return ev.unitPrice ? ev.unitPrice.toLocaleString() : (ev.priceMissing ? '미입력' : ''); }
+// 이미지로 보낼 때의 원장(거래명세서): 내용이 길면 같은 크기(A4 비율 794x1123)의 "장"으로 나눠서, 카톡에 여러 장이 가지런히 오게 함
+async function buildLedgerImagePages(c, opts) {
+  opts = opts || {};
+  const PAGE_W = 794, PAGE_H = 1123;
+  const rows = c.rows;
+  const fontFam = "-apple-system,'Malgun Gothic',sans-serif";
+  const cell = 'border-bottom:1px solid #eee; padding:5px 6px;';
+  const thead = `<thead><tr style="background:#f3f1ea;">
+    <th style="width:7%; border-bottom:1px solid #999; padding:5px 6px; text-align:left;">구분</th>
+    <th style="width:24%; border-bottom:1px solid #999; padding:5px 6px; text-align:left;">내용</th>
+    <th style="width:23%; border-bottom:1px solid #999; padding:5px 6px; text-align:left;">비고</th>
+    <th style="width:9%; border-bottom:1px solid #999; padding:5px 6px; text-align:right;">수량</th>
+    <th style="width:9%; border-bottom:1px solid #999; padding:5px 6px; text-align:right;">단가</th>
+    <th style="width:14%; border-bottom:1px solid #999; padding:5px 6px; text-align:right;">금액</th>
+    <th style="width:14%; border-bottom:1px solid #999; padding:5px 6px; text-align:right;">잔액</th>
+  </tr></thead>`;
+  const tableOpen = '<table style="width:100%; border-collapse:collapse; table-layout:fixed; border:1px solid #ccc;">';
+  const dateHdr = (d) => `<tr style="background:#f3f1ea;"><td class="dhdr" colspan="7" style="padding:2px 6px; font-weight:700; font-size:11px;">${esc(d)}</td></tr>`;
+  const trOf = (ev, idx) => {
+    const isLastOfDay = idx === rows.length - 1 || rows[idx + 1].date !== ev.date;
+    const color = ev.type === '입금' ? 'color:#1a56db;' : (ev.type === '불량' || ev.type === '반품' || ev.type === '공제') ? 'color:#c0392b;' : '';
+    return `<tr style="${color}">
+      <td style="${cell}">${esc(ev.type)}</td>
+      <td style="${cell}">${esc(ledgerDescText(ev))}</td>
+      <td style="${cell} font-size:0.85em; color:#666;">${esc(ev.note || '')}</td>
+      <td style="${cell} text-align:right; white-space:nowrap;">${esc(ev.qtyText || '')}</td>
+      <td style="${cell} text-align:right; white-space:nowrap;${ev.priceMissing ? ' font-size:0.85em; color:#999;' : ''}">${esc(ledgerPriceText(ev))}</td>
+      <td style="${cell} text-align:right;">${ev.amount < 0 ? '-' : ''}${Math.abs(ev.amount).toLocaleString()}</td>
+      <td style="${cell} text-align:right;${isLastOfDay ? ' background:#fff4bf;' : ''}">${ev._runningSnapshot.toLocaleString()}</td>
+    </tr>`;
+  };
+  const trs = rows.map(trOf);
+
+  // 실제 화면에서 줄 높이를 재서(글이 길어 두 줄이 되는 줄도 정확히) 한 장에 몇 줄 들어가는지 계산
+  let rowH = trs.map(() => 34), hdrH = 28;
+  const host = document.createElement('div');
+  host.id = 'shotRoot';
+  host.style.cssText = `position:fixed;left:-10000px;top:0;width:${PAGE_W}px;visibility:hidden;font-family:${fontFam};`;
+  host.innerHTML = `<style>${SHOT_CSS}</style><div class="ledger-print" style="width:${PAGE_W}px;box-sizing:border-box;">${tableOpen}${thead}<tbody>${dateHdr('x')}${trs.join('')}</tbody></table></div>`;
+  document.body.appendChild(host);
+  try {
+    const els = host.querySelectorAll('tbody tr');
+    const h0 = els[0] ? els[0].getBoundingClientRect().height : 0;
+    if (h0 > 0 && els.length === trs.length + 1) {
+      hdrH = h0;
+      rowH = Array.from(els).slice(1).map(e => e.getBoundingClientRect().height);
+    }
+  } finally { host.remove(); }
+
+  // 한 장의 본문(줄들) 높이 한도 - 머리글/바닥글/여백을 뺀 값 (여유 24px 포함)
+  const BUDGET_FIRST = 870, BUDGET_NEXT = 915, SUMMARY_H = 150, CARRY_H = 34;
+  const pages = [[]];
+  let used = CARRY_H, lastDate = null;
+  const budgetOf = (pi) => pi === 0 ? BUDGET_FIRST : BUDGET_NEXT;
+  rows.forEach((ev, i) => {
+    const pi = pages.length - 1;
+    const needHdr = (ev.date !== lastDate) || pages[pi].length === 0;
+    const need = rowH[i] + (needHdr ? hdrH : 0);
+    if (used + need > budgetOf(pi) && pages[pi].length > 0) {
+      pages.push([]); used = 0; lastDate = null;
+      const need2 = rowH[i] + hdrH;
+      pages[pages.length - 1].push(i); used += need2; lastDate = ev.date;
+      return;
+    }
+    pages[pi].push(i); used += need; lastDate = ev.date;
+  });
+  // 마지막 장에 합계표까지 안 들어가면: 마지막 몇 줄을 새 장으로 넘겨서, 합계표가 줄 몇 개와 함께 나오게 함
+  const lastIdx = () => pages.length - 1;
+  const usedOf = (pi) => {
+    let u = pi === 0 ? CARRY_H : 0, ld = null;
+    pages[pi].forEach(i => { if (rows[i].date !== ld) u += hdrH; u += rowH[i]; ld = rows[i].date; });
+    return u;
+  };
+  if (usedOf(lastIdx()) + SUMMARY_H > budgetOf(lastIdx())) {
+    const cur = pages[lastIdx()];
+    if (cur.length >= 2) {
+      const moveN = Math.min(3, cur.length - 0 > 3 ? 3 : Math.ceil(cur.length / 2));
+      const moved = cur.splice(cur.length - moveN, moveN);
+      pages.push(moved);
+    } else pages.push([]);
+  }
+
+  const N = pages.length;
+  const bizBlock = c.bizBlock;
+  const pageHtml = (idxs, pi) => {
+    const isFirst = pi === 0, isLast = pi === N - 1;
+    const head = isFirst ? `
+      <div style="display:flex; justify-content:space-between; align-items:flex-start; border-bottom:2px solid #222; padding-bottom:10px; margin-bottom:12px;">
+        <div>
+          <div style="font-size:22px; font-weight:700;">거래명세서</div>
+          <div style="font-size:12px; color:#666; margin-top:3px;">기간 ${esc(c.startDate || '')} ~ ${esc(c.endDate || '')} · 발행일 ${todayStr()}</div>
+        </div>
+        ${bizBlock}
+      </div>
+      <div style="font-size:14px; font-weight:600; margin-bottom:6px;">공급받는자: ${esc(c.customer)}</div>`
+      : `
+      <div style="display:flex; justify-content:space-between; align-items:baseline; border-bottom:2px solid #222; padding-bottom:6px; margin-bottom:10px;">
+        <div style="font-size:16px; font-weight:700;">거래명세서 <span style="font-size:12px; font-weight:400; color:#666;">(이어서)</span></div>
+        <div style="font-size:13px; font-weight:600;">${esc(c.customer)}</div>
+      </div>`;
+    let ld = null, body = '';
+    idxs.forEach(i => {
+      if (rows[i].date !== ld) body += dateHdr(rows[i].date);
+      body += trs[i]; ld = rows[i].date;
+    });
+    const carry = isFirst ? `<tr style="background:#fafafa;"><td colspan="6" style="${cell}"><b>이월 잔액</b></td><td style="${cell} text-align:right;"><b>${c.openingBalance.toLocaleString()}</b></td></tr>` : '';
+    const summary = isLast ? `
+      <div style="display:flex; justify-content:flex-end; margin-top:12px;">
+        <table style="width:auto; font-size:13px;">
+          <tr><td style="color:#666; padding:2px 14px 2px 0;">기간 중 매출 합계</td><td style="text-align:right; padding:2px 0;">${c.salesSum.toLocaleString()}원</td></tr>
+          ${c.deductSum > 0 ? `<tr><td style="color:#666; padding:2px 14px 2px 0;">반품·불량 차감</td><td style="text-align:right; padding:2px 0;">-${c.deductSum.toLocaleString()}원</td></tr>` : ''}
+          <tr><td style="color:#666; padding:2px 14px 2px 0;">기간 중 입금 합계</td><td style="text-align:right; padding:2px 0;">${c.paySum.toLocaleString()}원</td></tr>
+          <tr><td style="font-weight:700; padding:4px 14px 2px 0; border-top:1px solid #ccc;">최종 잔액</td><td style="text-align:right; font-weight:700; padding:4px 0 2px; border-top:1px solid #ccc;">${c.finalBalance.toLocaleString()}원</td></tr>
+        </table>
+      </div>` : '';
+    const foot = `<div style="margin-top:auto; padding-top:10px; text-align:center; font-size:12px; color:#999;">${isLast ? '항상 좋은 거래 감사드립니다.<br>' : ''}${N > 1 ? `${pi + 1} / ${N}` : ''}</div>`;
+    const printStyle = opts.forPrint ? ` zoom:0.94; ${pi < N - 1 ? 'page-break-after:always; break-after:page;' : ''}` : ''; // 종이: A4 인쇄 가능 영역에 맞춰 살짝 줄여서 한 장이 정확히 한 페이지가 되게
+    return `<div class="stm-img-page ledger-print" style="width:${PAGE_W}px; min-height:${PAGE_H}px;${printStyle} box-sizing:border-box; display:flex; flex-direction:column; background:#fff; font-family:${fontFam};">
+      ${head}
+      ${tableOpen}${thead}<tbody>${carry}${body}</tbody></table>
+      ${summary}
+      ${foot}
+    </div>`;
+  };
+  const out = pages.map(pageHtml).join('');
+  return opts.forPrint ? `<style>${PRINT_LEDGER_CSS}</style>${out}` : out;
+}
 async function printLedgerPeriod(mode) {
   const customer = (ledgerCustomer || document.getElementById('ledger-customer').value).trim();
   const startDate = fromDateInputValue(document.getElementById('ledger-start').value);
@@ -7579,22 +7719,6 @@ async function printLedgerPeriod(mode) {
   }
   if (rowsInRange.length === 0) { showToast('선택된 항목이 없어요 - 표에서 인쇄할 항목을 체크해주세요'); return; }
 
-  let lastDate = null;
-  const rowsHtml = rowsInRange.map(ev => {
-    const running = ev._runningSnapshot;
-    const dateHeader = (ev.date !== lastDate) ? `<tr style="background:#f3f1ea;"><td colspan="6" style="padding:4px 6px; font-weight:700; font-size:12px;">${esc(ev.date)}</td></tr>` : '';
-    lastDate = ev.date;
-    const color = ev.type === '입금' ? 'color:#1a56db;' : (ev.type === '불량' || ev.type === '반품' || ev.type === '공제') ? 'color:#c0392b;' : '';
-    return `${dateHeader}<tr style="${color}">
-      <td style="border-bottom:1px solid #eee; padding:5px 6px;">${esc(ev.date)}</td>
-      <td style="border-bottom:1px solid #eee; padding:5px 6px;">${esc(ev.type)}</td>
-      <td style="border-bottom:1px solid #eee; padding:5px 6px;">${esc(ev.desc)}${ev.detail ? ` (${esc(ev.detail)})` : ''}</td>
-      <td style="border-bottom:1px solid #eee; padding:5px 6px; font-size:0.85em; color:#666;">${esc(ev.note || '')}</td>
-      <td style="border-bottom:1px solid #eee; padding:5px 6px; text-align:right;">${ev.amount < 0 ? '-' : ''}${Math.abs(ev.amount).toLocaleString()}</td>
-      <td style="border-bottom:1px solid #eee; padding:5px 6px; text-align:right;">${running.toLocaleString()}</td>
-    </tr>`;
-  }).join('');
-
   // 기간 중 매출/입금/반품·불량 합계 (화면에 인쇄되는 줄 기준으로 계산 - 체크 해제해서 뺀 줄은 합계에도 안 들어감)
   let salesSum = 0, paySum = 0, deductSum = 0;
   for (const ev of rowsInRange) {
@@ -7612,44 +7736,9 @@ async function printLedgerPeriod(mode) {
   if (bizLine3) bizLines.push(`<div>${esc(bizLine3)}</div>`);
   const bizBlock = bizLines.length > 0 ? `<div style="text-align:right; font-size:11px; line-height:1.5; color:#333;">${bizLines.join('')}</div>` : '';
 
-  const html = `
-    <div class="ledger-print" style="padding:14mm 12mm; font-family:-apple-system,'Malgun Gothic',sans-serif;">
-      <div style="display:flex; justify-content:space-between; align-items:flex-start; border-bottom:2px solid #222; padding-bottom:10px; margin-bottom:12px;">
-        <div>
-          <div style="font-size:18px; font-weight:700;">거래명세서</div>
-          <div style="font-size:11px; color:#666; margin-top:2px;">기간 ${esc(startDate || '')} ~ ${esc(endDate || '')} · 발행일 ${todayStr()}</div>
-        </div>
-        ${bizBlock}
-      </div>
-      <div style="font-size:13px; font-weight:600; margin-bottom:6px;">공급받는자: ${esc(customer)}</div>
-      <table style="width:100%; border-collapse:collapse; table-layout:fixed; border:1px solid #ccc;">
-        <thead>
-          <tr style="background:#f3f1ea;">
-            <th style="width:9%; border-bottom:1px solid #999; padding:5px 6px; text-align:left;">날짜</th>
-            <th style="width:8%; border-bottom:1px solid #999; padding:5px 6px; text-align:left;">구분</th>
-            <th style="width:28%; border-bottom:1px solid #999; padding:5px 6px; text-align:left;">내용</th>
-            <th style="width:25%; border-bottom:1px solid #999; padding:5px 6px; text-align:left;">비고</th>
-            <th style="width:15%; border-bottom:1px solid #999; padding:5px 6px; text-align:right;">금액</th>
-            <th style="width:15%; border-bottom:1px solid #999; padding:5px 6px; text-align:right;">잔액</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr style="background:#fafafa;"><td colspan="5" style="border-bottom:1px solid #eee; padding:5px 6px;"><b>이월 잔액</b></td><td style="border-bottom:1px solid #eee; padding:5px 6px; text-align:right;"><b>${openingBalance.toLocaleString()}</b></td></tr>
-          ${rowsHtml}
-        </tbody>
-      </table>
-      <div style="display:flex; justify-content:flex-end; margin-top:10px;">
-        <table style="font-size:12px;">
-          <tr><td style="color:#666; padding:2px 14px 2px 0;">기간 중 매출 합계</td><td style="text-align:right; padding:2px 0;">${salesSum.toLocaleString()}원</td></tr>
-          ${deductSum > 0 ? `<tr><td style="color:#666; padding:2px 14px 2px 0;">반품·불량 차감</td><td style="text-align:right; padding:2px 0;">-${deductSum.toLocaleString()}원</td></tr>` : ''}
-          <tr><td style="color:#666; padding:2px 14px 2px 0;">기간 중 입금 합계</td><td style="text-align:right; padding:2px 0;">${paySum.toLocaleString()}원</td></tr>
-          <tr><td style="font-weight:700; padding:4px 14px 2px 0; border-top:1px solid #ccc;">최종 잔액</td><td style="text-align:right; font-weight:700; padding:4px 0 2px; border-top:1px solid #ccc;">${running.toLocaleString()}원</td></tr>
-        </table>
-      </div>
-      <div style="text-align:center; font-size:11px; color:#999; margin-top:16px;">항상 좋은 거래 감사드립니다.</div>
-    </div>
-  `;
-  await deliverStatementHtml(html, mode, customer);
+  // 인쇄 / 카톡 공유 / 이미지 저장 모두 똑같은 모양(같은 크기의 장으로 나뉜 내역서)을 씀
+  const pagesHtml = await buildLedgerImagePages({ customer, startDate, endDate, openingBalance, rows: rowsInRange, salesSum, paySum, deductSum, finalBalance: running, bizBlock }, { forPrint: !mode });
+  await deliverStatementHtml(pagesHtml, mode, customer);
 }
 function buildCustomerLedgerEvents(t_c) {
   // 이 거래처의 모든 사건(매출/반품·불량/입금)을 날짜순으로 하나의 흐름으로 만듦 (화면표시/인쇄 둘 다 이 함수 하나만 씀)
@@ -7659,7 +7748,7 @@ function buildCustomerLedgerEvents(t_c) {
     if (e.isSample) continue; // 샘플로 준 건(매출 0원)은 명세서랑 똑같이 원장에도 안 보이게 함
     if (e.isReturn || e.isDefect) {
       if (e.deductAmount != null) {
-        events.push({ id: e.id, date: e.date, type: e.isDefect ? '불량' : '반품', desc: `${e.item} ${e.color || ''}`, detail: `${Math.abs(e.amount)}${e.unit || 'y'}${e.unitPrice ? ` × ${e.unitPrice.toLocaleString()}원` : ''}${e.deductTax > 0 ? ` (세액 ${e.deductTax.toLocaleString()}원 포함)` : ''}`, amount: -e.deductAmount, note: e.note || e.defectNote || '' });
+        events.push({ id: e.id, date: e.date, type: e.isDefect ? '불량' : '반품', desc: `${e.item} ${e.color || ''}`, detail: `${Math.abs(e.amount)}${e.unit || 'y'}${e.unitPrice ? ` × ${e.unitPrice.toLocaleString()}원` : ''}${e.deductTax > 0 ? ` (세액 ${e.deductTax.toLocaleString()}원 포함)` : ''}`, amount: -e.deductAmount, note: e.note || e.defectNote || '', qtyText: `${Math.abs(e.amount)}${e.unit || 'y'}`, unitPrice: e.unitPrice || null });
       }
       continue;
     }
@@ -7671,7 +7760,8 @@ function buildCustomerLedgerEvents(t_c) {
       const detail = (isCarry || e.isFee) ? '' : `${qtyLabel}${breakdownText}${e.unitPrice ? ` × ${e.unitPrice.toLocaleString()}원` : ' (단가 미입력)'}`;
       // 원래 매출액은 절대 줄이지 않고 그대로 한 줄로 보여주고, 공제가 있으면 "공제" 라는 별도의 마이너스 줄을 따로 추가함
       // (예전엔 매출액에서 공제를 미리 뺀 값 하나만 보여줘서, 마치 원래 매출액 자체가 줄어든 것처럼 헷갈리게 보였음)
-      events.push({ id: e.id, date: e.date, type: '매출', desc: isCarry ? '이월 미수금' : (e.isFee ? `추가금${e.note ? ` - ${e.note}` : ''}` : `${e.item} ${e.color || ''}`), detail, amount: e.saleAmount, isCarry, note: isCarry || e.isFee ? '' : (e.note || '') });
+      events.push({ id: e.id, date: e.date, type: '매출', desc: isCarry ? '이월 미수금' : (e.isFee ? `추가금${e.note ? ` - ${e.note}` : ''}` : `${e.item} ${e.color || ''}`), detail, amount: e.saleAmount, isCarry, note: isCarry || e.isFee ? '' : (e.note || ''),
+        qtyText: (isCarry || e.isFee) ? '' : `${isJeolUnit ? (e.yardsShipped || '') : (e.yardsShipped || e.amount)}${(isJeolUnit && !e.yardsShipped) ? '' : (isJeolUnit ? 'y' : (e.unit || 'y'))}`, jeolCount: (isJeolUnit && !isCarry && !e.isFee) ? e.amount : null, unitPrice: (isCarry || e.isFee) ? null : (e.unitPrice || null), priceMissing: !(isCarry || e.isFee) && !e.unitPrice });
       if (e.discount > 0) {
         events.push({ id: e.id, date: e.discountDate || e.date, type: '공제', desc: '공제처리', detail: '', amount: -e.discount, note: e.discountReason || '' });
       }
