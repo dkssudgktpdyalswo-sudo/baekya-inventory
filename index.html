@@ -80,6 +80,12 @@
     color: white; font-weight: 800; font-size: 14px; display: flex; align-items: center; justify-content: center;
   }
   .swatch-num-empty { background: #e2ddd4; color: var(--muted); font-size: 12px; }
+  .swatch-num-fall { background: #8a5a3b; } /* F/W 스왓치 번호 = 밤색 (S/S는 기본 파랑) */
+  .swatch-nums { display: flex; gap: 4px; flex: none; }
+  .season-tog { display: flex; gap: 6px; padding: 0 14px 10px; align-items: center; flex-wrap: wrap; }
+  .season-tog .chip { cursor: pointer; }
+  .season-legend { font-size: 11px; color: var(--muted); }
+  .season-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; vertical-align: -1px; margin: 0 3px 0 6px; }
   .group-head .info { flex: 1; }
   .group-head .name { font-weight: 700; font-size: 15px; }
   .group-head .sub { font-size: 12px; color: var(--muted); margin-top: 2px; }
@@ -129,6 +135,7 @@
   .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.4); display: none; align-items: flex-end; justify-content: center; z-index: 30; }
   .modal-overlay.open { display: flex; }
   #orderReceiveModal.open { z-index: 40; }
+  #askInputModal.open { z-index: 60; } /* 입력창은 다른 화면 위에서 열려도 항상 최상단 */
   #similarCustomerModal.open { z-index: 50; } /* 다른 화면(매출수정 등) 위에 열려있어도, 이 확인창이 가려지지 않고 항상 최상단에 뜨게 함 */
   .modal { background: white; width: 100%; max-width: 420px; border-radius: 16px 16px 0 0; padding: 20px; max-height: 85vh; overflow-y: auto; min-height: 0; }
   .modal h3 { margin: 0 0 14px; font-size: 16px; }
@@ -243,7 +250,8 @@
 
 <div id="savingBadge" style="display:none; position:fixed; top:0; left:0; right:0; background:#1a1a1a; color:#fff; padding:12px 16px; font-size:14px; font-weight:700; z-index:2147483647; text-align:center; align-items:center; justify-content:center; gap:8px; box-shadow:0 2px 10px rgba(0,0,0,0.3);"><span id="savingBadgeDot" style="display:inline-block; width:9px; height:9px; border-radius:50%; background:#fff; margin-right:6px;"></span>저장 중이에요 - 저장이 끝날 때까지 화면을 벗어나지 마세요</div>
 <div class="rate-bar" id="rateBar">
-  환율 <b id="rateDisplay">-</b>원/위안 · 야드환산 <b id="yardDisplay">-</b> · 운임 <b id="shipDisplay">-</b>원
+  <span id="rateInfo">환율 <b id="rateDisplay">-</b>원/위안 · 야드환산 <b id="yardDisplay">-</b> · 운임 <b id="shipDisplay">-</b>원</span>
+  <span id="rateUnset" style="display:none;color:var(--muted);">환율 미설정</span>
   <button onclick="openRateModal()">환율 수정</button>
 </div>
 
@@ -269,9 +277,9 @@
   <div id="salesTools" class="hidden" style="margin-top:6px;">
     <div style="display:flex; align-items:center; gap:6px; margin-bottom:6px;">
       <button onclick="shiftSalesDayFilter(-1)" style="border:none;background:#eee;color:#555;border-radius:7px;padding:7px 10px;font-size:12px;flex:none;">◀</button>
-      <input id="sales-day-picker" type="date" onchange="salesDayFilter=fromDateInputValue(this.value); salesDayFilterEnd=null; refreshSalesDayArchivedCache(); render();" style="flex:0 0 auto; width:150px; padding:6px 4px; border:1px solid var(--border); border-radius:7px; font-size:12px;">
+      <input id="sales-day-picker" type="date" onchange="salesDayFilter=fromDateInputValue(this.value); salesDayFilterEnd=null; refreshSalesDayArchivedCache(); render();" style="flex:1 1 0; min-width:0; padding:6px 4px; border:1px solid var(--border); border-radius:7px; font-size:12px;">
       <span style="font-size:12px; color:var(--muted); flex:none;">~</span>
-      <input id="sales-day-picker-end" type="date" onchange="salesDayFilterEnd=fromDateInputValue(this.value); refreshSalesDayArchivedCache(); render();" style="flex:0 0 auto; width:150px; padding:6px 4px; border:1px solid var(--border); border-radius:7px; font-size:12px;">
+      <input id="sales-day-picker-end" type="date" onchange="salesDayFilterEnd=fromDateInputValue(this.value); refreshSalesDayArchivedCache(); render();" style="flex:1 1 0; min-width:0; padding:6px 4px; border:1px solid var(--border); border-radius:7px; font-size:12px;">
       <button onclick="shiftSalesDayFilter(1)" style="border:none;background:#eee;color:#555;border-radius:7px;padding:7px 10px;font-size:12px;flex:none;">▶</button>
     </div>
     <div style="display:flex; gap:6px; flex-wrap:wrap;">
@@ -316,7 +324,7 @@
 <div class="modal-overlay" id="addModal">
   <div class="modal">
     <h3>새 롤 입고</h3>
-    <p style="font-size:12px;color:var(--muted);margin-top:-6px;">새 품목이면 자유롭게 적어주시고, 기존 품목이면 목록에서 골라주세요. 컬러는 여러 개를 한 번에 등록할 수 있어요.</p>
+    <p style="font-size:12px;color:var(--muted);margin-top:-6px;">컬러는 여러 개를 한 번에 등록할 수 있어요</p>
     <label>입고날짜</label>
     <input id="f-date" type="date">
     <label>품번</label>
@@ -544,13 +552,29 @@
     <p id="sw-desc" style="font-size:13px;color:var(--muted);margin-top:-6px;"></p>
     <label>컬러 이름</label>
     <input id="sw-color-name" placeholder="예: #3보카밤">
-    <label>스왓치 순번 (숫자만, 비우면 삭제)</label>
+    <label>F/W 스왓치 순번 (숫자만, 비우면 삭제)</label>
     <input id="sw-order" type="number" placeholder="예: 5">
+    <label>S/S 스왓치 순번 (S/S 책에 있는 컬러만, 비우면 삭제)</label>
+    <input id="sw-order-spring" type="number" placeholder="예: 3">
     <label>중국품번(컬러북 품번, 비우면 삭제)</label>
     <input id="sw-china" placeholder="예: 2040">
     <div class="modal-actions">
       <button class="btn-cancel" onclick="closeSwatchEditModal()">취소</button>
       <button class="btn-save" onclick="saveSwatchEdit()">저장</button>
+    </div>
+  </div>
+</div>
+
+<!-- 스왓치 일괄수정 모달: 한 품목의 컬러 이름 / F/W 번호 / S/S 번호 / 중국품번을 한 화면에서 같이 고침 -->
+<div class="modal-overlay" id="swatchBulkModal">
+  <div class="modal">
+    <h3 id="swb-title">스왓치 일괄수정</h3>
+    <div id="swb-list"></div>
+    <div id="swb-summary" style="margin-top:8px;font-size:12px;padding:8px 10px;border-radius:8px;background:#fffbe6;color:#7a5a00;line-height:1.4;display:none;"></div>
+    <div id="swb-errors" style="margin-top:8px;font-size:12px;padding:8px 10px;border-radius:8px;background:#fdecea;color:var(--danger);line-height:1.5;display:none;"></div>
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="closeSwatchBulkModal()">취소</button>
+      <button class="btn-save" id="swb-save" onclick="saveSwatchBulk()">저장</button>
     </div>
   </div>
 </div>
@@ -705,7 +729,6 @@
 <div class="modal-overlay" id="returnModal">
   <div class="modal">
     <h3 id="returnModalTitle">반품 처리</h3>
-    <p style="font-size:12px;color:var(--muted);margin-top:-6px;">여러 품목·컬러를 한 번에 등록할 수 있어요.</p>
     <label>구분</label>
     <div id="ret-type-return-defect-wrap">
       <div class="row2">
@@ -753,7 +776,7 @@
 <div class="modal-overlay" id="bizInfoModal">
   <div class="modal">
     <h3>사업자 정보 설정</h3>
-    <p style="font-size:12px;color:var(--muted);margin-top:-6px;">여기 입력한 정보가 명세서 "공급자" 자리에 자동으로 들어가요.</p>
+    <p style="font-size:12px;color:var(--muted);margin-top:-6px;">명세서 공급자 정보로 쓰여요</p>
     <label>상호</label>
     <input id="biz-name" placeholder="예: 백야">
     <div class="row2">
@@ -782,7 +805,7 @@
 <div class="modal-overlay" id="customerShipListModal">
   <div class="modal" style="max-width:520px;">
     <h3 id="customer-ship-list-title">출고 처리</h3>
-    <p style="font-size:12px;color:var(--muted);margin-top:-6px;">발주 하나씩 "출고" 눌러서 처리하세요. 처리할 때마다 이 목록에서 자동으로 빠지고, 창은 안 닫혀요.</p>
+    <p style="font-size:12px;color:var(--muted);margin-top:-6px;">발주별로 출고 처리 · 처리한 건은 목록에서 빠져요</p>
     <div id="customer-ship-list-rows" style="max-height:420px; overflow-y:auto;"></div>
     <div class="modal-actions">
       <button class="btn-cancel" onclick="closeCustomerShipList()">닫기</button>
@@ -817,7 +840,7 @@
 <div class="modal-overlay" id="processingTypeModal">
   <div class="modal" style="max-width:420px;">
     <h3>가공 종류 관리</h3>
-    <p style="font-size:12px;color:var(--muted);margin-top:-6px;">컬러 이름에 이 단어가 들어있으면, 어느 품목이든 자동으로 이 비용이 원가에 더해져요.</p>
+    <p style="font-size:12px;color:var(--muted);margin-top:-6px;">컬러명에 이 단어가 있으면 원가에 이 비용이 더해져요</p>
     <div class="row2">
       <div><label>키워드</label><input id="pt-keyword" placeholder="예: 기모"></div>
       <div><label>추가비용</label><input id="pt-fee" type="number" step="1" placeholder="예: 3000"></div>
@@ -833,7 +856,7 @@
 <div class="modal-overlay" id="fixedCostModal">
   <div class="modal" style="max-width:420px;">
     <h3>고정비 관리</h3>
-    <p style="font-size:12px;color:var(--muted);margin-top:-6px;">직원 월급, 임대료 등 매달 나가는 고정비예요. 달마다 따로 저장돼서, 이 달을 고쳐도 지난 달 숫자는 안 바뀌어요. 안 고친 달은 앞선 달 금액이 이어져요.</p>
+    <p style="font-size:12px;color:var(--muted);margin-top:-6px;">달마다 따로 저장 · 고치지 않은 달은 앞선 달 금액이 이어져요</p>
     <div id="fixed-cost-month-nav" style="display:flex; align-items:center; gap:8px; margin:8px 0 10px;"></div>
     <div class="row2">
       <div><label>항목</label><input id="fixed-cost-label" placeholder="예: 직원 월급"></div>
@@ -850,7 +873,6 @@
 <div class="modal-overlay" id="expenseModal">
   <div class="modal" style="max-width:480px;">
     <h3>지출·입금 내역</h3>
-    <p style="font-size:12px;color:var(--muted);margin-top:-6px;">그날그날 매장에서 쓰거나 받은 현금을 한 곳에서 관리해요.</p>
     <div class="row2">
       <div><label style="display:flex;align-items:center;gap:6px;font-size:14px;color:var(--text);"><input type="radio" name="exp-type" value="expense" checked style="width:auto;"> 지출 (−)</label></div>
       <div><label style="display:flex;align-items:center;gap:6px;font-size:14px;color:var(--text);"><input type="radio" name="exp-type" value="income" style="width:auto;"> 입금 (+)</label></div>
@@ -1030,7 +1052,7 @@
       <input id="sale-edit-extra-reason" placeholder="예: 급송비">
     </div>
 
-    <p style="font-size:12px;color:var(--muted);">기존 항목 수정은 재고를 다시 건드리지 않아요(단가·금액 정정용). 새 품목 추가는 재고에서 실제로 차감돼요. 삭제하면 이월장부·재고도 그 처리 이전 상태로 되돌아가요.</p>
+    <p style="font-size:12px;color:var(--muted);">수정: 재고 변동 없음(단가·금액 정정용) · 새 품목 추가: 재고 차감 · 삭제: 이월장부·재고 원복</p>
     <div class="modal-actions">
       <button class="btn-cancel" onclick="closeSaleEditModal()">취소</button>
       <button id="sale-edit-delete-btn" class="btn-cancel hidden" style="background:#fdecea;color:var(--danger);" onclick="deleteSaleEntry()">삭제</button>
@@ -1046,18 +1068,31 @@
     <p id="payment-desc" style="font-size:13px;color:var(--muted);margin-top:-6px;"></p>
     <label>입금액(원)</label>
     <input id="payment-amount" type="number" step="1">
-    <label>입금 날짜</label>
+    <label>입금일</label>
     <input id="payment-date" type="date">
     <label>결제 방법</label>
     <div class="row2">
       <div><label style="display:flex;align-items:center;gap:6px;font-size:14px;color:var(--text);"><input type="radio" name="payment-method" value="cash" checked style="width:auto;"> 현금</label></div>
       <div><label style="display:flex;align-items:center;gap:6px;font-size:14px;color:var(--text);"><input type="radio" name="payment-method" value="online" style="width:auto;"> 온라인</label></div>
     </div>
+    <div class="modal-actions" style="flex-wrap:wrap;">
+      <button class="btn-cancel" onclick="closePaymentModal()" style="order:3;flex:1 1 calc(50% - 4px);">취소</button>
+      <button onclick="markSampleAndClose()" style="order:4;flex:1 1 calc(50% - 4px);background:#fce8d6;color:#a15c1e;font-size:14px;font-weight:600;white-space:nowrap;">샘플 제공</button>
+      <button onclick="confirmPaymentModal('partial')" style="order:1;flex:1 1 calc(50% - 4px);background:#fff3d6;color:#a15c1e;font-size:14px;white-space:nowrap;">부분 입금</button>
+      <button class="btn-save" onclick="confirmPaymentModal('full')" style="order:2;flex:1 1 calc(50% - 4px);font-size:14px;white-space:nowrap;">완불로 처리</button>
+    </div>
+  </div>
+</div>
+
+<!-- 공용 입력창 (askText / askForm) -->
+<div class="modal-overlay" id="askInputModal">
+  <div class="modal">
+    <h3 id="ask-title"></h3>
+    <p id="ask-desc" style="font-size:13px;color:var(--muted);margin:-6px 0 2px;white-space:pre-line;"></p>
+    <div id="ask-fields"></div>
     <div class="modal-actions">
-      <button class="btn-cancel" onclick="closePaymentModal()">취소</button>
-      <button onclick="markSampleAndClose()" style="border:none;background:#fce8d6;color:#a15c1e;border-radius:8px;padding:10px 14px;font-weight:600;">샘플 제공</button>
-      <button onclick="confirmPaymentModal('partial')" style="border:none;background:#fff3d6;color:#a15c1e;border-radius:8px;padding:10px 14px;font-weight:700;">이 금액만(미수 남음)</button>
-      <button class="btn-save" onclick="confirmPaymentModal('full')">완불로 처리</button>
+      <button class="btn-cancel" onclick="closeAskInput(false)">취소</button>
+      <button class="btn-save" onclick="closeAskInput(true)">확인</button>
     </div>
   </div>
 </div>
@@ -1067,6 +1102,8 @@
   <div class="modal">
     <h3>입금 내역 수정</h3>
     <p id="payment-edit-desc" style="font-size:13px;color:var(--muted);margin-top:-6px;"></p>
+    <label>입금일</label>
+    <input id="payment-edit-date" type="date">
     <label>입금액(원)</label>
     <input id="payment-edit-amount" type="number" step="1">
     <label>결제 방법</label>
@@ -1074,7 +1111,7 @@
       <div><label style="display:flex;align-items:center;gap:6px;font-size:14px;color:var(--text);"><input type="radio" name="payment-edit-method" value="cash" style="width:auto;"> 현금</label></div>
       <div><label style="display:flex;align-items:center;gap:6px;font-size:14px;color:var(--text);"><input type="radio" name="payment-edit-method" value="online" style="width:auto;"> 온라인</label></div>
     </div>
-    <p style="font-size:12px;color:var(--muted);">금액을 0으로 저장하면 이 입금 기록이 삭제돼요.</p>
+    <p style="font-size:12px;color:var(--muted);">0원으로 저장하면 이 입금이 삭제돼요</p>
     <div class="modal-actions">
       <button class="btn-cancel" onclick="closePaymentEditModal()">취소</button>
       <button class="btn-save" onclick="savePaymentEdit()">저장</button>
@@ -1091,12 +1128,11 @@
     <input id="roll-edit-item" placeholder="예: 350" autocomplete="off" oninput="showItemSuggestions(this)" onfocus="showItemSuggestions(this)" onblur="hideItemSuggestionsDelayed()">
     <label>컬러</label>
     <input id="roll-edit-color" placeholder="예: 검정" autocomplete="off" oninput="showColorSuggestions(this, 'roll-edit-item')" onfocus="showColorSuggestions(this, 'roll-edit-item')" onblur="hideItemSuggestionsDelayed()">
-    <p style="font-size:12px;color:var(--muted);margin-top:-6px;">품번·컬러를 잘못 입력하셨으면 여기서 바로 고치실 수 있어요 (지우고 다시 만들 필요 없어요)</p>
     <label>탕 번호</label>
     <input id="roll-edit-tang" type="number" min="1" step="1">
     <label>마수(y)</label>
     <input id="roll-edit-qty" type="number" step="0.1">
-    <p style="font-size:12px;color:var(--muted);margin-top:-6px;">0으로 저장하면 "재고 없음"으로 처리돼요.</p>
+    <p style="font-size:12px;color:var(--muted);margin-top:-6px;">0으로 저장하면 재고 없음 처리</p>
     <label>이 롤(절) 하나만의 원가 (선택 - 이 절만 다를 때. 같은 탕의 다른 절은 안 바뀌어요)</label>
     <div style="display:flex; gap:6px; align-items:center;">
       <input id="roll-edit-cost" type="number" step="1" placeholder="비워두면 원가표 기본값 사용" style="flex:1;">
@@ -1155,7 +1191,7 @@
     <label>판매단가 — 처음에 안 넣으셨으면 여기서 입력하세요</label>
     <input id="log-edit-price" type="number" step="1" placeholder="예: 7500">
     <label style="display:flex;align-items:center;gap:6px;font-size:14px;color:var(--text);margin-top:-6px;"><input type="checkbox" id="log-edit-tax" style="width:auto;"> 부가세 10% 포함</label>
-    <p style="font-size:12px;color:var(--muted);">수량을 바꾸면 재고와 이월장부 진행상황도 자동으로 다시 맞춰져요.</p>
+    <p style="font-size:12px;color:var(--muted);">수량을 바꾸면 재고·이월장부에 자동 반영돼요</p>
     <div class="modal-actions">
       <button class="btn-cancel" onclick="closeLogEditModal()">취소</button>
       <button class="btn-save" onclick="confirmLogEdit()">저장</button>
@@ -1180,7 +1216,7 @@
 const PASSWORD = "3059";
 const ADMIN_PASSWORD = "9503"; // 매출/미수금 탭 전용 - 필요하면 이 값만 바꿔서 변경 가능
 const DATA_VERSION = "2026-08-03-v4"; // 재고/이월장부 씨앗 데이터를 바꿀 때마다 이 값을 새로 바꿔주세요
-const APP_CODE_VERSION = "2026-11-04-b"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
+const APP_CODE_VERSION = "2026-11-19-g"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
 const SCHEMA_STAMP = 2; // 서버 저장규칙이 확인하는 "최신 앱 도장" - 절대 자주 바꾸지 않음(이 값을 아는 코드만 저장 가능하게 서버에서 막을 때 씀)
 const CONFIRMED_EMPTY = '__CONFIRMED_EMPTY__'; // "서버가 확실하게 문서가 없다고 확인해줬다"는 걸 표시하는 특수값
                                                  // (한번도 확인 안 한 null과 구분해서, 그 사이 다른 사람이 첫 데이터를 만들었으면 충돌로 감지하기 위함)
@@ -2137,6 +2173,9 @@ function updateRateBar() {
   document.getElementById('rateDisplay').textContent = settings.rate.toLocaleString();
   document.getElementById('yardDisplay').textContent = settings.yard;
   document.getElementById('shipDisplay').textContent = settings.ship.toLocaleString();
+  const _unset = !settings.rate; // 환율이 비어있으면 숫자 대신 "환율 미설정"만 보여줌
+  document.getElementById('rateInfo').style.display = _unset ? 'none' : '';
+  document.getElementById('rateUnset').style.display = _unset ? '' : 'none';
 }
 
 // ---------- 탭 ----------
@@ -2144,7 +2183,7 @@ function applyTabChrome(tab) {
   for (const t of ['today', 'inv', 'china', 'cost', 'order', 'sales']) document.getElementById('tab-' + t).classList.toggle('active', tab === t);
   const titles = { today: '홈', inv: '원단 재고관리', cost: '원단 원가표', order: '이월장부(발주현황)', sales: '매출/미수금 (관리자)', china: '중국원단발주' };
   const placeholders = { today: '', inv: '품번(품목) 또는 칼라 검색', cost: '품목(품번) 검색', order: '거래처 또는 품목 검색', sales: '거래처 또는 품목 검색', china: '품명, 중국품번, 컬러 검색' };
-  const fabLabels = { today: '', inv: '+ 입고', cost: '+ 원가 등록', order: '+ 발주 등록', sales: '', china: '+ 발주추가' };
+  const fabLabels = { today: '', inv: '+ 입고', cost: '+ 원가 등록', order: '+ 발주 등록', sales: '', china: '+ 발주 등록' };
   document.getElementById('page-title').textContent = titles[tab];
   document.getElementById('search').placeholder = placeholders[tab];
   document.getElementById('fabAdd').textContent = fabLabels[tab];
@@ -2489,7 +2528,7 @@ function showColorSuggestions(colorInputEl, itemInputIdOrEl) {
   if (!rawItemVal) { document.getElementById('itemSuggestBox').classList.add('hidden'); return; }
   const itemVal = resolveInventoryItem(rawItemVal);
   const colorsFromRolls = rolls.filter(r => String(r.item).trim() === itemVal).map(r => String(r.color).trim());
-  const colorsFromSwatch = swatchInfo.filter(s => String(s.item).trim() === itemVal && (s.order != null || s.chinaCode != null || s.keepCard) && s.color != null).map(s => String(s.color).trim());
+  const colorsFromSwatch = swatchInfo.filter(s => String(s.item).trim() === itemVal && swHasInfo(s) && s.color != null).map(s => String(s.color).trim());
   const colors = Array.from(new Set([...colorsFromRolls, ...colorsFromSwatch].filter(Boolean))); // 재고에 직접 등록된 컬러(재고 롤 + 스왓치 카드)만 후보로 나옴. 매출/발주/중국발주에 임의로 적은 컬러는 안 나옴. 재고가 0이어도 스왓치 카드가 있으면 계속 나옴
   const orderOf = (color) => {
     const sw = swatchInfo.find(s => String(s.item).trim() === itemVal && s.color != null && String(s.color).trim() === color && s.order != null);
@@ -2597,7 +2636,7 @@ function buildGroups() {
   // 재고(rolls)는 하나도 없지만, 스왓치 번호/중국품번이 등록된 컬러는 카드가 계속 보이게 빈 그룹으로 추가함
   // (재고 0y를 자리표시로 남기지 않는 대신, 이렇게 등록정보 기준으로 카드를 유지함)
   for (const s of swatchInfo) {
-    if (s.order == null && s.chinaCode == null && !s.keepCard) continue; // 번호도 품번도 카드유지 표시도 없는 빈 스왓치 정보는 카드로 안 만듦
+    if (!swHasInfo(s)) continue; // 번호도 품번도 카드유지 표시도 없는 빈 스왓치 정보는 카드로 안 만듦
     if (s.color == null || !s.item) continue;
     const k = (s.cat || '') + '|' + s.item + '|' + s.color;
     if (!map.has(k)) map.set(k, { cat: s.cat || '', item: s.item, color: s.color, rolls: [] });
@@ -2626,10 +2665,31 @@ function findSwatchFor(cat, item, color) {
   const itemLevel = swatchInfo.find(s => s.cat === cat && String(s.item).trim() === String(item).trim() && s.color == null);
   if (!exact && !itemLevel) return null;
   return {
-    order: exact && exact.order != null ? exact.order : null,
+    order: exact && exact.order != null ? exact.order : null, // F/W 스왓치 순번 (예전에 입력한 번호는 전부 F/W 기준)
+    orderSpring: exact && exact.orderSpring != null ? exact.orderSpring : null, // S/S 스왓치 순번 (S/S 책에 있는 컬러만)
     chinaCode: (exact && exact.chinaCode) || (itemLevel && itemLevel.chinaCode) || null
   };
 }
+function swHasInfo(s) { return s.order != null || s.orderSpring != null || s.chinaCode != null || !!s.keepCard; } // 카드를 유지할 만한 스왓치 정보가 있는지
+function swLabel(sw) { // "3번" / "SS3·FW7번" / "SS3번"
+  if (!sw) return null;
+  const f = sw.order != null ? sw.order : null, sp = sw.orderSpring != null ? sw.orderSpring : null;
+  if (f != null && sp != null) return `SS${sp}·FW${f}번`;
+  if (sp != null) return `SS${sp}번`;
+  if (f != null) return `${f}번`;
+  return null;
+}
+function shiftSwatchBook(item, fld, order, exceptColor) { // 같은 품목 안에서 이 번호(fld: 'order'=F/W, 'orderSpring'=S/S)를 이미 다른 컬러가 쓰고 있으면, 그 번호 이상인 것들을 한 칸씩 뒤로 밀기. 봄/가을은 서로 안 건드림
+  const t_item = String(item).trim(), t_color = String(exceptColor).trim();
+  const conflict = swatchInfo.some(s => String(s.item).trim() === t_item && s[fld] === order && String(s.color).trim() !== t_color);
+  if (!conflict) return false;
+  const toShift = swatchInfo.filter(s => String(s.item).trim() === t_item && s[fld] != null && s[fld] >= order && String(s.color).trim() !== t_color);
+  toShift.sort((a, b) => b[fld] - a[fld]); // 뒤에서부터 밀어야 서로 안 겹침
+  for (const s of toShift) s[fld] = s[fld] + 1;
+  return true;
+}
+function itemHasSpring(item) { const t = String(item).trim(); return swatchInfo.some(s => String(s.item).trim() === t && s.color != null && s.orderSpring != null); }
+let invSeasonView = {}; // 품목별 보기 상태: {품목키: 'S/S' | 'F/W'} (없으면 전체). 저장은 안 함
 
 function renderChips() {
   const source = currentTab === 'inv' ? rolls : costs;
@@ -2816,7 +2876,7 @@ function getLowStockAlerts() {
     if (pending.length === 0) {
       if (baseColorForStock) { pending = pendingMap.get(normKey(`${item}|${baseColorForStock}`)) || []; if (pending.length > 0) pendingViaBase = true; }
     }
-    alerts.push({ key: k, item, color, qty: Math.round(qty * 100) / 100, shippedRecently: Math.round((shipQtyMap.get(k) || 0) * 100) / 100, swOrder: sw && sw.order != null ? sw.order : null, pending, pendingViaBase, baseStockQty: Math.round(baseStockQty * 100) / 100 });
+    alerts.push({ key: k, item, color, qty: Math.round(qty * 100) / 100, shippedRecently: Math.round((shipQtyMap.get(k) || 0) * 100) / 100, swOrder: sw && sw.order != null ? sw.order : null, swText: swLabel(sw), pending, pendingViaBase, baseStockQty: Math.round(baseStockQty * 100) / 100 });
   }
   alerts.sort((a, b) => a.item.localeCompare(b.item, 'ko') || (a.swOrder ?? Infinity) - (b.swOrder ?? Infinity) || a.color.localeCompare(b.color, 'ko')); // 재고 탭이랑 같은 순서(품목명 가나다/숫자 순)
   return alerts;
@@ -2869,7 +2929,7 @@ function renderLowStockAlerts(list) {
     return `
               <div style="display:flex; justify-content:space-between; align-items:center; background:${isCritical ? '#fdecea' : '#fdf6e3'}; border-radius:6px; padding:6px 8px;">
                 <div style="cursor:pointer; flex:1;" onclick="event.stopPropagation();goToLowStockItem('${escAttr(a.item)}','${escAttr(a.color)}')">
-                  <div style="font-size:13px; font-weight:600;">${esc(a.color)}${a.swOrder != null ? ` <span style="font-weight:400; color:var(--muted);">(${a.swOrder}번)</span>` : ''}</div>
+                  <div style="font-size:13px; font-weight:600;">${esc(a.color)}${a.swText ? ` <span style="font-weight:400; color:var(--muted);">(${a.swText})</span>` : ''}</div>
                   <div style="font-size:11px; color:var(--muted); margin-top:1px;">최근 30일 ${a.shippedRecently}y 나감</div>
                   ${(() => { const cy = carryIdxAlert && carryIdxAlert.byColor.get(normalizeNameForMatch(a.item) + '|' + normalizeNameForMatch(a.color)); return cy ? `<div style="margin-top:3px;"><span class="carry-chip">이월 ${fmtCarry(cy)}</span></div>` : ''; })()}
                   ${a.pending && a.pending.length > 0 ? `<div style="font-size:11px; color:#2f6b46; font-weight:600; margin-top:2px;">${a.pendingViaBase ? '무지로 발주중' : '발주중'} ${a.pending.slice(0, 2).map(o => `${esc(o.qty)}${o.arrivalDate ? ` (${formatChinaArrivalLabel(o.arrivalDate)} 도착)` : ''}`).join(' · ')}${a.pending.length > 2 ? ` 외 ${a.pending.length - 2}건` : ''}${a.pendingViaBase ? ' · 가공 필요' : ''}</div>` : (a.baseStockQty > 0 ? `<div style="font-size:11px; color:#2f6b46; font-weight:600; margin-top:2px;">무지 재고 ${a.baseStockQty}y / 가공필요</div>` : '')}
@@ -3066,6 +3126,16 @@ function renderInv() {
     const itemOpen = openGroups.has(ik);
     const itemChina = findItemChinaCode(ig.cat, ig.item);
     const itemCarry = carryIdx.byItem.get(normalizeNameForMatch(ig.item)) || null;
+    const hasSpring = itemHasSpring(ig.item); // S/S 스왓치 번호가 하나라도 있는 품목만 S/S·F/W 전환 버튼과 두 가지 번호 색을 씀
+    let seasonView = hasSpring ? (invSeasonView[ik] || null) : null; // null = 전체
+    let viewColors = ig.colors;
+    if (seasonView) { // S/S·F/W 보기: 그 책에 번호가 있는 컬러만, 그 책 번호 순서대로 (기모 같은 가공 컬러는 무지 바로 뒤)
+      const fld = seasonView === 'S/S' ? 'orderSpring' : 'order';
+      const numOf = (g) => g._swatch && g._swatch[fld] != null ? g._swatch[fld] : null;
+      const baseNum = (g) => { const b = splitKimoColorName(g.color); if (b == null) return null; const bg = ig.colors.find(x => x.color === b); return bg ? numOf(bg) : null; };
+      const keyOf = (g) => { const n = numOf(g); if (n != null) return { n, k: 0 }; const bn = baseNum(g); return bn != null ? { n: bn, k: 1 } : null; };
+      viewColors = ig.colors.map(g => ({ g, key: keyOf(g) })).filter(x => x.key).sort((a, b) => (a.key.n - b.key.n) || (a.key.k - b.key.k) || a.g.color.localeCompare(b.g.color, 'ko')).map(x => x.g);
+    }
     const itemDiv = document.createElement('div');
     itemDiv.className = 'group';
     itemDiv.innerHTML = `
@@ -3073,20 +3143,24 @@ function renderInv() {
         <div class="info">
           <div class="name">${esc(ig.item)}${itemChina ? ` <span style="font-weight:400;font-size:12px;color:var(--muted);">#${esc(itemChina)}</span>` : ''}</div>
           ${mixMap.get(normalizeNameForMatch(ig.item)) ? `<div class="sub" style="font-size:11px; color:#8a8a8a; margin-top:1px;">혼용률 ${esc(mixMap.get(normalizeNameForMatch(ig.item)))}</div>` : ''}
-          <div class="sub">분류 ${esc(ig.cat || '미분류')} · 컬러 ${ig.colors.length}종${itemCarry ? ` · <span class="carry-chip">이월 ${fmtCarry(itemCarry)}</span>` : ''}</div>
-          <div style="margin-top:4px; display:flex; gap:4px;"><button onclick="event.stopPropagation(); renameInventoryItem('${escAttr(ig.item)}')" style="border:none;background:#f1eee7;color:var(--muted);border-radius:6px;padding:3px 8px;font-size:11px;">품목 이름 수정</button><button onclick="event.stopPropagation(); deleteAllRollsForItem('${escAttr(ig.item)}')" style="border:none;background:#fdecea;color:var(--danger);border-radius:6px;padding:3px 8px;font-size:11px;">이 품목 전체 삭제</button></div>
+          <div class="sub">분류 ${esc(ig.cat || '미분류')} · 컬러 ${seasonView ? `${seasonView} ${viewColors.length}종` : `${ig.colors.length}종`}${itemCarry ? ` · <span class="carry-chip">이월 ${fmtCarry(itemCarry)}</span>` : ''}</div>
+          <div style="margin-top:4px; display:flex; gap:4px;"><button onclick="event.stopPropagation(); renameInventoryItem('${escAttr(ig.item)}')" style="border:none;background:#f1eee7;color:var(--muted);border-radius:6px;padding:3px 8px;font-size:11px;">품목 이름 수정</button><button onclick="event.stopPropagation(); openSwatchBulkModal('${escAttr(ig.cat)}','${escAttr(ig.item)}')" style="border:none;background:#eaf3ec;color:#2f6b46;border-radius:6px;padding:3px 8px;font-size:11px;font-weight:700;">스왓치 일괄수정</button><button onclick="event.stopPropagation(); deleteAllRollsForItem('${escAttr(ig.item)}')" style="border:none;background:#fdecea;color:var(--danger);border-radius:6px;padding:3px 8px;font-size:11px;">이 품목 전체 삭제</button></div>
         </div>
         <div class="total">
           <div class="num">${itemTotal.toLocaleString()}y</div>
           <div class="cnt">${itemOpen ? '접기 ▲' : '펼치기 ▼'}</div>
         </div>
       </div>
+      ${hasSpring && itemOpen ? `<div class="season-tog" onclick="event.stopPropagation();">
+        ${['전체', 'S/S', 'F/W'].map(v => `<span class="chip${(seasonView || '전체') === v ? ' active' : ''}" onclick="setSeasonView('${escAttr(ik)}','${v}')">${v}</span>`).join('')}
+        <span class="season-legend"><i style="background:var(--primary)"></i>S/S 번호<i style="background:#8a5a3b"></i>F/W 번호</span>
+      </div>` : ''}
       <div class="rolls ${itemOpen ? 'open' : ''}" id="item-${escAttr(ik)}"></div>
     `;
     list.appendChild(itemDiv);
     const itemInner = itemDiv.querySelector('.rolls');
 
-    for (const g of (itemOpen ? ig.colors : [])) { // 접힌 품목은 컬러 카드를 안 만들고, 펼칠 때만 만듦 (예전엔 접혀 있어도 전부 만들어놓고 숨겨서 느렸음)
+    for (const g of (itemOpen ? viewColors : [])) { // 접힌 품목은 컬러 카드를 안 만들고, 펼칠 때만 만듦 (예전엔 접혀 있어도 전부 만들어놓고 숨겨서 느렸음)
       const normalRolls = g.rolls.filter(r => !r.defective && r.qty > 0); // 재고가 0인 자리표시 롤은 "진짜 롤"로 안 세야 정확함
       const defectiveRolls = g.rolls.filter(r => r.defective);
       const total = normalRolls.reduce((s, r) => s + r.qty, 0);
@@ -3100,7 +3174,9 @@ function renderInv() {
       cdiv.className = 'color-card';
       cdiv.innerHTML = `
         <div class="group-head" onclick="event.stopPropagation(); toggleGroup('${escAttr(ck)}')">
-          ${sw && sw.order != null ? `<div class="swatch-num">${sw.order}</div>` : `<div class="swatch-num swatch-num-empty">-</div>`}
+          ${hasSpring
+            ? `<div class="swatch-nums">${seasonView !== 'F/W' ? (sw && sw.orderSpring != null ? `<div class="swatch-num" title="S/S 스왓치 ${sw.orderSpring}번">${sw.orderSpring}</div>` : `<div class="swatch-num swatch-num-empty">-</div>`) : ''}${seasonView !== 'S/S' ? (sw && sw.order != null ? `<div class="swatch-num swatch-num-fall" title="F/W 스왓치 ${sw.order}번">${sw.order}</div>` : `<div class="swatch-num swatch-num-empty">-</div>`) : ''}</div>`
+            : (sw && sw.order != null ? `<div class="swatch-num">${sw.order}</div>` : `<div class="swatch-num swatch-num-empty">-</div>`)}
           <div class="info">
             <div class="name">${esc(g.color)}${sw && sw.chinaCode ? ` <span style="font-size:11px; color:var(--muted); font-weight:400;">(중국품번 ${esc(sw.chinaCode)})</span>` : ''}</div>
             <div class="sub">${total > 0 ? `롤 ${normalRolls.length}개` : '재고 없음'}${carry ? ` · <span class="carry-chip">이월 ${fmtCarry(carry)}</span>` : ''}${defectiveTotal > 0 ? ` · <span style="color:var(--danger);font-weight:700;">불량 ${defectiveTotal.toLocaleString()}y</span>` : ''}</div>
@@ -3337,6 +3413,7 @@ async function resetStockCheckDate(date) {
   await persistSettings();
   render();
 }
+function setSeasonView(ik, v) { if (v === '전체') delete invSeasonView[ik]; else invSeasonView[ik] = v; render(); }
 function toggleGroup(k) { if (openGroups.has(k)) openGroups.delete(k); else openGroups.add(k); render(); }
 function toggleSalesDropdown(id) { document.getElementById(id).classList.toggle('hidden'); }
 
@@ -3870,7 +3947,7 @@ async function saveRollEdit() {
 async function markRollDefective(id) {
   const r = rolls.find(x => x.id === id);
   if (!r) return;
-  const reason = prompt(`이 롤(${r.qty}y)을 불량으로 표시합니다.\n불량 사유를 적어주세요 (선택사항)`, '');
+  const reason = await askText('불량 표시', '', { desc: `이 롤 ${r.qty}y`, label: '불량 사유 (선택)' });
   if (reason === null) return;
   r.defective = true;
   r.defectReason = reason.trim();
@@ -3963,7 +4040,7 @@ async function renameFieldInArchive(fieldName, oldValue, newValue) {
   return { changed: changedCount, failedMonths };
 }
 async function renameInventoryItem(oldName) {
-  const raw = prompt(`"${oldName}"을(를) 무엇으로 이름 바꿀까요?\n(재고·원가표·이월장부·매출장부에 있는 이 품목 전부 다 같이 바뀌어요)`, oldName);
+  const raw = await askText('품목 이름 수정', oldName, { desc: '재고·원가표·이월장부·매출장부의 이 품목이 모두 같이 바뀌어요', label: '품목명' });
   if (raw === null) return;
   const newName = raw.trim();
   if (!newName || newName === oldName) return;
@@ -3991,6 +4068,50 @@ async function renameInventoryItem(oldName) {
     showToast(`"${oldName}" → "${newName}"(으)로 이름을 바꿨습니다`);
   }
 }
+let _askInputResolve = null;
+function askForm(title, fields, opts) { // 앱 안의 입력창. fields: [{label, value, numeric, placeholder}] -> 확인하면 입력값 배열(문자열), 취소하면 null
+  opts = opts || {};
+  return new Promise(resolve => {
+    if (_askInputResolve) _askInputResolve(null);
+    _askInputResolve = resolve;
+    document.getElementById('ask-title').textContent = title || '';
+    const d = document.getElementById('ask-desc');
+    d.textContent = opts.desc || '';
+    d.style.display = opts.desc ? '' : 'none';
+    const wrap = document.getElementById('ask-fields');
+    wrap.innerHTML = '';
+    fields.forEach((f, i) => {
+      if (f.label) { const l = document.createElement('label'); l.textContent = f.label; wrap.appendChild(l); }
+      const inp = document.createElement('input');
+      inp.type = 'text';
+      if (f.numeric) inp.inputMode = 'decimal';
+      inp.autocomplete = 'off';
+      inp.value = f.value == null ? '' : String(f.value);
+      if (f.placeholder) inp.placeholder = f.placeholder;
+      inp.dataset.askIdx = String(i);
+      inp.onkeydown = ev => {
+        if (ev.key === 'Enter') { ev.preventDefault(); const nx = wrap.querySelector(`input[data-ask-idx="${i + 1}"]`); if (nx) nx.focus(); else closeAskInput(true); }
+        else if (ev.key === 'Escape') { ev.preventDefault(); closeAskInput(false); }
+      };
+      wrap.appendChild(inp);
+    });
+    document.querySelector('#askInputModal .btn-save').textContent = opts.okText || '확인';
+    document.getElementById('askInputModal').classList.add('open');
+    const first = wrap.querySelector('input');
+    if (first) setTimeout(() => { first.focus(); first.select(); }, 30);
+  });
+}
+function closeAskInput(ok) {
+  const res = _askInputResolve; _askInputResolve = null;
+  const vals = ok ? [...document.querySelectorAll('#ask-fields input')].map(i => i.value) : null;
+  document.getElementById('askInputModal').classList.remove('open');
+  if (res) res(vals);
+}
+async function askText(title, value, opts) { // 입력칸 하나짜리: 확인하면 문자열, 취소하면 null (prompt와 같은 방식)
+  opts = opts || {};
+  const r = await askForm(title, [{ label: opts.label, value, numeric: opts.numeric, placeholder: opts.placeholder }], opts);
+  return r ? r[0] : null;
+}
 function askAdminPassword(msg) { // 관리자 비밀번호를 물어봄 (맞으면 true). 취소하면 조용히 false, 틀리면 안내 후 false
   const pw = prompt(msg || '관리자 비밀번호를 입력하세요.');
   if (pw === null) return false;
@@ -4006,13 +4127,15 @@ async function deleteAllRollsForColor(item, color) {
   if (!askAdminPassword(`"${item} ${color}" 컬러 전체 삭제는 관리자만 할 수 있어요.\n관리자 비밀번호를 입력하세요.`)) return; // 실수로 지우지 않게 잠가둠 (비밀번호가 맞아야 아래 확인창이 뜸)
   if (!confirm(`"${item} ${color}"을(를) 완전히 삭제할까요?${count > 0 ? ` (재고 ${count}개 포함)` : ''}\n스왓치 번호·중국품번 등록 정보도 같이 지워지고, 뒤 번호들은 한 칸씩 당겨져요.`)) return;
   rolls = rolls.filter(r => !(String(r.item).trim() === t_item && String(r.color).trim() === t_color));
-  const deletedOrder = targetSwatch ? targetSwatch.order : null;
+  const deletedNums = { order: targetSwatch ? targetSwatch.order : null, orderSpring: targetSwatch ? targetSwatch.orderSpring : null };
   swatchInfo = swatchInfo.filter(s => !(String(s.item).trim() === t_item && String(s.color).trim() === t_color));
-  if (deletedOrder != null) {
+  for (const fld of ['order', 'orderSpring']) { // F/W 번호, S/S 번호 각각 따로 당김
+    const deletedOrder = deletedNums[fld];
+    if (deletedOrder == null) continue;
     // 지운 번호보다 뒤에 있던 것들을 한 칸씩 당김 (삭제 = 이제 안 쓰는 컬러니까, 입고할 때 번호 밀리는 것과 똑같은 원리로 자동 정리)
-    const toShiftDown = swatchInfo.filter(s => String(s.item).trim() === t_item && s.order != null && s.order > deletedOrder);
-    toShiftDown.sort((a, b) => a.order - b.order); // 앞에서부터 당겨야 서로 안 겹침
-    for (const s of toShiftDown) s.order = s.order - 1;
+    const toShiftDown = swatchInfo.filter(s => String(s.item).trim() === t_item && s[fld] != null && s[fld] > deletedOrder);
+    toShiftDown.sort((a, b) => a[fld] - b[fld]); // 앞에서부터 당겨야 서로 안 겹침
+    for (const s of toShiftDown) s[fld] = s[fld] - 1;
   }
   await persistRolls();
   await persistSwatchInfo();
@@ -4063,7 +4186,7 @@ function renderCost() {
     const isOpen = openGroups.has(gk);
     // 이 품목의 컬러 목록은 재고(rolls) + 재고 없어도 스왓치·중국품번 등록된 컬러까지 합쳐서 뽑음
     const colorsFromRollsForItem = rolls.filter(r => String(r.item).trim() === String(c.item).trim() && !r.defective).map(r => String(r.color).trim());
-    const colorsFromSwatchForItem = swatchInfo.filter(s => String(s.item).trim() === String(c.item).trim() && (s.order != null || s.chinaCode != null || s.keepCard) && s.color != null).map(s => String(s.color).trim()); // keepCard: 재고가 다 나가도 카드를 유지하는 컬러("OO기모" 등, 순번은 따로 안 매김) - 재고 탭과 같은 기준
+    const colorsFromSwatchForItem = swatchInfo.filter(s => String(s.item).trim() === String(c.item).trim() && swHasInfo(s) && s.color != null).map(s => String(s.color).trim()); // keepCard: 재고가 다 나가도 카드를 유지하는 컬러("OO기모" 등, 순번은 따로 안 매김) - 재고 탭과 같은 기준
     const colorsForItem = Array.from(new Set([...colorsFromRollsForItem, ...colorsFromSwatchForItem]))
       .sort((a, b) => {
         const sortInfo = (colorName) => {
@@ -4122,11 +4245,11 @@ function renderCost() {
           const isDifferent = colorWon !== won;
           const keywordFee = getProcessingFeeForColor(color);
           const swInfo = findSwatchFor(c.cat, c.item, color);
-          const swLabel = swInfo && swInfo.order != null ? ` (${swInfo.order}번)` : '';
+          const swLabelTxt = swLabel(swInfo) ? ` (${swLabel(swInfo)})` : '';
           return `
             <div style="padding:6px 0; border-bottom:1px dashed var(--border);">
               <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
-                <span style="font-size:13px; font-weight:600;">${esc(color)}${swLabel}</span>
+                <span style="font-size:13px; font-weight:600;">${esc(color)}${swLabelTxt}</span>
                 <span id="${wonDisplayId}" style="font-size:13px; font-weight:700; color:${isDifferent ? '#a15c1e' : 'var(--muted)'};">${colorWon.toLocaleString()}원</span>
               </div>
               <div style="display:flex; align-items:center; gap:6px; margin-bottom:4px;">
@@ -4288,10 +4411,10 @@ async function editProcessingType(idx) {
   const types = settings.processingTypes || [];
   const cur = types[idx];
   if (!cur) return;
-  const newKeyword = prompt('키워드', cur.keyword);
-  if (newKeyword === null) return;
-  const newFeeRaw = prompt('추가비용', cur.fee);
-  if (newFeeRaw === null) return;
+  const _pf = await askForm('가공 종류 수정', [{ label: '키워드', value: cur.keyword }, { label: '추가비용', value: cur.fee, numeric: true }]);
+  if (_pf === null) return;
+  const newKeyword = _pf[0];
+  const newFeeRaw = _pf[1];
   const newFee = parseFloat(newFeeRaw);
   if (!newKeyword.trim()) { showToast('키워드를 적어주세요'); return; }
   if (!newFee || newFee <= 0) { showToast('금액을 확인해주세요'); return; }
@@ -5065,6 +5188,14 @@ function addPaymentEvent(entry, amount, method, date) {
   entry.payments.push({ date: date || todayStr(), amount: Math.round(amount * 100) / 100, method: method || 'cash' });
 }
 
+function addOverpaymentEvent(entry, amount, method, date) {
+  // 초과입금 분: 이 건에 방금 넣은 같은 날짜/같은 방법 입금이 있으면 거기에 합치고(원장에 "3건"처럼 쪼개져 보이지 않게), 없으면 새 입금으로 넣음
+  migrateLegacyPaid(entry);
+  const last = entry.payments && entry.payments[entry.payments.length - 1];
+  if (last && last.date === (date || todayStr()) && (last.method || 'cash') === (method || 'cash')) last.amount = Math.round((last.amount + amount) * 100) / 100;
+  else addPaymentEvent(entry, amount, method, date);
+}
+
 let pendingDefectLogId = null;
 
 let pendingSaleEditId = null; // null이면 신규 추가 모드
@@ -5609,9 +5740,9 @@ async function confirmPaymentModal(mode) {
         overpaid = Math.round((overpaid - take) * 100) / 100;
       }
       if (overpaid > 0) {
-        // 그래도 남으면 선수금으로 기록해서 안 사라지게 함
-        await memoAppendDepositCredit(entry.customer, overpaid, payDate);
-        extraMsg = `, 초과분 ${overpaid.toLocaleString()}원은 선수금으로 기록했어요`;
+        // 그래도 남으면 글자 메모로만 남기지 않고, 이 건에 실제 입금으로 더 넣어서 원장 잔액이 마이너스(선수금)로 잡히게 함
+        addOverpaymentEvent(entry, overpaid, method, payDate);
+        extraMsg = `, 초과분 ${overpaid.toLocaleString()}원은 선수금(원장 마이너스 잔액)으로 잡혔어요`;
       } else {
         extraMsg = `, 초과분은 다른 미수금에 자동으로 채워졌어요`;
       }
@@ -5683,8 +5814,10 @@ async function confirmPaymentModal(mode) {
         amt = Math.round((amt - take) * 100) / 100;
       }
       if (amt > 0) {
-        await memoAppendDepositCredit(custName, amt, payDate);
-        extraMsg2 = `, 초과분 ${amt.toLocaleString()}원은 선수금으로 기록했어요`;
+        const lastEntry = sorted[sorted.length - 1]; // 선택한 건 중 가장 최근 건에 실제 입금으로 더 넣어서 원장 잔액이 마이너스(선수금)로 잡히게 함
+        addOverpaymentEvent(lastEntry, amt, method, payDate);
+        delete lastEntry.paidAmount; delete lastEntry.paid;
+        extraMsg2 = `, 초과분 ${amt.toLocaleString()}원은 선수금(원장 마이너스 잔액)으로 잡혔어요`;
         amt = 0;
       } else {
         extraMsg2 = `, 초과분은 같은 거래처의 다른 미수금에 자동으로 채워졌어요`;
@@ -6284,7 +6417,7 @@ function exitCustomerPriceList() {
   render();
 }
 async function editStandingPriceForAllColors(customer, item, colors, currentPrice) {
-  const raw = prompt(`"${customer}" · ${item} (컬러 ${colors.length}개 전체)\n앞으로 이 품목에 쓸 기준 단가를 입력해주세요\n(과거 거래 기록은 전혀 안 바뀌고, 다음 출고 때부터만 이 단가가 자동으로 채워져요)`, currentPrice);
+  const raw = await askText('기준 단가', currentPrice, { desc: `${customer} · ${item} (컬러 ${colors.length}개 전체)\n과거 기록은 그대로, 다음 출고부터 적용돼요`, label: '단가(원)', numeric: true });
   if (raw === null) return;
   const newPrice = parseFloat(raw);
   if (!newPrice || newPrice <= 0) { showToast('올바른 단가를 입력해주세요'); return; }
@@ -6295,7 +6428,7 @@ async function editStandingPriceForAllColors(customer, item, colors, currentPric
   showToast(`다음부터 ${newPrice.toLocaleString()}원으로 적용돼요`);
 }
 async function editStandingPrice(customer, item, color, currentPrice) {
-  const raw = prompt(`"${customer}" · ${item} ${color}\n앞으로 이 원단에 쓸 기준 단가를 입력해주세요\n(과거 거래 기록은 전혀 안 바뀌고, 다음 출고 때부터만 이 단가가 자동으로 채워져요)`, currentPrice);
+  const raw = await askText('기준 단가', currentPrice, { desc: `${customer} · ${item} ${color}\n과거 기록은 그대로, 다음 출고부터 적용돼요`, label: '단가(원)', numeric: true });
   if (raw === null) return;
   const newPrice = parseFloat(raw);
   if (!newPrice || newPrice <= 0) { showToast('올바른 단가를 입력해주세요'); return; }
@@ -6785,9 +6918,9 @@ function renderCustomerLedgerView() {
       <button type="button" onclick="openCustomerPicker('ledger-customer')" style="border:none;background:#e8edf5;color:#3d4f6b;border-radius:7px;padding:0 12px;font-size:12px;flex:none;">목록</button>
     </div>
     <div style="display:flex; gap:6px; align-items:center; margin-bottom:8px;">
-      <input id="ledger-start" type="date" style="flex:0 0 auto; width:150px; padding:7px 6px; font-size:12px;">
+      <input id="ledger-start" type="date" style="flex:1 1 0; min-width:0; padding:7px 6px; font-size:12px;">
       <span style="flex:none; font-size:12px; color:var(--muted);">~</span>
-      <input id="ledger-end" type="date" style="flex:0 0 auto; width:150px; padding:7px 6px; font-size:12px;">
+      <input id="ledger-end" type="date" style="flex:1 1 0; min-width:0; padding:7px 6px; font-size:12px;">
       <button onclick="ledgerCustomer=document.getElementById('ledger-customer').value.trim(); ledgerStartDate=document.getElementById('ledger-start').value; ledgerEndDate=document.getElementById('ledger-end').value; renderCustomerLedgerTable();" style="flex:none; border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:7px;padding:7px 12px;font-size:12px;font-weight:600;">조회</button>
     </div>
     <div style="display:flex; gap:6px; flex-wrap:wrap; margin-bottom:8px;">
@@ -6852,7 +6985,8 @@ async function editMergedPaymentGroup(refsJson) {
   if (byEntry.size === 0) return;
 
   _paymentEditRefs = { type: 'merged', refs, date };
-  document.getElementById('payment-edit-desc').textContent = `${refs.length}건에 나눠 들어가 있던 입금이에요 (날짜: ${date})`;
+  document.getElementById('payment-edit-desc').textContent = `${refs.length}건에 나눠 들어가 있던 입금이에요`;
+  document.getElementById('payment-edit-date').value = toDateInputValue(date);
   document.getElementById('payment-edit-amount').value = Math.round(totalAmount);
   document.querySelector(`input[name="payment-edit-method"][value="${method}"]`).checked = true;
   document.getElementById('paymentEditModal').classList.add('open');
@@ -6863,6 +6997,9 @@ async function savePaymentEdit() {
   const newAmount = parseFloat(document.getElementById('payment-edit-amount').value);
   if (isNaN(newAmount) || newAmount < 0) { showToast('금액을 확인해주세요'); return; }
   const method = document.querySelector('input[name="payment-edit-method"]:checked').value;
+  const dateV = document.getElementById('payment-edit-date').value;
+  if (!dateV) { showToast('입금일을 선택해주세요'); return; }
+  const newDate = fromDateInputValue(dateV);
 
   if (_paymentEditRefs.type === 'single') {
     const { entryId, paymentIdx } = _paymentEditRefs;
@@ -6873,11 +7010,13 @@ async function savePaymentEdit() {
     } else {
       e.payments[paymentIdx].amount = newAmount;
       e.payments[paymentIdx].method = method;
+      e.payments[paymentIdx].date = newDate;
     }
     delete e.paidAmount; delete e.paid;
   } else {
     // 여러 건에 나뉘어 들어가있던 것 - 기존 것 다 지우고, 새 금액/방법으로 오래된 매출건부터 다시 채워넣음
-    const { refs, date } = _paymentEditRefs;
+    const { refs } = _paymentEditRefs;
+    const date = newDate;
     const byEntry = new Map();
     for (const r of refs) {
       const e = shipmentLog.find(x => x.id === r.entryId);
@@ -6900,6 +7039,9 @@ async function savePaymentEdit() {
         addPaymentEvent(e, take, method, date);
         amt = Math.round((amt - take) * 100) / 100;
       }
+      if (amt > 0 && targetEntries.length > 0) { // 건들을 다 채우고도 남으면 (원래보다 금액을 늘린 경우) 사라지지 않게 가장 최근 건에 실제 입금으로 넣음 -> 선수금(마이너스 잔액)
+        addOverpaymentEvent(targetEntries[targetEntries.length - 1], amt, method, date);
+      }
     }
   }
   await persistShipmentLog();
@@ -6912,7 +7054,8 @@ function quickEditPayment(entryId, idx) {
   if (!e || !e.payments || !e.payments[idx]) return;
   const p = e.payments[idx];
   _paymentEditRefs = { type: 'single', entryId, paymentIdx: idx };
-  document.getElementById('payment-edit-desc').textContent = `${e.customer || ''} · ${e.item} ${e.color || ''} (날짜: ${p.date})`;
+  document.getElementById('payment-edit-desc').textContent = `${e.customer || ''} · ${e.item} ${e.color || ''}`;
+  document.getElementById('payment-edit-date').value = toDateInputValue(p.date);
   document.getElementById('payment-edit-amount').value = p.amount;
   document.querySelector(`input[name="payment-edit-method"][value="${p.method || 'cash'}"]`).checked = true;
   document.getElementById('paymentEditModal').classList.add('open');
@@ -6960,7 +7103,7 @@ async function deleteReturnDefectEntry(id) {
 async function editDiscountEntry(id) {
   const e = shipmentLog.find(x => x.id === id);
   if (!e) { offerRestoreArchivedEntries([id], () => editDiscountEntry(id)); return; }
-  const raw = prompt(`공제 금액을 얼마로 고칠까요? (0을 입력하면 공제를 삭제해요)`, String(e.discount || 0));
+  const raw = await askText('공제 수정', String(e.discount || 0), { desc: '0을 입력하면 공제가 삭제돼요', label: '공제 금액(원)', numeric: true });
   if (raw === null) return;
   const newDiscount = parseFloat(raw);
   if (isNaN(newDiscount) || newDiscount < 0) { showToast('금액을 확인해주세요'); return; }
@@ -7393,8 +7536,9 @@ function renderCustomerProfileSummary(t_c) {
           <div style="font-size:15px; font-weight:700; margin-top:2px;">${Math.round(totalSale).toLocaleString()}원</div>
         </div>
         <div style="background:#fff; padding:10px 12px;">
-          <div style="font-size:11px; color:var(--muted);">현재 미수금</div>
-          <div style="font-size:15px; font-weight:700; margin-top:2px; color:${unpaid > 0 ? 'var(--danger)' : 'inherit'};">${unpaid.toLocaleString()}원</div>
+          ${(() => { const credit = getCustomerCredit(t_c); return credit > 0
+            ? `<div style="font-size:11px; color:var(--muted);">선수금</div><div style="font-size:15px; font-weight:700; margin-top:2px; color:#1a56db;">${credit.toLocaleString()}원</div>`
+            : `<div style="font-size:11px; color:var(--muted);">현재 미수금</div><div style="font-size:15px; font-weight:700; margin-top:2px; color:${unpaid > 0 ? 'var(--danger)' : 'inherit'};">${unpaid.toLocaleString()}원</div>`; })()}
         </div>
         <div style="background:#fff; padding:10px 12px;">
           <div style="font-size:11px; color:var(--muted);">마지막 결제일</div>
@@ -7509,9 +7653,10 @@ async function renderCustomerLedgerTable() {
       <td style="padding:8px 6px; border-bottom:1px solid var(--border); font-size:13px; color:${color}; font-weight:600;">${esc(ev.type)}</td>
       <td style="padding:8px 6px; border-bottom:1px solid var(--border); font-size:13px;">${esc(ev.desc)}${ev.detail ? `<div style="font-size:11px; color:var(--muted); margin-top:2px;">${esc(ev.detail)}</div>` : ''}${clickable ? ' <span style="font-size:10px;color:var(--primary-dark);text-decoration:underline;">수정</span>' : ''}${(ev.type === '매출' && ev.id != null && getEntryRemainingSafe(ev.id) > 0) ? ` <span onclick="event.stopPropagation(); recordPayment(${ev.id})" style="font-size:10px;color:#2f6b46;text-decoration:underline;cursor:pointer;">입금</span>` : ''}</td>
       <td style="padding:8px 6px; border-bottom:1px solid var(--border); font-size:13px; text-align:right; color:${color};">${ev.amount < 0 ? '-' : ''}${Math.abs(ev.amount).toLocaleString()}</td>
-      <td style="padding:8px 6px; border-bottom:1px solid var(--border); font-size:13px; text-align:right; font-weight:600;">${running.toLocaleString()}</td>
+      <td style="padding:8px 6px; border-bottom:1px solid var(--border); font-size:13px; text-align:right; font-weight:600;${running < 0 ? ' color:#1a56db;' : ''}">${running.toLocaleString()}</td>
     </tr>`;
   }).join('');
+  const endBalance = rowsInRange.length > 0 ? rowsInRange[rowsInRange.length - 1]._balance : openingBalance; // 화면에 보이는 마지막 줄 기준 잔액
 
   wrap.innerHTML = `
     <table style="width:100%; border-collapse:collapse;">
@@ -7532,6 +7677,12 @@ async function renderCustomerLedgerTable() {
         </tr>
         ${rowsHtml}
       </tbody>
+      <tfoot>
+        <tr style="background:#f1eee7;">
+          <td colspan="5" style="padding:8px 6px; font-size:13px; font-weight:700;">${endBalance < 0 ? '선수금' : '잔액'}</td>
+          <td style="padding:8px 6px; font-size:13px; text-align:right; font-weight:700; ${endBalance < 0 ? 'color:#1a56db;' : ''}">${endBalance < 0 ? `-${Math.abs(endBalance).toLocaleString()}` : endBalance.toLocaleString()}</td>
+        </tr>
+      </tfoot>
     </table>
   `;
 }
@@ -8323,7 +8474,6 @@ function renderReportMenuView() {
     ['월간 리포트', '이번달/지난달 매출·순이익 비교', showMonthlyReport],
     ['연간 리포트', '올해 전체 매출·순이익 흐름', showYearlyReport],
     ['회계장부 (고정비)', '직원 월급, 임대료 등 고정비 관리 (달마다 따로 저장)', () => openFixedCostModal(monthKeyFromOffset(0))],
-    ['급여 정산', '출고량 보너스·영업 수당 포함 월별 급여 계산', showPayroll],
   ];
   for (const [title, desc, fn] of items) {
     const card = document.createElement('div');
@@ -8333,247 +8483,6 @@ function renderReportMenuView() {
     list.appendChild(card);
   }
 }
-// ===== 급여 정산 (리포트 메뉴 안, 비밀번호 7080으로 잠김) =====
-// 출고량 보너스형 직원(배송/창고 등) + 영업사원(담당 거래처 기준 수당)을 월별로 계산해서 보여줌. 설정은 settings.payroll에 저장
-let payrollOffset = 0; // 0=이번달, -1=지난달 ...
-let payrollDraft = null; // 설정창에서 직원 추가/삭제 중인 임시 값 (저장 전까지 서버엔 안 감)
-const PAYROLL_DEFAULT = {
-  bonusRule: { minYards: 1000, first: 10000, step: 20000, stepYards: 1000 }, // 1,000마 이상 1만원, 이후 1,000마마다 +2만원
-  staff: [ { name: '배송 직원', base: 2900000, mult: 1 }, { name: '창고장', base: 3200000, mode: 'tiers', tiers: [ { yards: 3000, amount: 30000 }, { yards: 5000, amount: 80000 } ] } ], // mult: 보너스 배율 / mode 'tiers': 그날 출고량이 넘은 가장 높은 구간 금액만 지급
-  sales: [ { name: '영업사원', stage: 1, base1: 2820000, existingRate: 50, newRate: 100, newMonths: 12, base2: 2500000, profitPct: 15, customers: [] } ]
-};
-function getPayroll() {
-  const p = settings.payroll || {};
-  return {
-    bonusRule: { ...PAYROLL_DEFAULT.bonusRule, ...(p.bonusRule || {}) },
-    staff: Array.isArray(p.staff) ? p.staff : PAYROLL_DEFAULT.staff.map(s => ({ ...s })),
-    sales: Array.isArray(p.sales) ? p.sales : PAYROLL_DEFAULT.sales.map(s => ({ ...s, customers: [] }))
-  };
-}
-async function savePayroll(p) {
-  settings = { ...settings, payroll: p };
-  const ok = await persistSettings();
-  if (ok !== false) showToast('급여 설정을 저장했어요');
-  render();
-}
-function payrollDayBonus(yards, rule) {
-  if (yards < rule.minYards) return 0;
-  return rule.first + rule.step * Math.floor((yards - rule.minYards) / rule.stepYards);
-}
-function showPayroll() { payrollOffset = 0; salesSpecialView = 'payroll'; openGroups = new Set(); render(); }
-function exitPayroll() { salesSpecialView = 'reportMenu'; openGroups = new Set(); render(); }
-function shiftPayroll(d) { payrollOffset += d; render(); }
-function payrollIsShipment(e) { return !e.isReturn && !e.isDefect && !e.manualClose && !e.isFee && e.yardsShipped > 0; }
-function payrollMonthsBetween(fromDate, toDate) {
-  // 'YY.MM.DD' 두 날짜 사이가 몇 개월인지 (대략, 일 단위까지 비교)
-  const [y1, m1, d1] = String(fromDate).split('.').map(Number);
-  const [y2, m2, d2] = String(toDate).split('.').map(Number);
-  let months = (y2 - y1) * 12 + (m2 - m1);
-  if (d2 < d1) months -= 1;
-  return months;
-}
-function payWon(n) { return Math.round(n).toLocaleString() + '원'; }
-async function renderPayrollView() {
-  const myToken = ++_reportRenderToken;
-  const list = document.getElementById('list');
-  list.innerHTML = '';
-  const now = new Date();
-  const target = new Date(now.getFullYear(), now.getMonth() + payrollOffset, 1);
-  const mk = `${String(target.getFullYear()).slice(2)}.${String(target.getMonth() + 1).padStart(2, '0')}`;
-  const archiveKey = `${target.getFullYear()}-${String(target.getMonth() + 1).padStart(2, '0')}`;
-
-  const top = document.createElement('div');
-  top.style.cssText = 'display:flex; gap:8px; align-items:center; margin-bottom:10px; flex-wrap:wrap;';
-  const mkBtn = (txt, fn, style) => { const b = document.createElement('button'); b.textContent = txt; b.style.cssText = style || 'border:none;background:#eee;color:#555;border-radius:8px;padding:7px 12px;font-size:12px;'; b.onclick = fn; return b; };
-  top.appendChild(mkBtn('← 돌아가기', exitPayroll, 'border:none;background:#eee;color:#555;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;'));
-  top.appendChild(mkBtn('◀ 이전달', () => shiftPayroll(-1)));
-  const nb = mkBtn('다음달 ▶', () => shiftPayroll(1)); nb.disabled = payrollOffset >= 0; top.appendChild(nb);
-  top.appendChild(mkBtn('급여 설정', openPayrollSettings, 'border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;'));
-  list.appendChild(top);
-  const loading = document.createElement('div');
-  loading.className = 'empty'; loading.textContent = '출고 기록 불러오는 중...';
-  list.appendChild(loading);
-
-  // 라이브 기록 + 그 달 보관함을 id 기준으로 중복 없이 합침
-  const archived = await fetchArchivedEntriesForMonth(archiveKey);
-  if (myToken !== _reportRenderToken) return;
-  const byId = new Map();
-  for (const e of (archived || [])) byId.set(e.id, e);
-  for (const e of shipmentLog) byId.set(e.id, e);
-  const entries = Array.from(byId.values()).filter(e => String(e.date).slice(0, 5) === mk && payrollIsShipment(e));
-  computeProfitFieldsForEntries(entries.map(e => e)); // _profit 계산 (원본 항목에 계산 필드만 붙음 - 화면 표시용)
-  loading.remove();
-
-  const p = getPayroll();
-  const rule = p.bonusRule;
-  let html = `<div style="font-size:18px; font-weight:700; margin:4px 0 4px;">${monthKeyLabel(mk)} 급여 정산</div>`;
-  if (archived === null) html += `<div style="background:#fff4e5; color:#8a5300; border-radius:8px; padding:8px 10px; font-size:12px; margin-bottom:8px;">⚠️ 보관함을 못 불러와서 이 달 출고량이 일부 빠졌을 수 있어요. 잠시 후 다시 열어주세요.</div>`;
-
-  // --- 1) 일별 출고량 + 출고량 보너스 ---
-  const daily = new Map();
-  for (const e of entries) daily.set(e.date, Math.round(((daily.get(e.date) || 0) + e.yardsShipped) * 100) / 100);
-  const days = Array.from(daily.keys()).sort();
-  let totalYards = 0, totalBonus = 0;
-  const dayRows = days.map(d => { const y = daily.get(d); const b = payrollDayBonus(y, rule); totalYards += y; totalBonus += b; return { d, y, b }; });
-
-  const card = (inner) => `<div style="background:#fff; border:1px solid var(--border); border-radius:10px; padding:14px; margin-bottom:12px;">${inner}</div>`;
-  const row = (l, r, bold) => `<div style="display:flex; justify-content:space-between; padding:4px 0; font-size:13px;${bold ? 'font-weight:700;' : ''}"><span>${l}</span><span>${r}</span></div>`;
-
-  // 출고량 보너스형 직원
-  for (const s of p.staff) {
-    let bonus, bonusRows, kind;
-    if (s.mode === 'tiers') {
-      const tiers = (s.tiers || []).slice().sort((a, b) => a.yards - b.yards);
-      const cnt = tiers.map(() => 0);
-      for (const r of dayRows) { let hit = -1; tiers.forEach((t, ti) => { if (r.y >= t.yards) hit = ti; }); if (hit >= 0) cnt[hit]++; }
-      bonus = tiers.reduce((sum, t, ti) => sum + cnt[ti] * t.amount, 0);
-      bonusRows = tiers.map((t, ti) => row(`${t.yards.toLocaleString()}마 이상인 날 ${cnt[ti]}일 × ${payWon(t.amount)}`, payWon(cnt[ti] * t.amount))).join('');
-      kind = '하루 구간 보너스형';
-    } else {
-      bonus = Math.round(totalBonus * (s.mult != null ? s.mult : 1));
-      bonusRows = row(`출고량 보너스 (${days.length}일 · 총 ${Math.round(totalYards).toLocaleString()}마)`, payWon(bonus));
-      kind = `출고량 보너스형${s.mult != null && s.mult !== 1 ? ` · 보너스 ${s.mult * 100}%` : ''}`;
-    }
-    html += card(`<div style="font-weight:700; font-size:15px; margin-bottom:6px;">${esc(s.name)} <span style="font-size:11px; color:var(--muted); font-weight:400;">${kind}</span></div>
-      ${row('기본급', payWon(s.base))}
-      ${bonusRows}
-      <div style="border-top:1px solid var(--border); margin-top:4px;"></div>
-      ${row('세전 합계', payWon(s.base + bonus), true)}`);
-  }
-
-  // 영업사원
-  for (const sp of p.sales) {
-    const custMap = new Map((sp.customers || []).map(c => [String(c.name).trim(), c]));
-    let exY = 0, newY = 0, exPaidY = 0, newPaidY = 0, profit = 0, paidProfit = 0;
-    const perCust = new Map();
-    for (const e of entries) {
-      const c = custMap.get(String(e.customer || '').trim());
-      if (!c) continue;
-      const due = (e.saleAmount || 0) - (e.discount || 0);
-      const paidRatio = due > 0 ? Math.min(1, getPaidAmount(e) / due) : 0;
-      const isNew = !!c.isNew && c.since && payrollMonthsBetween(c.since, e.date) < (sp.newMonths || 12) && String(e.date) >= String(c.since);
-      if (isNew) { newY += e.yardsShipped; newPaidY += e.yardsShipped * paidRatio; } else { exY += e.yardsShipped; exPaidY += e.yardsShipped * paidRatio; }
-      const pr = e._profit != null ? e._profit : 0;
-      profit += pr; paidProfit += pr * paidRatio;
-      const k = c.name;
-      const cur = perCust.get(k) || { y: 0, paidY: 0, isNew };
-      cur.y += e.yardsShipped; cur.paidY += e.yardsShipped * paidRatio; perCust.set(k, cur);
-    }
-    let base, comm, commAll, detail;
-    if ((sp.stage || 1) === 2) {
-      base = sp.base2; comm = paidProfit * (sp.profitPct / 100); commAll = profit * (sp.profitPct / 100);
-      detail = row(`순이익 ${payWon(profit)} 중 입금분 ${payWon(paidProfit)} × ${sp.profitPct}%`, payWon(comm));
-    } else {
-      base = sp.base1; comm = exPaidY * sp.existingRate + newPaidY * sp.newRate; commAll = exY * sp.existingRate + newY * sp.newRate;
-      detail = row(`기존 거래처 ${Math.round(exY).toLocaleString()}마 (입금분 ${Math.round(exPaidY).toLocaleString()}마) × ${sp.existingRate}원`, payWon(exPaidY * sp.existingRate))
-             + row(`신규 거래처 ${Math.round(newY).toLocaleString()}마 (입금분 ${Math.round(newPaidY).toLocaleString()}마) × ${sp.newRate}원`, payWon(newPaidY * sp.newRate));
-    }
-    const pending = commAll - comm;
-    const custList = Array.from(perCust.entries()).sort((a, b) => b[1].y - a[1].y).map(([n, v]) => `<div style="display:flex; justify-content:space-between; font-size:12px; color:var(--muted); padding:2px 0;"><span>${esc(n)}${v.isNew ? ' <b style="color:#1a7a4a;">신규</b>' : ''}</span><span>${Math.round(v.y).toLocaleString()}마${v.paidY < v.y - 0.5 ? ` (입금 ${Math.round(v.paidY).toLocaleString()}마)` : ''}</span></div>`).join('');
-    const totalOwn = exY + newY;
-    html += card(`<div style="font-weight:700; font-size:15px; margin-bottom:6px;">${esc(sp.name)} <span style="font-size:11px; color:var(--muted); font-weight:400;">영업 ${sp.stage === 2 ? '2단계 (순이익 비율)' : '1단계 (야드당)'} · 본인 주문 ${Math.round(totalOwn).toLocaleString()}마</span></div>
-      ${row('기본급', payWon(base))}
-      ${detail}
-      <div style="border-top:1px solid var(--border); margin-top:4px;"></div>
-      ${row('세전 합계 (입금분 기준)', payWon(base + comm), true)}
-      ${pending > 0.5 ? `<div style="font-size:11px; color:#8a5300; margin-top:4px;">아직 입금 안 된 출고분 수당 ${payWon(pending)} - 입금되면 이 달 화면에 자동 반영돼요</div>` : ''}
-      ${(sp.customers || []).length === 0 ? '<div style="font-size:12px; color:var(--danger); margin-top:6px;">담당 거래처가 아직 없어요. "급여 설정"에서 거래처를 등록해주세요.</div>' : ''}
-      ${sp.stage !== 2 && totalOwn > 0 ? `<div style="font-size:11px; color:var(--muted); margin-top:4px;">2단계 전환 기준: 3개월 연속 월 5,000마 이상</div>` : ''}
-      ${custList ? `<details style="margin-top:6px;"><summary style="font-size:12px; color:var(--primary-dark);">거래처별 보기</summary>${custList}</details>` : ''}`);
-  }
-
-  // 일별 내역
-  html += card(`<div style="font-weight:700; font-size:15px; margin-bottom:6px;">일별 출고량과 보너스</div>
-    <div style="font-size:11px; color:var(--muted); margin-bottom:6px;">${rule.minYards.toLocaleString()}마 이상 ${payWon(rule.first)}, 이후 ${rule.stepYards.toLocaleString()}마마다 +${payWon(rule.step)} (반품·불량·추가금 제외)</div>
-    ${dayRows.length === 0 ? '<div class="empty">이 달 출고 기록이 없어요</div>' : dayRows.map(r => row(`${r.d}`, `${Math.round(r.y).toLocaleString()}마 · <b>${r.b ? payWon(r.b) : '-'}</b>`)).join('')}
-    <div style="border-top:1px solid var(--border); margin-top:4px;"></div>
-    ${row(`합계 (${dayRows.length}일)`, `${Math.round(totalYards).toLocaleString()}마 · ${payWon(totalBonus)}`, true)}`);
-
-  const wrap = document.createElement('div');
-  wrap.innerHTML = html;
-  list.appendChild(wrap);
-}
-function openPayrollSettings() {
-  const p = payrollDraft || getPayroll();
-  const ov = document.createElement('div');
-  ov.className = 'modal-overlay open';
-  ov.id = 'payrollSettingsModal';
-  const inp = (id, val, w) => `<input id="${id}" value="${esc(val)}" style="width:${w || 110}px; padding:6px; border:1px solid var(--border); border-radius:6px; font-size:13px;">`;
-  const lbl = (t, field) => `<div style="display:flex; justify-content:space-between; align-items:center; margin:6px 0; font-size:13px;"><span>${t}</span>${field}</div>`;
-  const staffHtml = p.staff.map((s, i) => `<div style="border:1px dashed var(--border); border-radius:8px; padding:8px; margin-bottom:8px;">
-      ${lbl('이름', inp(`ps-name-${i}`, s.name, 140))}
-      ${lbl('기본급 (원, 세전)', inp(`ps-base-${i}`, s.base))}
-      ${s.mode === 'tiers'
-        ? lbl('하루 구간 (출고량:금액, 쉼표로 구분)', inp(`ps-tiers-${i}`, (s.tiers || []).map(t => `${t.yards}:${t.amount}`).join(', '), 170))
-        : lbl('보너스 배율 (1=전액, 0.5=절반)', inp(`ps-mult-${i}`, s.mult != null ? s.mult : 1, 60))}
-      <button onclick="payrollRemoveStaff(${i})" style="border:none;background:none;color:var(--muted);font-size:11px;text-decoration:underline;">이 직원 삭제</button></div>`).join('');
-  const salesHtml = p.sales.map((s, i) => `<div style="border:1px dashed var(--border); border-radius:8px; padding:8px; margin-bottom:8px;">
-      ${lbl('이름', inp(`pp-name-${i}`, s.name, 140))}
-      ${lbl('지금 단계', `<select id="pp-stage-${i}" style="width:160px; padding:6px; border-radius:6px;"><option value="1" ${s.stage !== 2 ? 'selected' : ''}>1단계 (야드당)</option><option value="2" ${s.stage === 2 ? 'selected' : ''}>2단계 (순이익 비율)</option></select>`)}
-      ${lbl('1단계 기본급 (원, 세전)', inp(`pp-base1-${i}`, s.base1))}
-      ${lbl('1단계 기존 거래처 (원/마)', inp(`pp-ex-${i}`, s.existingRate, 70))}
-      ${lbl('1단계 신규 거래처 (원/마)', inp(`pp-new-${i}`, s.newRate, 70))}
-      ${lbl('신규 인정 기간 (개월)', inp(`pp-months-${i}`, s.newMonths || 12, 60))}
-      ${lbl('2단계 기본급 (원, 세전)', inp(`pp-base2-${i}`, s.base2))}
-      ${lbl('2단계 순이익 비율 (%)', inp(`pp-pct-${i}`, s.profitPct, 60))}
-      <div style="font-size:12px; margin:8px 0 4px;">담당 거래처 (한 줄에 하나)<br><span style="color:var(--muted); font-size:11px;">기존: <b>거래처명</b> / 신규: <b>거래처명 / 신규 / 첫거래일(YY.MM.DD)</b></span></div>
-      <textarea id="pp-cust-${i}" rows="6" style="width:100%; padding:6px; border:1px solid var(--border); border-radius:6px; font-size:13px;">${esc((s.customers || []).map(c => c.isNew ? `${c.name} / 신규 / ${c.since || ''}` : c.name).join('\n'))}</textarea>
-      <button onclick="payrollRemoveSales(${i})" style="border:none;background:none;color:var(--muted);font-size:11px;text-decoration:underline;">이 영업사원 삭제</button></div>`).join('');
-  ov.innerHTML = `<div class="modal" style="max-height:88vh; overflow:auto;">
-    <div style="font-weight:700; font-size:17px; margin-bottom:10px;">급여 설정</div>
-    <div style="font-weight:700; margin:10px 0 4px;">출고량 보너스 기준</div>
-    ${lbl('최소 출고량 (마)', inp('pr-min', p.bonusRule.minYards, 80))}
-    ${lbl('최소 넘으면 (원)', inp('pr-first', p.bonusRule.first, 80))}
-    ${lbl('추가 구간 (마)', inp('pr-stepy', p.bonusRule.stepYards, 80))}
-    ${lbl('구간마다 추가 (원)', inp('pr-step', p.bonusRule.step, 80))}
-    <div style="font-weight:700; margin:14px 0 4px;">출고량 보너스형 직원</div>${staffHtml}
-    <button onclick="payrollAddStaff()" style="border:none;background:#eee;border-radius:8px;padding:6px 10px;font-size:12px;">+ 보너스형 직원 추가</button>
-    <button onclick="payrollAddTierStaff()" style="border:none;background:#eee;border-radius:8px;padding:6px 10px;font-size:12px;">+ 구간형 직원 추가</button>
-    <div style="font-weight:700; margin:14px 0 4px;">영업사원</div>${salesHtml}
-    <button onclick="payrollAddSales()" style="border:none;background:#eee;border-radius:8px;padding:6px 10px;font-size:12px;">+ 영업사원 추가</button>
-    <div style="display:flex; gap:8px; margin-top:16px;">
-      <button onclick="closePayrollSettings()" style="flex:1; border:none;background:#eee;border-radius:8px;padding:10px;">취소</button>
-      <button onclick="submitPayrollSettings()" style="flex:1; border:none;background:var(--primary-dark);color:#fff;border-radius:8px;padding:10px;font-weight:700;">저장</button>
-    </div></div>`;
-  document.body.appendChild(ov);
-}
-function closePayrollSettings() { payrollDraft = null; const m = document.getElementById('payrollSettingsModal'); if (m) m.remove(); }
-function readPayrollForm() {
-  // 지금 창에 적힌 값을 읽어서 급여 설정으로 만듦 (직원 추가/삭제할 때도 적던 값 안 날아가게)
-  const p = payrollDraft || getPayroll();
-  const num = (id, def) => { const el = document.getElementById(id); if (!el) return def; const v = parseFloat(String(el.value).replace(/,/g, '')); return isNaN(v) ? def : v; };
-  const str = (id, def) => { const el = document.getElementById(id); return el ? el.value.trim() || def : def; };
-  return {
-    bonusRule: { minYards: num('pr-min', p.bonusRule.minYards), first: num('pr-first', p.bonusRule.first), stepYards: num('pr-stepy', p.bonusRule.stepYards) || 1000, step: num('pr-step', p.bonusRule.step) },
-    staff: p.staff.map((s, i) => {
-      const o = { name: str(`ps-name-${i}`, s.name), base: num(`ps-base-${i}`, s.base) };
-      if (s.mode === 'tiers') {
-        const el = document.getElementById(`ps-tiers-${i}`);
-        const tiers = el ? el.value.split(',').map(x => x.trim()).filter(Boolean).map(x => { const [a, b] = x.split(':').map(v => parseFloat(String(v).replace(/,/g, ''))); return { yards: a, amount: b }; }).filter(t => t.yards > 0 && t.amount >= 0) : (s.tiers || []);
-        return { ...o, mode: 'tiers', tiers };
-      }
-      return { ...o, mult: num(`ps-mult-${i}`, s.mult != null ? s.mult : 1) };
-    }),
-    sales: p.sales.map((s, i) => ({
-      name: str(`pp-name-${i}`, s.name), stage: parseInt((document.getElementById(`pp-stage-${i}`) || {}).value || s.stage || 1),
-      base1: num(`pp-base1-${i}`, s.base1), existingRate: num(`pp-ex-${i}`, s.existingRate), newRate: num(`pp-new-${i}`, s.newRate), newMonths: num(`pp-months-${i}`, s.newMonths || 12),
-      base2: num(`pp-base2-${i}`, s.base2), profitPct: num(`pp-pct-${i}`, s.profitPct),
-      customers: (() => { const el = document.getElementById(`pp-cust-${i}`); if (!el) return s.customers || []; return el.value.split('\n').map(l => l.trim()).filter(Boolean).map(l => { const parts = l.split('/').map(x => x.trim()); return parts[1] === '신규' ? { name: parts[0], isNew: true, since: parts[2] || '' } : { name: parts[0], isNew: false }; }); })()
-    }))
-  };
-}
-async function submitPayrollSettings() {
-  const p = readPayrollForm();
-  for (const s of p.sales) for (const c of s.customers) if (c.isNew && !/^\d\d\.\d\d\.\d\d$/.test(c.since)) { showToast(`${c.name}: 신규 거래처 첫거래일을 YY.MM.DD로 적어주세요`); return; }
-  closePayrollSettings();
-  await savePayroll(p);
-}
-function payrollAddStaff() { const p = readPayrollForm(); p.staff.push({ name: '새 직원', base: 2900000, mult: 1 }); closePayrollSettings(); payrollDraft = p; openPayrollSettings(); }
-function payrollRemoveStaff(i) { if (!confirm('이 직원을 목록에서 뺄까요? (저장을 눌러야 반영돼요)')) return; const p = readPayrollForm(); p.staff.splice(i, 1); closePayrollSettings(); payrollDraft = p; openPayrollSettings(); }
-function payrollAddTierStaff() { const p = readPayrollForm(); p.staff.push({ name: '새 직원', base: 3200000, mode: 'tiers', tiers: [ { yards: 3000, amount: 30000 }, { yards: 5000, amount: 80000 } ] }); closePayrollSettings(); payrollDraft = p; openPayrollSettings(); }
-function payrollAddSales() { const p = readPayrollForm(); p.sales.push({ ...PAYROLL_DEFAULT.sales[0], name: '새 영업사원', customers: [] }); closePayrollSettings(); payrollDraft = p; openPayrollSettings(); }
-function payrollRemoveSales(i) { if (!confirm('이 영업사원을 목록에서 뺄까요? (저장을 눌러야 반영돼요)')) return; const p = readPayrollForm(); p.sales.splice(i, 1); closePayrollSettings(); payrollDraft = p; openPayrollSettings(); }
-
 function showMonthlyReport() {
   monthlyReportOffset = 0;
   salesSpecialView = 'monthlyReport';
@@ -8675,10 +8584,10 @@ async function editFixedCost(idx) {
   const items = getFixedCostsForMonth(fixedCostModalMonth).slice();
   const cur = items[idx];
   if (!cur) return;
-  const newLabel = prompt('항목 이름', cur.label);
-  if (newLabel === null) return;
-  const newAmountRaw = prompt(`${monthKeyLabel(fixedCostModalMonth)} 월 금액(원)`, cur.amount);
-  if (newAmountRaw === null) return;
+  const _ff = await askForm('고정비 수정', [{ label: '항목 이름', value: cur.label }, { label: `${monthKeyLabel(fixedCostModalMonth)} 월 금액(원)`, value: cur.amount, numeric: true }]);
+  if (_ff === null) return;
+  const newLabel = _ff[0];
+  const newAmountRaw = _ff[1];
   const newAmount = parseFloat(newAmountRaw);
   if (!newLabel.trim()) { showToast('항목을 적어주세요'); return; }
   if (!newAmount || newAmount <= 0) { showToast('금액을 확인해주세요'); return; }
@@ -9262,7 +9171,7 @@ function renderUnpaidSummaryView() {
   renderUnpaidSummaryList();
 }
 async function addNewCustomerUnpaid() {
-  const customer = prompt('거래 기록이 아직 없는 거래처의 미수금을 새로 등록해요.\n거래처 이름을 입력해주세요');
+  const customer = await askText('미수금 등록', '', { desc: '거래 기록이 아직 없는 거래처', label: '거래처명' });
   if (customer === null || !customer.trim()) return;
   await editCarryoverBalance(customer.trim(), null);
 }
@@ -9309,7 +9218,7 @@ function renderUnpaidSummaryList() {
     <div style="padding:8px 4px; border-bottom:1px solid var(--border); margin-bottom:6px;">
       <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
         <div style="font-weight:700; font-size:13px; color:#a15c1e;">선수금·기타 메모</div>
-        <button onclick="const c=prompt('어느 거래처 메모인가요?'); if(c) addDepositMemo(c.trim());" style="border:none;background:#fff3d6;color:#a15c1e;border-radius:6px;padding:4px 8px;font-size:11px;">+ 메모 추가</button>
+        <button onclick="addDepositMemoAskCustomer()" style="border:none;background:#fff3d6;color:#a15c1e;border-radius:6px;padding:4px 8px;font-size:11px;">+ 메모 추가</button>
       </div>
       ${depositMemos.length === 0 ? '<div style="font-size:12px;color:var(--muted);">아직 메모가 없어요</div>' : depositMemos.slice().reverse().map(m => `
         <div style="display:flex; justify-content:space-between; align-items:center; padding:4px 0; font-size:12px;">
@@ -9381,8 +9290,12 @@ async function memoAppendDepositCredit(customer, amount, date) {
   depositMemos.push({ id: nextMemoId++, customer, date: date || todayStr(), text: `선수금 ${Math.round(amount).toLocaleString()}원 (입금 초과분 자동기록)` });
   await persistDepositMemos();
 }
+async function addDepositMemoAskCustomer() {
+  const c = await askText('메모 추가', '', { label: '거래처명' });
+  if (c && c.trim()) addDepositMemo(c.trim());
+}
 async function addDepositMemo(customer) {
-  const raw = prompt(`${customer}에 대한 메모를 남겨주세요 (예: 선수금 500,000원 받음, 원단 준비중)`, '');
+  const raw = await askText(`${customer} 메모`, '', { label: '메모', placeholder: '예: 선수금 500,000원 받음, 원단 준비중' });
   if (raw === null || !raw.trim()) return;
   depositMemos.push({ id: nextMemoId++, customer, date: todayStr(), text: raw.trim() });
   await persistDepositMemos();
@@ -9393,7 +9306,7 @@ async function addDepositMemo(customer) {
 async function editDepositMemo(id) {
   const m = depositMemos.find(x => x.id === id);
   if (!m) return;
-  const raw = prompt('메모 내용을 고쳐주세요', m.text);
+  const raw = await askText('메모 수정', m.text, { label: '메모' });
   if (raw === null || !raw.trim()) return;
   m.text = raw.trim();
   await persistDepositMemos();
@@ -9436,7 +9349,7 @@ async function editCarryoverBalance(customer, entryId) {
     }
   }
   const currentAmt = current ? (current.saleAmount || 0) : 0;
-  const raw = prompt(`${customer}의 이월 미수금 자체를 얼마로 고칠까요? (지금: ${currentAmt.toLocaleString()}원, 0을 입력하면 삭제돼요)\n※ 이건 입금 기록이 아니라 빚 금액 자체를 바로 고치는 거예요.`, String(currentAmt));
+  const raw = await askText('이월 미수금 수정', String(currentAmt), { desc: `${customer} · 현재 ${currentAmt.toLocaleString()}원\n입금 기록이 아니라 미수금 금액 자체를 고쳐요 (0이면 삭제)`, label: '금액(원)', numeric: true });
   if (raw === null) return;
   const amount = parseFloat(raw);
   if (isNaN(amount) || amount < 0) { showToast('금액을 확인해주세요'); return; }
@@ -9477,7 +9390,7 @@ async function editCarryoverBalance(customer, entryId) {
   showToast(`이월 미수금을 ${amount.toLocaleString()}원으로 수정했습니다${overpaidCarryover > 0 ? ` · 이미 받은 돈 중 ${overpaidCarryover.toLocaleString()}원은 선수금으로 기록했어요` : ''}`);
 }
 async function renameFactoryForOrders(oldFactory, orderIds) {
-  const raw = prompt(`"${oldFactory}"로 되어있는 발주 ${orderIds.length}건의 공장/연락처를 뭐로 바꿀까요?`, oldFactory === '(연락처 미입력)' ? '' : oldFactory);
+  const raw = await askText('공장/연락처 수정', oldFactory === '(연락처 미입력)' ? '' : oldFactory, { desc: `"${oldFactory}" · 발주 ${orderIds.length}건`, label: '공장/연락처' });
   if (raw === null) return;
   const newFactory = raw.trim();
   if (!newFactory) { showToast('공장/연락처를 입력해주세요'); return; }
@@ -9492,7 +9405,7 @@ async function renameFactoryForOrders(oldFactory, orderIds) {
   showToast(`${changed}건의 공장/연락처를 "${newFactory}"로 바꿨어요`);
 }
 async function renameCustomer(oldName) {
-  const raw = prompt(`"${oldName}"의 이름을 무엇으로 바꿀까요?`, oldName);
+  const raw = await askText('거래처 이름 수정', oldName, { desc: `"${oldName}"`, label: '새 이름' });
   if (raw === null || !raw.trim()) return;
   const newName = raw.trim();
   if (newName === oldName) return;
@@ -9557,6 +9470,16 @@ function getCustomerTrueUnpaid(customer, asOfDate) {
   }
   return Math.max(0, Math.round(total * 100) / 100);
 }
+function getCustomerCredit(customer, asOfDate) {
+  // 이 거래처가 미리 더 내서 우리가 돌려줘야 하는(다음 매출에서 자동으로 빠지는) 선수금 - 미수금 계산이 0 밑으로 내려간 만큼
+  const t_c = String(customer).trim();
+  let total = 0;
+  for (const e of shipmentLog) {
+    if (String(e.customer || '').trim() !== t_c) continue;
+    total += unpaidContributionOf(e, asOfDate);
+  }
+  return Math.max(0, Math.round(-total * 100) / 100);
+}
 function getCustomerTrueUnpaidAll(asOfDate) {
   // 모든 거래처의 미수금을 매출 기록을 딱 한 번만 훑어서 한꺼번에 계산함 (거래처마다 getCustomerTrueUnpaid를 따로 부르면 거래처 수 x 기록 수만큼 훑어서 폰에서 렉이 걸렸음)
   // 결과는 거래처마다 getCustomerTrueUnpaid를 따로 부른 것과 똑같음
@@ -9604,7 +9527,7 @@ function resolveSimilarCustomerChoice(name) {
   if (_similarCustomerResolve) { _similarCustomerResolve(name); _similarCustomerResolve = null; }
 }
 async function addCustomerName() {
-  const raw = prompt('새 거래처 이름을 입력해주세요', '');
+  const raw = await askText('거래처 추가', '', { label: '거래처명' });
   if (raw === null || !raw.trim()) return;
   const name = raw.trim();
   const exists = orders.some(o => String(o.customer).trim() === name)
@@ -9644,6 +9567,8 @@ function renderSales() {
   document.getElementById('invTools').classList.add('hidden');
   document.getElementById('orderTools').classList.add('hidden');
   document.getElementById('salesTools').classList.remove('hidden');
+  const _ctl = document.querySelector('.controls');
+  if (_ctl) _ctl.style.display = salesSpecialView === 'customerLedger' ? 'none' : ''; // 거래처 원장 화면에서는 위쪽 검색/기간/버튼 줄을 숨김 (원장 안에 자체 검색·기간이 있어서 중복)
   document.getElementById('sales-day-picker').value = salesDayFilter ? toDateInputValue(salesDayFilter) : '';
   document.getElementById('sales-day-picker-end').value = salesDayFilterEnd ? toDateInputValue(salesDayFilterEnd) : '';
   document.getElementById('chipRow').innerHTML = '';
@@ -9685,11 +9610,6 @@ function renderSales() {
   if (salesSpecialView === 'yearlyReport') {
     document.getElementById('stats').innerHTML = '';
     renderYearlyReportView();
-    return;
-  }
-  if (salesSpecialView === 'payroll') {
-    document.getElementById('stats').innerHTML = '';
-    renderPayrollView();
     return;
   }
   if (salesSpecialView === 'backupManager') {
@@ -10657,7 +10577,7 @@ function renderCustomerBuckets(list2) {
     groupDiv.innerHTML = `
       <div class="group-head" onclick="toggleGroup('${escAttr(k)}')">
         <div class="info">
-          <div class="name">${esc(cust)} <button onclick="event.stopPropagation();printPreShipmentSelected('${escAttr(cust)}')" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:6px;padding:3px 9px;font-size:11px;font-weight:600;margin-left:6px;">선수금 명세서 (선택 건)</button> ${pendingCount > 0 ? `<button onclick="event.stopPropagation();openCustomerShipList('${escAttr(cust)}')" style="border:none;background:#eaf3ec;color:#2f6b46;border-radius:6px;padding:3px 9px;font-size:11px;font-weight:600;margin-left:6px;">출고 처리</button>` : ''}</div>
+          <div class="name">${esc(cust)} <button onclick="event.stopPropagation();openOrderAddModal('${cust === '(거래처 미입력)' ? '' : escAttr(cust)}')" style="border:none;background:#eaf3ec;color:#2f6b46;border-radius:6px;padding:3px 9px;font-size:11px;font-weight:700;margin-left:6px;">+ 발주</button> <button onclick="event.stopPropagation();printPreShipmentSelected('${escAttr(cust)}')" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:6px;padding:3px 9px;font-size:11px;font-weight:600;margin-left:6px;">선수금 명세서 (선택 건)</button> ${pendingCount > 0 ? `<button onclick="event.stopPropagation();openCustomerShipList('${escAttr(cust)}')" style="border:none;background:#eaf3ec;color:#2f6b46;border-radius:6px;padding:3px 9px;font-size:11px;font-weight:600;margin-left:6px;">출고 처리</button>` : ''}</div>
           <div class="sub">전체 ${items.length}건 · 진행중 ${pendingCount}건${remainLabel ? ` · ${remainLabel} 남음` : ` · ${qtyLabel}`}</div>
         </div>
         <div class="total"><div class="cnt">${isOpen ? '접기 ▲' : '펼치기 ▼'}</div></div>
@@ -10683,6 +10603,7 @@ function renderCustomerBuckets(list2) {
           <input type="checkbox" class="preship-group-check" data-ids="${notDoneIds.join(',')}" onchange="this.dataset.ids.split(',').forEach(id => { const cb = document.querySelector('.preship-item-check[data-id=\\'' + id + '\\']'); if (cb) cb.checked = this.checked; })" style="width:auto;">
           <span>${esc(fkey)} (이 그룹 전체 선택)</span>
         ` : `<span>${esc(fkey)}</span>`) + `
+          <button onclick="openOrderAddModal('${cust === '(거래처 미입력)' ? '' : escAttr(cust)}', '${fkey === '(연락처 미입력)' ? '' : escAttr(fkey)}')" style="border:none;background:#eaf3ec;color:#2f6b46;border-radius:6px;padding:2px 8px;font-size:11px;font-weight:700;">+ 추가</button>
           <button onclick="renameFactoryForOrders('${escAttr(fkey)}', [${allIdsInGroup.join(',')}])" style="border:none;background:#eee;color:#555;border-radius:6px;padding:2px 8px;font-size:11px;">공장/연락처 일괄수정 (${allIdsInGroup.length}건)</button>
           ${notDoneIds.length > 0 ? `<button onclick="openReturnForFactoryGroup('${escAttr(cust)}', [${notDoneIds.join(',')}])" style="border:none;background:#fce8d6;color:#a15c1e;border-radius:6px;padding:2px 8px;font-size:11px;">추가금 (이 공장건 전체)</button>` : ''}
           ${(() => { const withFee = fItems.find(o => o.pendingFee); return withFee ? `<span style="color:#a15c1e;font-weight:600;">💸 보류된 추가금 ${withFee.pendingFee.amount.toLocaleString()}원 <span onclick="event.stopPropagation();editPendingFee(${withFee.id})" style="text-decoration:underline;cursor:pointer;">수정</span></span>` : ''; })()}
@@ -10816,16 +10737,19 @@ function renderItemBuckets(list2) {
 }
 
 
-function openOrderAddModal() {
+function openOrderAddModal(prefCustomer, prefFactory) { // 이월장부에서 거래처/공장 옆 "+ 발주"/"+ 추가"로 열면 거래처(와 공장)가 미리 채워져 있음. 저장은 새 발주 카드로 붙음(기존 카드는 안 건드림)
   editingOrderId = null;
-  document.getElementById('orderModalTitle').textContent = '새 발주 등록';
+  const pre = typeof prefCustomer === 'string' && prefCustomer !== '';
+  document.getElementById('orderModalTitle').textContent = pre ? `발주 추가 · ${prefCustomer}` : '새 발주 등록';
   document.getElementById('o-date').value = toDateInputValue(todayStr());
-  document.getElementById('o-customer').value = '';
+  document.getElementById('o-customer').value = pre ? prefCustomer : '';
   document.getElementById('o-multi-wrap').classList.remove('hidden');
   document.getElementById('o-single-wrap').classList.add('hidden');
   document.getElementById('o-multi-list').innerHTML = '';
   addFactoryGroup();
+  if (pre && typeof prefFactory === 'string' && prefFactory !== '') document.querySelector('#o-multi-list .o-factory-input').value = prefFactory;
   document.getElementById('orderAddModal').classList.add('open');
+  if (pre) setTimeout(() => { const el = document.querySelector('#o-multi-list .o-item-input'); if (el) el.focus(); }, 60); // 바로 품목부터 입력
 }
 function addFactoryGroup() {
   const listEl = document.getElementById('o-multi-list');
@@ -11065,7 +10989,7 @@ function resolveInventoryItem(itemName) {
 function colorExistsForItem(t_item, t_color) {
   // 실제 재고(rolls)가 있거나, 재고는 없어도 스왓치·중국품번이 등록되어 있으면 "존재하는 컬러"로 인정함
   if (rolls.some(r => String(r.item).trim() === t_item && String(r.color).trim() === t_color)) return true;
-  if (swatchInfo.some(s => String(s.item).trim() === t_item && s.color != null && String(s.color).trim() === t_color && (s.order != null || s.chinaCode != null || s.keepCard))) return true;
+  if (swatchInfo.some(s => String(s.item).trim() === t_item && s.color != null && String(s.color).trim() === t_color && swHasInfo(s))) return true;
   return false;
 }
 function resolveInventoryColor(item, colorText) {
@@ -11961,8 +11885,10 @@ function releasePendingFeeForOrder(o) {
 async function editPendingFee(orderId) {
   const o = orders.find(x => x.id === orderId);
   if (!o || !o.pendingFee) return;
-  const raw = prompt(`보류된 추가금을 얼마로 고칠까요? (0을 입력하면 삭제돼요)`, String(o.pendingFee.amount));
-  if (raw === null) return;
+  const _pf = await askForm('보류 추가금 수정', [{ label: '금액(원) · 0이면 삭제', value: String(o.pendingFee.amount), numeric: true }, { label: '비고(사유)', value: o.pendingFee.note || '' }]);
+  if (_pf === null) return;
+  const raw = _pf[0];
+  const note = _pf[1];
   const amount = parseFloat(raw);
   if (isNaN(amount) || amount < 0) { showToast('금액을 확인해주세요'); return; }
 
@@ -11975,7 +11901,6 @@ async function editPendingFee(orderId) {
     showToast('보류된 추가금을 삭제했어요');
     return;
   }
-  const note = prompt('비고(사유)를 고칠까요? (그대로 두려면 확인만 눌러주세요)', o.pendingFee.note || '');
   for (const go of groupOrders) {
     go.pendingFee = { ...go.pendingFee, amount, note: note != null ? note.trim() : (go.pendingFee.note || '') };
   }
@@ -12338,7 +12263,7 @@ async function markOrderDone(id) {
 
   if (remain > 0) {
     const remembered = findRememberedPrice(o.customer, o.item, o.color);
-    const priceStr = prompt(`남은 ${remain}${o.unit || 'y'}을 출고 처리하면서 완료합니다.\n판매단가를 입력하세요 (모르면 빈 채로 확인 누르셔도 돼요).`, remembered != null ? String(remembered) : '');
+    const priceStr = await askText('출고 처리하며 완료', remembered != null ? String(remembered) : '', { desc: `남은 ${remain}${o.unit || 'y'}`, label: '판매단가(원) · 모르면 비워두세요', numeric: true });
     if (priceStr === null) return; // 취소하면 완료 처리 자체를 하지 않음
     const unitPriceRaw = parseFloat(priceStr);
     unitPrice = (unitPriceRaw && unitPriceRaw > 0) ? unitPriceRaw : null;
@@ -12498,6 +12423,7 @@ function openSwatchEditModal(cat, item, color) {
   document.getElementById('sw-desc').textContent = `${item} · ${color} (분류 ${cat})`;
   document.getElementById('sw-color-name').value = color;
   document.getElementById('sw-order').value = sw && sw.order != null ? sw.order : '';
+  document.getElementById('sw-order-spring').value = sw && sw.orderSpring != null ? sw.orderSpring : '';
   document.getElementById('sw-china').value = sw && sw.chinaCode ? sw.chinaCode : '';
   document.getElementById('swatchEditModal').classList.add('open');
 }
@@ -12510,6 +12436,9 @@ async function saveSwatchEdit() {
   const orderRaw = document.getElementById('sw-order').value.trim();
   const chinaRaw = document.getElementById('sw-china').value.trim();
   const order = orderRaw === '' ? null : parseInt(orderRaw);
+  const springRaw = document.getElementById('sw-order-spring').value.trim();
+  const orderSpring = springRaw === '' ? null : parseInt(springRaw);
+  if ((orderRaw !== '' && !(order >= 0)) || (springRaw !== '' && !(orderSpring >= 0))) { showToast('순번은 숫자로 입력해주세요'); return; }
   const chinaCode = chinaRaw === '' ? null : chinaRaw;
 
   // 컬러 이름이 바뀌었으면 rolls/swatchInfo/priceBook 전부 새 이름으로 갱신
@@ -12535,37 +12464,188 @@ async function saveSwatchEdit() {
   }
 
   let sw = findExactSwatch(cat, item, color);
-  if (!sw && order === null && chinaCode === null) {
+  if (!sw && order === null && orderSpring === null && chinaCode === null) {
     if (renamed) { await persistSwatchInfo(); closeSwatchEditModal(); render(); showToast('컬러 이름을 수정했습니다'); }
     else closeSwatchEditModal();
     return;
   }
 
-  // 같은 품목 안에서 이 번호를 이미 다른 컬러가 쓰고 있으면, 그 번호 이상인 것들을 한 칸씩 뒤로 밀기
+  // 같은 품목 안에서 이 번호를 이미 다른 컬러가 쓰고 있으면, 그 번호 이상인 것들을 한 칸씩 뒤로 밀기 (S/S 번호끼리, F/W 번호끼리 따로 계산)
   let conflictOccurred = false;
-  if (order != null) {
-    const conflict = swatchInfo.some(s => String(s.item).trim() === String(item).trim() && s.order === order && String(s.color).trim() !== String(color).trim());
-    if (conflict) {
-      conflictOccurred = true;
-      const t_item = String(item).trim();
-      const toShift = swatchInfo.filter(s => String(s.item).trim() === t_item && s.order != null && s.order >= order && String(s.color).trim() !== String(color).trim());
-      toShift.sort((a, b) => b.order - a.order); // 뒤에서부터 밀어야 서로 안 겹침
-      for (const s of toShift) s.order = s.order + 1;
-    }
-  }
+  if (order != null && shiftSwatchBook(item, 'order', order, color)) conflictOccurred = true;
+  if (orderSpring != null && shiftSwatchBook(item, 'orderSpring', orderSpring, color)) conflictOccurred = true;
 
   if (!sw) {
     sw = { id: nextSwatchId++, cat, item, color, order: null, chinaCode: null };
     swatchInfo.push(sw);
   }
-  sw.order = order; sw.chinaCode = chinaCode;
+  sw.order = order; sw.orderSpring = orderSpring; sw.chinaCode = chinaCode;
+  if (sw.orderSpring == null) delete sw.orderSpring; // S/S 번호 없는 컬러는 필드 자체를 안 남겨서 예전 데이터와 똑같이 유지
   // 방금 수정한 이 컬러 자신이 순번도 중국품번도 다 비워졌으면 그 항목만 정리함
   // (전체 스왓치 목록에서 빈 항목을 다 지우면, 재고소진으로 자동보호 등록된 다른 컬러들까지 같이 삭제돼버리는 심각한 버그가 있었음)
-  if (sw.order == null && sw.chinaCode == null && !sw.keepCard) {
+  if (sw.order == null && sw.orderSpring == null && sw.chinaCode == null && !sw.keepCard) {
     swatchInfo = swatchInfo.filter(s => s !== sw);
   }
   await persistSwatchInfo(); closeSwatchEditModal(); render();
-  showToast(renamed ? '컬러 이름과 정보를 저장했습니다' : (conflictOccurred ? `${order}번으로 저장, 겹치던 컬러들은 자동으로 한 칸씩 밀렸어요` : '저장되었습니다'));
+  showToast(renamed ? '컬러 이름과 정보를 저장했습니다' : (conflictOccurred ? `번호 저장, 겹치던 컬러들은 자동으로 한 칸씩 밀렸어요` : '저장되었습니다'));
+}
+
+// ---------- 스왓치 일괄수정 (한 품목의 모든 컬러: 이름 / F/W 번호 / S/S 번호 / 중국품번) ----------
+let swbCtx = null; // {cat, item, rows:[{orig, stock, fw, ss, china}]}
+function openSwatchBulkModal(cat, item) {
+  const t_item = String(item).trim();
+  const names = new Set();
+  const stock = new Map();
+  for (const r of rolls) {
+    if (String(r.item).trim() !== t_item) continue;
+    const c = String(r.color).trim();
+    names.add(c);
+    if (!r.defective) stock.set(c, Math.round(((stock.get(c) || 0) + (Number(r.qty) || 0)) * 100) / 100);
+  }
+  for (const sw of swatchInfo) if (String(sw.item).trim() === t_item && sw.color != null && swHasInfo(sw)) names.add(String(sw.color).trim());
+  names.delete('');
+  if (names.size === 0) { showToast('고칠 컬러가 없어요'); return; }
+  const rows = Array.from(names).map(c => {
+    const sw = swatchInfo.find(x => String(x.item).trim() === t_item && x.color != null && String(x.color).trim() === c);
+    return { orig: c, stock: stock.get(c) || 0, fw: sw && sw.order != null ? String(sw.order) : '', ss: sw && sw.orderSpring != null ? String(sw.orderSpring) : '', china: sw && sw.chinaCode ? String(sw.chinaCode) : '' };
+  });
+  const rank = (v) => v === '' ? Infinity : parseInt(v);
+  rows.sort((a, b) => (rank(a.fw) - rank(b.fw)) || (rank(a.ss) - rank(b.ss)) || a.orig.localeCompare(b.orig, 'ko')); // F/W 번호 순서 (번호 없는 컬러는 S/S 번호, 이름 순)
+  swbCtx = { cat, item, rows };
+  document.getElementById('swb-title').textContent = `${item} · 스왓치 일괄수정`;
+  const sty = 'width:100%;box-sizing:border-box;height:36px;padding:0 8px;border:1px solid var(--border);border-radius:8px;font-size:14px;margin:0;';
+  document.getElementById('swb-list').innerHTML = rows.map((r, i) => `
+    <div class="swb-row" data-i="${i}" style="border-top:1px solid var(--border);padding:9px 0;">
+      <div style="display:flex;gap:8px;align-items:center;">
+        <input class="swb-name" value="${escAttr(r.orig)}" oninput="swbRecalc()" style="${sty}flex:1;font-weight:700;font-size:15px;">
+        <div style="flex:none;font-size:11px;color:var(--muted);width:56px;text-align:right;">${r.stock.toLocaleString()}y</div>
+      </div>
+      <div class="swb-orig" style="font-size:11px;color:var(--muted);margin-top:2px;display:none;"></div>
+      <div style="display:flex;gap:6px;margin-top:6px;">
+        <div style="flex:1;"><label style="display:block;font-size:10.5px;font-weight:700;color:#8a5a3b;margin:0 0 2px;line-height:14px;height:14px;">F/W</label><input class="swb-fw" type="number" min="0" value="${escAttr(r.fw)}" oninput="swbRecalc()" style="${sty}text-align:center;"></div>
+        <div style="flex:1;"><label style="display:block;font-size:10.5px;font-weight:700;color:var(--primary);margin:0 0 2px;line-height:14px;height:14px;">S/S</label><input class="swb-ss" type="number" min="0" value="${escAttr(r.ss)}" oninput="swbRecalc()" style="${sty}text-align:center;"></div>
+        <div style="flex:1.5;"><label style="display:block;font-size:10.5px;font-weight:700;color:var(--muted);margin:0 0 2px;line-height:14px;height:14px;">중국품번</label><input class="swb-china" value="${escAttr(r.china)}" placeholder="비움" oninput="swbRecalc()" style="${sty}text-align:center;"></div>
+      </div>
+    </div>`).join('');
+  document.getElementById('swatchBulkModal').classList.add('open');
+  swbRecalc();
+}
+function closeSwatchBulkModal() { document.getElementById('swatchBulkModal').classList.remove('open'); swbCtx = null; }
+function swbRead() { // 화면 입력값을 읽고 점검함. {rows, errors, bad: Set<i>(이름 오류 행), badFw, badSs}
+  const ctx = swbCtx; if (!ctx) return null;
+  const rowEls = Array.from(document.querySelectorAll('#swb-list .swb-row'));
+  const rows = rowEls.map((el, i) => ({
+    i, orig: ctx.rows[i].orig, name: el.querySelector('.swb-name').value.trim(),
+    fw: el.querySelector('.swb-fw').value.trim(), ss: el.querySelector('.swb-ss').value.trim(), china: el.querySelector('.swb-china').value.trim(),
+    o: ctx.rows[i]
+  }));
+  const errors = []; const badName = new Set(), badFw = new Set(), badSs = new Set();
+  const nameCount = new Map();
+  for (const r of rows) nameCount.set(r.name, (nameCount.get(r.name) || 0) + 1);
+  for (const r of rows) {
+    if (r.name === '') { badName.add(r.i); errors.push(`"${r.orig}" 컬러의 이름이 비어있어요.`); }
+    else if (nameCount.get(r.name) > 1) { badName.add(r.i); }
+  }
+  for (const [n, c] of nameCount) if (n !== '' && c > 1) errors.push(`컬러 이름 "${n}"이(가) ${c}번 있어요. 이름은 서로 달라야 해요.`);
+  const numOk = (v) => v === '' || (/^\d+$/.test(v));
+  for (const r of rows) {
+    if (!numOk(r.fw)) { badFw.add(r.i); errors.push(`"${r.name || r.orig}"의 F/W 번호는 숫자만 쓸 수 있어요.`); }
+    if (!numOk(r.ss)) { badSs.add(r.i); errors.push(`"${r.name || r.orig}"의 S/S 번호는 숫자만 쓸 수 있어요.`); }
+  }
+  for (const [fld, bad, label] of [['fw', badFw, 'F/W'], ['ss', badSs, 'S/S']]) {
+    const m = new Map();
+    for (const r of rows) if (r[fld] !== '' && numOk(r[fld])) { const n = parseInt(r[fld]); if (!m.has(n)) m.set(n, []); m.get(n).push(r); }
+    for (const [n, list] of m) if (list.length > 1) { for (const r of list) bad.add(r.i); errors.push(`${label} ${n}번이 두 컬러(${list.map(x => x.name || x.orig).join(', ')})에 겹쳤어요. 하나를 고쳐주세요.`); }
+  }
+  // 이름을 바꾼 것들: 기존에 따로 있는 다른 컬러 이름으로 바꾸는 건 (합쳐지니까) 막음, 서로 맞바꾸는 것도 막음
+  const t_item = String(ctx.item).trim();
+  const origNames = new Set(rows.map(r => r.orig));
+  const otherNames = new Set();
+  for (const r of rolls) if (String(r.item).trim() === t_item) otherNames.add(String(r.color).trim());
+  for (const sw of swatchInfo) if (String(sw.item).trim() === t_item && sw.color != null) otherNames.add(String(sw.color).trim());
+  for (const pb of priceBook) if (String(pb.item).trim() === t_item && pb.color) otherNames.add(String(pb.color).trim());
+  const renameMap = new Map();
+  for (const r of rows) if (r.name !== '' && r.name !== r.orig) renameMap.set(r.orig, r.name);
+  for (const r of rows) {
+    if (r.name === '' || r.name === r.orig || badName.has(r.i)) continue;
+    if (otherNames.has(r.name) && !origNames.has(r.name)) { badName.add(r.i); errors.push(`"${r.name}" 컬러가 이미 따로 있어요. 합치는 건 컬러별 수정창에서 해주세요.`); }
+  }
+  for (const [from] of renameMap) { // 맞바꾸기(A→B, B→A) 같은 순환 금지
+    let cur = from, steps = 0;
+    while (renameMap.has(cur) && steps++ <= renameMap.size) cur = renameMap.get(cur);
+    if (steps > renameMap.size) { const rr = rows.find(x => x.orig === from); badName.add(rr.i); errors.push(`"${from}" 이름을 다른 컬러와 서로 맞바꾸는 건 한 번에 안 돼요. 하나씩 나눠서 바꿔주세요.`); break; }
+  }
+  return { rows, errors: Array.from(new Set(errors)), badName, badFw, badSs, renameMap };
+}
+function swbRecalc() {
+  const res = swbRead(); if (!res) return;
+  const rowEls = Array.from(document.querySelectorAll('#swb-list .swb-row'));
+  let nName = 0, nNum = 0, nChina = 0, nRows = 0;
+  const HL = '#fffbe6', HLB = '#e8b923', BAD = '#fdecea', BADB = '#c0392b';
+  const paint = (input, state) => { input.style.background = state === 'bad' ? BAD : state === 'chg' ? HL : '#fff'; input.style.borderColor = state === 'bad' ? BADB : state === 'chg' ? HLB : 'var(--border)'; input.style.color = state === 'bad' ? BADB : ''; };
+  for (const r of res.rows) {
+    const el = rowEls[r.i];
+    const nameChg = r.name !== r.orig && r.name !== '', fwChg = r.fw !== r.o.fw, ssChg = r.ss !== r.o.ss, chChg = r.china !== r.o.china;
+    paint(el.querySelector('.swb-name'), res.badName.has(r.i) ? 'bad' : nameChg ? 'chg' : '');
+    paint(el.querySelector('.swb-fw'), res.badFw.has(r.i) ? 'bad' : fwChg ? 'chg' : '');
+    paint(el.querySelector('.swb-ss'), res.badSs.has(r.i) ? 'bad' : ssChg ? 'chg' : '');
+    paint(el.querySelector('.swb-china'), chChg ? 'chg' : '');
+    const og = el.querySelector('.swb-orig');
+    if (nameChg) { og.style.display = ''; og.textContent = `← 원래 이름: ${r.orig}`; } else og.style.display = 'none';
+    if (nameChg) nName++; if (fwChg || ssChg) nNum++; if (chChg) nChina++;
+    if (nameChg || fwChg || ssChg || chChg) nRows++;
+  }
+  const sum = document.getElementById('swb-summary'), err = document.getElementById('swb-errors');
+  if (nRows > 0) { sum.style.display = ''; sum.textContent = `변경 ${nRows}건 · 이름 ${nName} · 번호 ${nNum} · 품번 ${nChina}`; } else sum.style.display = 'none';
+  if (res.errors.length > 0) { err.style.display = ''; err.innerHTML = res.errors.map(e => `⚠️ ${esc(e)}`).join('<br>'); } else err.style.display = 'none';
+  const btn = document.getElementById('swb-save');
+  btn.disabled = res.errors.length > 0; btn.style.opacity = res.errors.length > 0 ? '0.45' : '';
+}
+let _swbSaving = false;
+async function saveSwatchBulk() {
+  if (_swbSaving || !swbCtx) return;
+  const res = swbRead(); if (!res) return;
+  if (res.errors.length > 0) { showToast('빨갛게 표시된 칸을 먼저 고쳐주세요'); return; }
+  const changed = res.rows.filter(r => r.name !== r.orig || r.fw !== r.o.fw || r.ss !== r.o.ss || r.china !== r.o.china);
+  if (changed.length === 0) { closeSwatchBulkModal(); showToast('바뀐 게 없어요'); return; }
+  _swbSaving = true;
+  try {
+    const { cat, item } = swbCtx;
+    const t_item = String(item).trim();
+    // 1) 이름 바꾸기 - 한 번에 지도(옛 이름->새 이름)로 처리해서, 바꾸는 도중에 이름이 서로 섞이는 일이 없게 함
+    const renameMap = res.renameMap;
+    let renamed = 0;
+    if (renameMap.size > 0) {
+      for (const r of rolls) if (String(r.item).trim() === t_item && renameMap.has(String(r.color).trim())) r.color = renameMap.get(String(r.color).trim());
+      for (const sw of swatchInfo) if (String(sw.item).trim() === t_item && sw.color != null && renameMap.has(String(sw.color).trim())) sw.color = renameMap.get(String(sw.color).trim());
+      for (const pb of priceBook) if (String(pb.item).trim() === t_item && pb.color && renameMap.has(String(pb.color).trim())) pb.color = renameMap.get(String(pb.color).trim());
+      let settingsChanged = false;
+      for (const [from, to] of renameMap) { if (recordColorRename(item, from, item, to)) settingsChanged = true; renamed++; }
+      if (settingsChanged) await persistSettings();
+      await persistRolls();
+      await persistPriceBook();
+    }
+    // 2) 번호 / 중국품번 (바뀐 컬러만 건드림)
+    for (const r of changed) {
+      const color = r.name;
+      const fwChg = r.fw !== r.o.fw, ssChg = r.ss !== r.o.ss, chChg = r.china !== r.o.china;
+      if (!fwChg && !ssChg && !chChg) continue;
+      let sw = swatchInfo.find(x => String(x.item).trim() === t_item && x.color != null && String(x.color).trim() === color);
+      if (!sw) {
+        if (r.fw === '' && r.ss === '' && r.china === '') continue;
+        sw = { id: nextSwatchId++, cat, item, color, order: null, chinaCode: null };
+        swatchInfo.push(sw);
+      }
+      if (fwChg) sw.order = r.fw === '' ? null : parseInt(r.fw);
+      if (ssChg) { if (r.ss === '') delete sw.orderSpring; else sw.orderSpring = parseInt(r.ss); }
+      if (chChg) sw.chinaCode = r.china === '' ? null : r.china;
+      if (sw.order == null && sw.orderSpring == null && sw.chinaCode == null && !sw.keepCard) swatchInfo = swatchInfo.filter(x => x !== sw);
+    }
+    await persistSwatchInfo();
+    closeSwatchBulkModal();
+    render();
+    showToast(`${changed.length}건 저장${renamed ? ` (이름 ${renamed}건 포함)` : ''}`);
+  } finally { _swbSaving = false; }
 }
 
 async function fixKimoColors() {
@@ -12718,7 +12798,7 @@ async function archiveOldSalesLog() {
   }
 }
 async function repairInventoryFromShipmentLog() {
-  const cutoff = prompt('언제 이후의 출고/반품 기록을 재고에 다시 반영할까요? (YYYY-MM-DD)', '2026-08-07');
+  const cutoff = await askText('재고 재반영', '2026-08-07', { desc: '이 날짜 이후의 출고/반품 기록을 재고에 다시 반영해요', label: '기준일 (YYYY-MM-DD)' });
   if (!cutoff) return;
   if (!confirm(`${cutoff} 이후의 출고/반품 기록을 재고에서 다시 빼고(또는 반품은 다시 채우고) 반영할게요.\n\n※ 지금 재고가 ${cutoff} 이전(또는 그 근처) 상태로 되돌아가 있다는 전제로 진행하는 거예요. 이미 정상인데 또 누르면 이중으로 빠질 수 있으니 주의하세요.\n※ 불량은 원래도 재고 변동이 없어서 안 건드려요.\n※ 이 기간에 새로 "입고"하신 게 있다면, 그건 이 기능으로 복구가 안 돼서 직접 다시 입력해주셔야 해요.\n\n계속할까요?`)) return;
 
