@@ -1385,7 +1385,7 @@
 const PASSWORD = "3059";
 const ADMIN_PASSWORD = "9503"; // 매출/미수금 탭 전용 - 필요하면 이 값만 바꿔서 변경 가능
 const DATA_VERSION = "2026-08-03-v4"; // 재고/이월장부 씨앗 데이터를 바꿀 때마다 이 값을 새로 바꿔주세요
-const APP_CODE_VERSION = "2026-11-20-zr"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
+const APP_CODE_VERSION = "2026-11-20-zs"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
 const SCHEMA_STAMP = 2; // 서버 저장규칙이 확인하는 "최신 앱 도장" - 절대 자주 바꾸지 않음(이 값을 아는 코드만 저장 가능하게 서버에서 막을 때 씀)
 const CONFIRMED_EMPTY = '__CONFIRMED_EMPTY__'; // "서버가 확실하게 문서가 없다고 확인해줬다"는 걸 표시하는 특수값
                                                  // (한번도 확인 안 한 null과 구분해서, 그 사이 다른 사람이 첫 데이터를 만들었으면 충돌로 감지하기 위함)
@@ -7498,7 +7498,7 @@ async function ledgerBuild(customer, token) {
   const evOut = ev.slice(-600);
   if (ev.length > evOut.length) for (const e of ev.slice(0, ev.length - evOut.length)) opening += e.a;
   const mine = orders.filter(o => o && String(o.customer || '').trim() === t_c && !o.isSample);
-  const pack = o => ({ d: o.date || '', i: o.item || '', c: o.color || '', u: o.unit === '절' ? '절' : 'y', q: Number(o.orderQty) || 0, r: Number(o.received) || 0, s: orderStatus(o), sh: (shipBy.get(o.id) || []).slice().sort((a, b) => String(a.d).localeCompare(String(b.d))).slice(0, 20) });
+  const pack = o => ({ d: o.date || '', i: o.item || '', c: o.color || '', u: o.unit === '절' ? '절' : 'y', q: Number(o.orderQty) || 0, r: Number(o.received) || 0, s: orderStatus(o), sh: (shipBy.get(o.id) || []).slice().sort((a, b) => String(a.d).localeCompare(String(b.d))).slice(0, 20), ...(o.cmemo ? { m: String(o.cmemo).slice(0, 40) } : {}) });
   const active = mine.filter(o => !o.done).map(pack).slice(0, 60);
   const done = mine.filter(o => o.done).sort((a, b) => String(b.date || '').localeCompare(String(a.date || ''))).slice(0, 40).map(pack);
   return { v: 1, name: t_c, pin: await ledgerHash(token + ':' + ledgerPin()), acct: String(settings.bankInfo || ''), balance, credit, opening: Math.round(opening * 100) / 100, ev: evOut, active, done };
@@ -7671,7 +7671,25 @@ function renderLedgerLinkModal() {
          <div style="display:flex; gap:6px; margin-top:8px;"><button type="button" onclick="ledgerCopy()" style="${bs} flex:1; background:#595959; color:#fff;">링크 복사</button><button type="button" onclick="window.open(document.getElementById('ll-url').value,'_blank')" style="${bs} flex:1; background:#e8e3da; color:#444;">열어보기</button></div>
          <div style="display:flex; gap:6px; margin-top:6px;"><button type="button" onclick="ledgerRefreshNow()" style="${bs} flex:1; background:#e8e3da; color:#444;">지금 갱신</button><button type="button" onclick="ledgerRegen()" style="${bs} flex:1; background:#e8e3da; color:#444;">링크 다시 만들기</button><button type="button" onclick="ledgerOff()" style="${bs} flex:1; background:#f3dcd6; color:#8a2f1d;">링크 끄기</button></div>`
       : `<button type="button" onclick="ledgerCreate()" style="${bs} width:100%; background:#595959; color:#fff;">장부 링크 만들기</button>`)
+    + (token ? ledgerMemoHtml(c) : '')
     + `<div style="margin-top:12px; padding-top:10px; border-top:1px solid var(--border); display:flex; align-items:center; gap:8px;"><span style="font-size:12px; color:var(--muted); white-space:nowrap;">비밀번호 (전체 공통)</span><input id="ll-pin" type="text" inputmode="numeric" value="${esc(ledgerPin())}" style="flex:1; min-width:0; font-size:14px; padding:8px; border:1px solid var(--border); border-radius:8px;"><button type="button" onclick="ledgerSavePin()" style="${bs} background:#e8e3da; color:#444;">저장</button></div>`;
+}
+function ledgerMemoHtml(c) { // 이월 항목마다 거래처 장부에 보여줄 짧은 메모 (출고 완료되면 목록에서 빠지면서 같이 사라짐)
+  const list = orders.filter(o => o && !o.done && !o.isSample && String(o.customer || '').trim() === String(c).trim()).sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')) || (a.id - b.id));
+  if (!list.length) return '';
+  return `<div style="margin-top:14px; padding-top:10px; border-top:1px solid var(--border);"><div style="font-size:13px; font-weight:800;">이월 메모 <span style="font-size:11.5px; color:var(--muted); font-weight:500;">거래처 장부에 그대로 보여요 · 쓰면 바로 저장돼요</span></div>`
+    + list.map(o => { const remain = (o.orderQty && o.orderQty > o.received) ? Math.round((o.orderQty - o.received) * 100) / 100 : 0;
+      return `<div style="padding:9px 0; border-top:1px solid #f1ece8; margin-top:6px;"><div style="display:flex; justify-content:space-between; align-items:baseline; gap:8px;"><b style="font-size:14px;">${esc(o.item)} ${esc(o.color || '')}</b><span style="font-size:12px; color:var(--danger); font-weight:700; white-space:nowrap;">${remain > 0 ? '이월 ' + remain + (o.unit || 'y') : ''}</span></div><input type="text" maxlength="30" value="${esc(o.cmemo || '')}" placeholder="예: 11.25 출고 예정" onchange="ledgerMemoSave(${Number(o.id)}, this)" style="width:100%; box-sizing:border-box; margin-top:6px; font-size:14px; padding:9px 10px; border:1px solid var(--border); border-radius:8px;"></div>`; }).join('')
+    + `</div>`;
+}
+async function ledgerMemoSave(id, el) {
+  const o = orders.find(x => x && x.id === id); if (!o) return;
+  const v = String(el.value || '').trim().slice(0, 30), prev = o.cmemo || '';
+  if (v === prev) return;
+  if (v) o.cmemo = v; else delete o.cmemo;
+  let ok = false; try { ok = await persistOrders(); } catch (e) { ok = false; }
+  if (!ok) { if (prev) o.cmemo = prev; else delete o.cmemo; el.value = prev; showToast('저장하지 못했어요 (인터넷 연결을 확인해주세요)'); return; }
+  el.value = v; showToast(v ? '메모를 저장했어요' : '메모를 지웠어요');
 }
 async function ledgerSaveLinks(links, msg) {
   const before = settings; settings = { ...settings, ledgerLinks: links };
