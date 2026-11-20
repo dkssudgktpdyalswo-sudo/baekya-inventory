@@ -18,12 +18,16 @@ button{font-family:inherit}
 .brand{display:flex;align-items:center;justify-content:space-between;padding:12px 16px 8px}.brand img{height:20px;display:block}.brand .loc{font-size:12px;color:var(--muted)}
 .tabs{display:flex;padding:0 8px}.tabs button{flex:1;text-align:center;padding:11px 0 12px;font-size:16px;font-weight:700;color:var(--muted);border:none;background:none;border-bottom:3px solid transparent;margin-bottom:-2px}.tabs button.on{color:var(--ink);border-bottom-color:var(--brand)}
 .asof{font-size:12px;color:var(--muted);padding:12px 16px 0}
-.hero{margin:10px 14px 0;background:var(--brand);color:#fff;border-radius:14px;padding:18px 18px 16px}
-.hero .l{font-size:13px;opacity:.8}.hero .n{font-size:34px;font-weight:800;letter-spacing:-.5px;margin-top:4px}.hero .n small{font-size:18px;font-weight:700;margin-left:2px}
-.hero .s{display:flex;flex-direction:column;gap:3px;margin-top:12px;font-size:13px;opacity:.9;line-height:1.5}
+.hero{margin:10px 14px 0;background:#fff;border:1px solid var(--hair);color:var(--ink);border-radius:12px;padding:12px 16px}
+.hero .l{font-size:12.5px;color:var(--muted)}.hero .n{font-size:22px;font-weight:800;letter-spacing:-.3px;margin-top:2px}.hero .n small{font-size:14px;font-weight:700;margin-left:2px}
+.hero .s{margin-top:6px;font-size:12px;color:var(--muted);line-height:1.5}
 .acct{margin:10px 14px 0;background:#fff;border:1px solid var(--hair);border-radius:12px;padding:12px 14px;font-size:14px;display:flex;justify-content:space-between;align-items:center;gap:10px}
 .acct .t{min-width:0;word-break:break-all}.acct small{display:block;font-size:12px;color:var(--muted)}.acct b{font-size:15px}
 .acct button{flex:none;font-size:12px;font-weight:700;background:#e6e1e1;border:none;border-radius:6px;padding:6px 10px;color:var(--ink)}
+.row.x{cursor:pointer}.row .chv{color:#b5adad;font-size:18px;margin-left:8px;display:inline-block;transition:transform .15s}.row.op{border-radius:12px 12px 0 0;margin-bottom:0}.row.op .chv{transform:rotate(180deg)}
+.dcard{margin:0 14px;background:#fff;border:1px solid var(--hair);border-top:1px solid var(--strip);border-radius:0 0 12px 12px;overflow:hidden}
+.expall{margin-left:auto;align-self:center;border:none;background:none;font-size:13px;font-weight:700;color:var(--muted);padding:6px 2px}
+.sh{font-size:12.5px;color:var(--muted);margin-top:3px;line-height:1.5}
 .sec{font-size:13px;font-weight:800;color:var(--muted);padding:16px 16px 4px;letter-spacing:.3px}
 .row{display:flex;justify-content:space-between;align-items:center;gap:10px;background:#fff;border:1px solid var(--hair);border-radius:12px;padding:12px 14px;margin:8px 14px 0}
 .row .a{font-size:15px;font-weight:800}.row .b{font-size:12.5px;color:var(--muted);margin-top:3px}
@@ -47,13 +51,13 @@ button{font-family:inherit}
 .pin .er{color:#b5483a;font-size:13px;margin-top:10px;min-height:18px}
 .bar{position:fixed;left:0;right:0;bottom:0;z-index:20;background:var(--paper);border-top:1px solid var(--hair);padding:10px 14px calc(10px + env(safe-area-inset-bottom));display:flex;gap:8px;justify-content:center}
 .bar a{flex:1;display:flex;align-items:center;justify-content:center;gap:6px;max-width:342px;background:var(--brand);color:#fff;border-radius:12px;padding:14px 0;font-size:16px;font-weight:800;white-space:nowrap}
-.bar a.ch{background:#fee500;color:#191919}
+.ft a{text-decoration:underline}
 .toast{position:fixed;left:0;right:0;margin:0 auto;width:fit-content;bottom:86px;z-index:30;background:rgba(25,25,25,.92);color:#fff;font-size:14px;padding:10px 18px;border-radius:12px;opacity:0;pointer-events:none;transition:opacity .2s}.toast.on{opacity:1}
 </style>
 </head>
 <body>
 <div id="app"></div>
-<div class="bar"><a href="tel:02-2277-9330">📞 전화하기</a><a class="ch" href="https://pf.kakao.com/_cnMsn/chat">💬 채널로 돌아가기</a></div>
+<div class="bar"><a href="customer.html?p=new">✨ 신상 · Best 품목 보러가기</a></div>
 <div class="toast" id="toast"></div>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
@@ -63,7 +67,7 @@ const LOGO = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAArwAAABTCAYAAAB9N9Q9
 const cfg = { apiKey: "AIzaSyA4Qrz16VpQuBVxTzGMyoAD9BtzIgXV0cQ", projectId: "project-8895328122777928786", appId: "1:995742705102:web:7294216d6e4745dd1df79f" };
 const app = document.getElementById('app');
 const TOKEN = new URLSearchParams(location.search).get('t') || '';
-let snap = null, tab = 'a', range = 'cur', unlocked = false, state = 'load'; // load | none | err | pin | ok
+let snap = null, tab = 'a', unlocked = false, state = 'load'; // load | none | err | pin | ok
 const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const won = n => Math.round(n).toLocaleString('ko-KR') + '원';
 const r2 = v => Math.round(v * 100) / 100;
@@ -77,10 +81,15 @@ async function sha(str) {
   catch (e) { return null; }
 }
 function head() {
-  const tabs = [['a', '미수금'], ['b', '출고내역'], ['c', '이월']];
-  return `<div class="top"><div class="brand"><img src="${LOGO}" alt="BAEK YA"><span class="loc">${esc(snap.name)} 님 장부</span></div><div class="tabs">${tabs.map(([k, n]) => `<button data-tab="${k}" class="${k === tab ? 'on' : ''}">${n}</button>`).join('')}</div></div>`;
+  const tabs = [['a', '출고내역'], ['c', '이월']];
+  return `<div class="top"><div class="brand"><img src="${LOGO}" alt="BAEK YA"><span class="loc">${esc(snap.name)} 귀하</span></div><div class="tabs">${tabs.map(([k, n]) => `<button data-tab="${k}" class="${k === tab ? 'on' : ''}">${n}</button>`).join('')}</div></div>`;
 }
 function asOfText() { const d = new Date(snap.asOf); if (isNaN(d)) return ''; return `${d.getMonth() + 1}.${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')} 업데이트`; }
+const ranges = { a: 'cur', b: 'cur', c: 'all' }; // 이월은 지난달에 발주한 대기 건이 안 가려지게 처음엔 '전체'
+function inRange(d, r) { return r === 'all' || monthKey(d) === (r === 'cur' ? nowKey() : prevKey()); }
+function rangeTitle(r) { return r === 'all' ? '전체' : `20${(r === 'cur' ? nowKey() : prevKey()).replace('.', '년 ')}월`; }
+function pills(t) { return `<div class="pill">${[['cur', '이번 달'], ['prev', '지난달'], ['all', '전체']].map(([k, n]) => `<button data-range="${k}" class="${k === ranges[t] ? 'on' : ''}">${n}</button>`).join('')}</div>`; }
+const openDays = new Set();
 function viewA() {
   const ev = snap.ev || [], cur = nowKey();
   let opening = snap.opening || 0, out = 0, inn = 0;
@@ -91,63 +100,60 @@ function viewA() {
   }
   opening = r2(opening); out = r2(out); inn = r2(inn);
   const showFormula = !(snap.credit > 0) && Math.abs(r2(opening + out - inn) - snap.balance) < 0.5; // 계산식이 안 맞으면 보여주지 않음 (헷갈리는 숫자 방지)
-  const hero = snap.credit > 0
-    ? `<div class="l">선수금</div><div class="n">${Math.round(snap.credit).toLocaleString('ko-KR')}<small>원</small></div>`
-    : `<div class="l">현재 미수금</div><div class="n">${Math.round(snap.balance).toLocaleString('ko-KR')}<small>원</small></div>`;
-  const formula = showFormula ? `<div class="s"><span>지난달까지 ${won(opening)} + 이번 달 출고 ${won(out)}</span><span>- 이번 달 입금 ${won(inn)}</span></div>` : '';
+  const big = snap.credit > 0 ? snap.credit : snap.balance;
+  const hero = `<div class="l">${snap.credit > 0 ? '선수금' : '현재 미수금'}</div><div class="n">${Math.round(big).toLocaleString('ko-KR')}<small>원</small></div>`;
+  const formula = showFormula ? `<div class="s">지난달까지 ${won(opening)} + 이번 달 출고 ${won(out)} - 이번 달 입금 ${won(inn)}</div>` : '';
   const acct = snap.acct ? `<div class="acct"><div class="t"><small>입금계좌</small><b>${esc(snap.acct)}</b></div><button data-copy="1">복사</button></div>` : '';
-  // 최근 내역: 날짜별로 출고(매출/공제/반품 합) 한 줄, 입금 한 줄씩
-  const days = new Map();
-  for (const e of ev) {
+  // 날짜별로 출고(매출/공제/반품 합) 한 줄 - 누르면 그날 품목이 펼쳐짐, 입금은 한 줄씩
+  const list = ev.filter(e => inRange(e.d, ranges.a));
+  const days = new Map(); let sOut = 0, sIn = 0;
+  for (const e of list) {
     const isIn = e.t === '입금', k = e.d + (isIn ? '|in|' + e.n : '|out');
-    if (!days.has(k)) days.set(k, { d: e.d, isIn, n: isIn ? e.n : '', a: 0, items: [] });
-    const g = days.get(k); g.a += e.a;
-    if (!isIn && e.t === '매출') g.items.push(e.c ? '이월 미수금' : e.n);
+    if (isIn) sIn += -e.a; else sOut += e.a;
+    if (!days.has(k)) days.set(k, { k, d: e.d, isIn, n: isIn ? e.n : '', a: 0, evs: [] });
+    const g = days.get(k); g.a += e.a; g.evs.push(e);
   }
-  const rows = Array.from(days.values()).sort((a, b) => String(b.d).localeCompare(String(a.d))).slice(0, 8).map(g => {
+  const groups = Array.from(days.values()).sort((a, b) => String(b.d).localeCompare(String(a.d))).slice(0, 120);
+  const outKeys = groups.filter(g => !g.isIn).map(g => g.k), allOpen = outKeys.length > 0 && outKeys.every(k => openDays.has(k));
+  const rows = groups.map(g => {
     if (g.isIn) return `<div class="row"><div><div class="a">입금</div><div class="b">${esc(mmdd(g.d))} · ${esc(g.n.replace(/^입금\(?/, '').replace(/\)$/, '') || '입금')}</div></div><div class="r in">${won(g.a)}</div></div>`;
-    const first = g.items[0] || '출고', more = g.items.length > 1 ? ` 외 ${g.items.length - 1}건` : '';
-    return `<div class="row"><div><div class="a">출고</div><div class="b">${esc(mmdd(g.d))} · ${esc(first)}${more}</div></div><div class="r">${won(g.a)}</div></div>`;
-  }).join('');
-  return `<div class="asof">${esc(asOfText())}</div><div class="hero">${hero}${formula}</div>${acct}<div class="sec">최근 내역</div>${rows || '<div class="empty" style="padding:30px 0">아직 내역이 없어요</div>'}<div class="ft">금액이 다르다면 채널로 문의해 주세요</div>`;
-}
-function viewB() {
-  const ev = (snap.ev || []).filter(e => e.t !== '입금');
-  const cur = nowKey(), pv = prevKey();
-  const list = ev.filter(e => range === 'all' || (range === 'cur' ? monthKey(e.d) === cur : monthKey(e.d) === pv));
-  const total = r2(list.reduce((s, e) => s + e.a, 0)), cnt = list.filter(e => e.t === '매출').length;
-  const title = range === 'all' ? '전체' : `20${(range === 'cur' ? cur : pv).replace('.', '년 ')}월`;
-  const pills = [['cur', '이번 달'], ['prev', '지난달'], ['all', '전체']].map(([k, n]) => `<button data-range="${k}" class="${k === range ? 'on' : ''}">${n}</button>`).join('');
-  const byDay = new Map();
-  for (const e of list) { if (!byDay.has(e.d)) byDay.set(e.d, []); byDay.get(e.d).push(e); }
-  const body = Array.from(byDay.entries()).sort((a, b) => String(b[0]).localeCompare(String(a[0]))).map(([d, es]) => {
-    const sum = r2(es.reduce((s, e) => s + e.a, 0));
-    return `<div class="day"><b>${esc(mmdd(d))}</b><span>${won(sum)}</span></div><div class="card">${es.map(e => {
+    const names = g.evs.filter(e => e.t === '매출').map(e => e.c ? '이월 미수금' : e.n), first = names[0] || '출고', more = names.length > 1 ? ` 외 ${names.length - 1}건` : '';
+    const open = openDays.has(g.k);
+    const head = `<div class="row x${open ? ' op' : ''}" data-day="${esc(g.k)}"><div><div class="a">출고</div><div class="b">${esc(mmdd(g.d))} · ${esc(first)}${more}</div></div><div class="r">${won(g.a)}<span class="chv">⌄</span></div></div>`;
+    if (!open) return head;
+    return head + `<div class="dcard">${g.evs.map(e => {
       const sale = e.t === '매출';
       return `<div class="li"><div><div class="a">${esc(e.c ? '이월 미수금' : e.n)}${sale ? '' : ` <span class="chip">${esc(e.t)}</span>`}</div>${e.q ? `<div class="b">${esc(e.q)}</div>` : ''}</div><div class="r${e.a < 0 ? ' neg' : ''}">${won(e.a)}</div></div>`;
     }).join('')}</div>`;
   }).join('');
-  return `<div class="mon"><span class="m">${esc(title)}</span><span class="t">${cnt}건 · ${won(total)}</span></div><div class="pill">${pills}</div>${body || '<div class="empty" style="padding:40px 0">내역이 없어요</div>'}`;
+  const pl = pills('a').replace('</div>', outKeys.length ? `<button class="expall" data-expall="1">${allOpen ? '전체 접기' : '전체 펼치기'}</button></div>` : '</div>');
+  return `<div class="asof">${esc(asOfText())}</div><div class="hero">${hero}${formula}</div>${acct}<div class="mon" style="padding-top:18px"><span class="m">${esc(rangeTitle(ranges.a))}</span><span class="t">출고 ${won(sOut)} · 입금 ${won(sIn)}</span></div>${pl}${rows || '<div class="empty" style="padding:30px 0">내역이 없어요</div>'}<div class="ft">금액이 다르다면 <a href="https://pf.kakao.com/_cnMsn/chat">채널로 문의</a>해 주세요</div>`;
 }
 function qty(n, u) { return `${r2(n).toLocaleString('ko-KR')}${u}`; }
 function viewC() {
-  const act = snap.active || [], dn = snap.done || [];
+  const r = ranges.c;
+  const act = (snap.active || []).filter(o => inRange(o.d || '', r)), dn = (snap.done || []).filter(o => inRange(o.d || '', r));
   const st = o => ({ wait: ['대기', 'wait'], partial: ['부분출고', ''], received_full: ['입고완료', 'ok'] }[o.s] || ['대기', 'wait']);
+  const shipTxt = o => {
+    const s = (o.sh || []);
+    if (s.length) return `<div class="sh">${s.map(x => `${esc(mmdd(x.d))} ${esc(x.q)}`).join(' · ')}</div>`;
+    return o.r > 0 ? `<div class="sh">출고 ${qty(o.r, o.u)}</div>` : '';
+  };
   const line = o => {
     const remain = o.q > o.r ? o.q - o.r : 0, [lb, cl] = st(o);
-    return `<div class="li"><div><div class="a">${esc(o.i)} ${esc(o.c)}</div><div class="b">발주 ${esc(mmdd(o.d || ''))}${o.r > 0 && remain > 0 ? ' · 일부 출고됨' : ''}</div></div><div class="r">${remain > 0 ? qty(remain, o.u) : (o.q > 0 ? '전량 처리' : '-')}<span class="chip ${cl}" style="display:block;margin:4px 0 0 auto;width:fit-content">${lb}</span></div></div>`;
+    return `<div class="li"><div><div class="a">${esc(o.i)} ${esc(o.c)}</div><div class="b">발주 ${esc(mmdd(o.d || ''))}${o.q > 0 ? ` · ${qty(o.q, o.u)}` : ''}</div>${shipTxt(o)}</div><div class="r">${remain > 0 ? qty(remain, o.u) : (o.q > 0 ? '전량 처리' : '-')}<span class="chip ${cl}" style="display:block;margin:4px 0 0 auto;width:fit-content">${lb}</span></div></div>`;
   };
-  return `<div class="asof">${esc(asOfText())} · 진행 중 ${act.length}건</div><div class="sec">출고 대기 중</div>`
+  return `<div class="mon"><span class="m">${esc(rangeTitle(r))}</span><span class="t">진행 중 ${act.length}건</span></div>${pills('c')}<div class="sec">출고 대기 중</div>`
     + (act.length ? `<div class="card">${act.map(line).join('')}</div>` : '<div class="empty" style="padding:30px 0">진행 중인 건이 없어요</div>')
-    + (dn.length ? `<div class="sec">최근 완료</div><div class="card">${dn.map(o => `<div class="li"><div><div class="a">${esc(o.i)} ${esc(o.c)}</div><div class="b">발주 ${esc(mmdd(o.d || ''))}</div></div><div class="r"><span class="chip ok" style="margin:0">완료</span></div></div>`).join('')}</div>` : '')
-    + '<div class="ft">정확한 입고일은 채널로 문의해 주세요</div>';
+    + (dn.length ? `<div class="sec">완료</div><div class="card">${dn.map(o => `<div class="li"><div><div class="a">${esc(o.i)} ${esc(o.c)}</div><div class="b">발주 ${esc(mmdd(o.d || ''))}${o.q > 0 ? ` · ${qty(o.q, o.u)}` : ''}</div>${shipTxt(o)}</div><div class="r"><span class="chip ok" style="margin:0">완료</span></div></div>`).join('')}</div>` : '')
+    + '<div class="ft">정확한 입고일은 <a href="https://pf.kakao.com/_cnMsn/chat">채널로 문의</a>해 주세요</div>';
 }
 function render() {
   if (state === 'load') { app.innerHTML = '<div class="empty">불러오는 중...</div>'; return; }
   if (state === 'none') { app.innerHTML = '<div class="msg">이 링크는 열리지 않아요.<br>담당자에게 새 링크를 요청해 주세요.</div>'; return; }
   if (state === 'err') { app.innerHTML = '<div class="msg">불러오지 못했어요.<br>잠시 후 다시 시도해주세요.<br><button id="retry">다시 불러오기</button></div>'; document.getElementById('retry').onclick = boot; return; }
   if (state === 'pin') {
-    app.innerHTML = `<div class="pin"><img src="${LOGO}" alt="BAEK YA"><div class="nm">${esc(snap.name)} 님 장부</div><div class="ds">비밀번호를 입력해주세요</div><input id="pin" type="password" inputmode="numeric" autocomplete="off" autofocus><button id="go">확인</button><div class="er" id="er"></div></div>`;
+    app.innerHTML = `<div class="pin"><img src="${LOGO}" alt="BAEK YA"><div class="nm">${esc(snap.name)} 귀하</div><div class="ds">비밀번호를 입력해주세요</div><input id="pin" type="password" inputmode="numeric" autocomplete="off" autofocus><button id="go">확인</button><div class="er" id="er"></div></div>`;
     const go = async () => {
       const v = document.getElementById('pin').value.trim(); if (!v) return;
       const h = await sha(TOKEN + ':' + v);
@@ -157,12 +163,14 @@ function render() {
     document.getElementById('go').onclick = go; document.getElementById('pin').addEventListener('keydown', e => { if (e.key === 'Enter') go(); });
     return;
   }
-  document.title = snap.name + ' · 백야 장부';
-  app.innerHTML = head() + (tab === 'a' ? viewA() : tab === 'b' ? viewB() : viewC());
+  document.title = snap.name + ' 귀하 · 백야';
+  app.innerHTML = head() + (tab === 'a' ? viewA() : viewC());
 }
 document.addEventListener('click', e => {
   const t = e.target.closest('[data-tab]'); if (t) { tab = t.dataset.tab; render(); window.scrollTo(0, 0); return; }
-  const r = e.target.closest('[data-range]'); if (r) { range = r.dataset.range; render(); return; }
+  const dy = e.target.closest('[data-day]'); if (dy) { const k = dy.dataset.day; if (openDays.has(k)) openDays.delete(k); else openDays.add(k); render(); return; }
+  if (e.target.closest('[data-expall]')) { const ks = Array.from(document.querySelectorAll('.row.x')).map(x => x.dataset.day); if (ks.every(k => openDays.has(k))) ks.forEach(k => openDays.delete(k)); else ks.forEach(k => openDays.add(k)); render(); return; }
+  const r = e.target.closest('[data-range]'); if (r) { ranges[tab] = r.dataset.range; render(); return; }
   if (e.target.closest('[data-copy]') && snap && snap.acct) {
     const done = () => toast('계좌번호를 복사했어요');
     if (navigator.clipboard && window.isSecureContext) navigator.clipboard.writeText(snap.acct).then(done, () => toast('길게 눌러서 복사해 주세요')); else toast('길게 눌러서 복사해 주세요');

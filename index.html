@@ -1377,7 +1377,7 @@
 const PASSWORD = "3059";
 const ADMIN_PASSWORD = "9503"; // 매출/미수금 탭 전용 - 필요하면 이 값만 바꿔서 변경 가능
 const DATA_VERSION = "2026-08-03-v4"; // 재고/이월장부 씨앗 데이터를 바꿀 때마다 이 값을 새로 바꿔주세요
-const APP_CODE_VERSION = "2026-11-20-zm"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
+const APP_CODE_VERSION = "2026-11-20-zo"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
 const SCHEMA_STAMP = 2; // 서버 저장규칙이 확인하는 "최신 앱 도장" - 절대 자주 바꾸지 않음(이 값을 아는 코드만 저장 가능하게 서버에서 막을 때 씀)
 const CONFIRMED_EMPTY = '__CONFIRMED_EMPTY__'; // "서버가 확실하게 문서가 없다고 확인해줬다"는 걸 표시하는 특수값
                                                  // (한번도 확인 안 한 null과 구분해서, 그 사이 다른 사람이 첫 데이터를 만들었으면 충돌로 감지하기 위함)
@@ -7468,9 +7468,18 @@ function ledgerCutoff(days) { const d = new Date(); d.setDate(d.getDate() - days
 async function ledgerBuild(customer, token) {
   const t_c = String(customer).trim();
   const archived = await fetchAllArchivedEntriesForCustomer(t_c); // 원장의 "이월" 잔액처럼 이 거래처의 전체 과거 흐름이 필요함
-  const orig = shipmentLog; let events, balance, credit;
+  const orig = shipmentLog; let events, balance, credit; const shipBy = new Map(); // 발주번호 -> 실제 나간 내역 (절/야드)
   if (archived.length > 0) shipmentLog = shipmentLog.concat(archived);
-  try { events = buildCustomerLedgerEvents(t_c); balance = getCustomerTrueUnpaid(t_c); credit = getCustomerCredit(t_c); }
+  try {
+    events = buildCustomerLedgerEvents(t_c); balance = getCustomerTrueUnpaid(t_c); credit = getCustomerCredit(t_c);
+    for (const e of shipmentLog) {
+      if (e.orderId == null || e.isReturn || e.isDefect || e.isSample || String(e.customer || '').trim() !== t_c || !(Number(e.amount) > 0)) continue;
+      const jeol = (e.unit || 'y') === '절', yd = Number(e.yardsShipped) || 0;
+      const q = jeol ? `${Math.round(e.amount * 100) / 100}절${yd ? ` (${Math.round(yd * 100) / 100}y)` : ''}` : `${Math.round((yd || e.amount) * 100) / 100}y`;
+      if (!shipBy.has(e.orderId)) shipBy.set(e.orderId, []);
+      shipBy.get(e.orderId).push({ d: e.date, q });
+    }
+  }
   finally { shipmentLog = orig; }
   const cut = ledgerCutoff(400);
   let opening = 0; const ev = [];
@@ -7481,9 +7490,9 @@ async function ledgerBuild(customer, token) {
   const evOut = ev.slice(-600);
   if (ev.length > evOut.length) for (const e of ev.slice(0, ev.length - evOut.length)) opening += e.a;
   const mine = orders.filter(o => o && String(o.customer || '').trim() === t_c && !o.isSample);
-  const pack = o => ({ d: o.date || '', i: o.item || '', c: o.color || '', u: o.unit === '절' ? '절' : 'y', q: Number(o.orderQty) || 0, r: Number(o.received) || 0, s: orderStatus(o) });
+  const pack = o => ({ d: o.date || '', i: o.item || '', c: o.color || '', u: o.unit === '절' ? '절' : 'y', q: Number(o.orderQty) || 0, r: Number(o.received) || 0, s: orderStatus(o), sh: (shipBy.get(o.id) || []).slice().sort((a, b) => String(a.d).localeCompare(String(b.d))).slice(0, 20) });
   const active = mine.filter(o => !o.done).map(pack).slice(0, 60);
-  const done = mine.filter(o => o.done).sort((a, b) => String(b.date || '').localeCompare(String(a.date || ''))).slice(0, 5).map(pack);
+  const done = mine.filter(o => o.done).sort((a, b) => String(b.date || '').localeCompare(String(a.date || ''))).slice(0, 40).map(pack);
   return { v: 1, name: t_c, pin: await ledgerHash(token + ':' + ledgerPin()), acct: String(settings.bankInfo || ''), balance, credit, opening: Math.round(opening * 100) / 100, ev: evOut, active, done };
 }
 async function ledgerPublish(customer) {
