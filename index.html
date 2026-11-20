@@ -267,6 +267,7 @@
   <div id="orderTools" class="hidden" style="display:flex; gap:6px; margin-top:6px; flex-wrap:wrap; align-items:center;">
     <button id="orderGroupToggleBtn" onclick="toggleOrderGroupMode()" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;"></button>
     <button onclick="printOrderLedger()" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">이월장부 인쇄</button>
+    <button onclick="printOrderLedger('image')" style="border:none;background:#fee500;color:#191919;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:700;">📤 이월장부 카톡 이미지</button>
     <button onclick="archiveOldCompleted()" style="border:none;background:#fff3d6;color:#a15c1e;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">오래된 완료건 내보내기 및 정리</button>
     <div style="width:100%; display:flex; align-items:center; gap:6px; margin-top:4px;">
       <span style="font-size:12px; color:var(--muted); flex:none;">등록일</span>
@@ -906,6 +907,7 @@
     </div>
     <label>입금계좌 (명세서 하단에 표시)</label>
     <input id="biz-bank" placeholder="예: ○○은행 123-456-789012 (예금주: 백야)">
+    <label style="display:flex;align-items:center;gap:6px;margin-top:10px;"><input type="checkbox" id="biz-qr" style="width:auto;margin:0;"> 명세서 '공급받는자' 쪽에 카톡 채널 QR 작게 넣기</label>
     <label>참고사항 (명세서 맨 아래 표시)</label>
     <input id="biz-note" placeholder="예: 백민재 하나은행 155-910051-44504 / 원단커팅시 반품 불가합니다">
     <div class="modal-actions">
@@ -1362,7 +1364,7 @@
 const PASSWORD = "3059";
 const ADMIN_PASSWORD = "9503"; // 매출/미수금 탭 전용 - 필요하면 이 값만 바꿔서 변경 가능
 const DATA_VERSION = "2026-08-03-v4"; // 재고/이월장부 씨앗 데이터를 바꿀 때마다 이 값을 새로 바꿔주세요
-const APP_CODE_VERSION = "2026-11-20-z3"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
+const APP_CODE_VERSION = "2026-11-20-zb"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
 const SCHEMA_STAMP = 2; // 서버 저장규칙이 확인하는 "최신 앱 도장" - 절대 자주 바꾸지 않음(이 값을 아는 코드만 저장 가능하게 서버에서 막을 때 씀)
 const CONFIRMED_EMPTY = '__CONFIRMED_EMPTY__'; // "서버가 확실하게 문서가 없다고 확인해줬다"는 걸 표시하는 특수값
                                                  // (한번도 확인 안 한 null과 구분해서, 그 사이 다른 사람이 첫 데이터를 만들었으면 충돌로 감지하기 위함)
@@ -4827,13 +4829,14 @@ async function replaceOrdersWithAuthoritative20260810() {
   render();
   showToast(`이월장부를 ${AUTHORITATIVE_ORDERS_20260810.length}건으로 교체했어요`);
 }
-function printOrderLedger() {
+async function printOrderLedger(mode) {
+  const forImage = mode === 'image'; // 카톡/이미지로 내보내기
   let list2 = orders.filter(o => !o.done);
   if (searchTerm.trim()) {
     const t = searchTerm.trim().toLowerCase();
     list2 = list2.filter(o => String(o.customer).toLowerCase().includes(t) || String(o.item).toLowerCase().includes(t));
   }
-  if (list2.length === 0) { showToast('인쇄할 진행중 발주가 없습니다'); return; }
+  if (list2.length === 0) { showToast(forImage ? '내보낼 진행중 발주가 없습니다' : '인쇄할 진행중 발주가 없습니다'); return; }
 
   // 연속으로 같은 값이면 빈 칸으로 (중복 표시 제거)
   function dedupeRows(rowObjs, keys) {
@@ -4852,6 +4855,7 @@ function printOrderLedger() {
   }
 
   const sections = [];
+  const imgSecs = []; // 이미지용: 섹션별 {label, headerRow, trs}
   for (let p = 1; p <= 4; p++) {
     const bucket = list2.filter(o => factoryPriority(o.factory) === p);
     if (bucket.length === 0) continue;
@@ -4931,6 +4935,7 @@ function printOrderLedger() {
     dedupeRows(rawRows, dedupeKeys);
 
     let rowsHtml = '';
+    const rowTrs = [];
     const groupKeyField = orderGroupMode === 'customer' ? 'customer' : 'item';
     let lastGroupVal = null;
     for (const r of rawRows) {
@@ -4941,20 +4946,22 @@ function printOrderLedger() {
       const isNewGroup = r[groupKeyField] !== lastGroupVal;
       lastGroupVal = r[groupKeyField];
       const groupBorder = isNewGroup ? 'border-top:2.5px solid #333;' : '';
-      rowsHtml += `
-        <tr style="height:24px;">
+      const trHtml = `
+        <tr style="${forImage ? '' : 'height:24px;'}">
           <td style="white-space:nowrap; text-align:center; ${groupBorder}">${r.orderDate}</td>
           <td style="${groupBorder}">${custCell}</td>
           <td style="white-space:nowrap;${groupBorder}">${factoryCell}</td>
           <td style="${groupBorder}">${itemCell}</td>
           <td style="${groupBorder}">${colorCell}</td>
           <td style="text-align:right; white-space:nowrap;${groupBorder}">${r.qty}</td>
-          <td style="${groupBorder} padding:0 !important; height:24px;"><div style="height:24px; overflow:hidden; font-size:8px; line-height:1.1; padding:1.5px 4px;">${r.note}</div></td>
+          ${forImage ? `<td style="${groupBorder} font-size:12px !important; line-height:1.3;">${r.note}</td>` : `<td style="${groupBorder} padding:0 !important; height:24px;"><div style="height:24px; overflow:hidden; font-size:8px; line-height:1.1; padding:1.5px 4px;">${r.note}</div></td>`}
         </tr>`;
+      rowTrs.push(trHtml); rowsHtml += trHtml;
     }
 
     const headerRow = `<tr><th style="width:11%;">발주일</th><th style="width:14%;">거래처</th><th style="width:15%;">공장/연락처</th><th style="width:14%;">품목</th><th style="width:13%;">컬러</th><th style="width:9%;">수량</th><th style="width:24%;">비고</th></tr>`;
 
+    imgSecs.push({ label: `${factoryPriorityLabel(p)} (${bucket.length}건)`, headerRow, trs: rowTrs });
     sections.push(`
       <div style="margin-top:14px;">
         <div style="background:var(--primary-dark); color:#fff; font-weight:800; padding:6px 10px; font-size:13px;">${factoryPriorityLabel(p)} (${bucket.length}건)</div>
@@ -4964,6 +4971,33 @@ function printOrderLedger() {
         </table>
       </div>
     `);
+  }
+
+  if (forImage) {
+    // 한 장에 들어갈 줄 수만큼 끊어서 여러 장으로 (섹션이 바뀌면 같은 장에 이어붙이고, 장이 넘어가면 섹션 제목·표 머리를 다시 붙임)
+    const PER_PAGE = 26; // 한 장의 "줄 수" (섹션 제목은 2줄로 셈)
+    const pages = []; let cur = '', used = 0;
+    const flush = () => { if (cur) { pages.push(cur); cur = ''; used = 0; } };
+    for (const sec of imgSecs) {
+      let i = 0, first = true;
+      while (i < sec.trs.length) {
+        if (used > 0 && used + 2 + Math.min(3, sec.trs.length - i) > PER_PAGE) flush(); // 제목만 덩그러니 남지 않게
+        const room = Math.max(1, PER_PAGE - used - 2);
+        const chunk = sec.trs.slice(i, i + room); i += chunk.length;
+        cur += `<div style="margin-top:${cur ? 12 : 0}px;"><div style="background:var(--primary-dark,#1a5f8a); color:#fff; font-weight:800; padding:6px 10px; font-size:15px;">${sec.label}${first ? '' : ' · 이어서'}</div><table style="table-layout:fixed; width:100%;"><thead>${sec.headerRow}</thead><tbody>${chunk.join('')}</tbody></table></div>`;
+        used += 2 + chunk.length; first = false;
+        if (used >= PER_PAGE) flush();
+      }
+    }
+    flush();
+    const total = pages.length;
+    const imgHtml = pages.map((pg, i) => `<div class="stm-img-page ledger-print" style="width:794px; background:#fff; box-sizing:border-box; font-family:-apple-system,'Malgun Gothic',sans-serif;"><div style="display:flex; justify-content:space-between; align-items:baseline; margin-bottom:8px;"><h2 style="margin:0; font-size:22px;">이월장부 (진행중 발주 목록)</h2><span style="color:#555; font-size:13px;">${i + 1}/${total}</span></div><div style="color:#555; font-size:13px; margin-bottom:10px;">발행일: ${tomorrowStr()} · 총 ${list2.length}건</div>${pg}</div>`).join('');
+    try {
+      showToast('이미지 만드는 중...');
+      const files = await renderStatementImages(imgHtml, '', '이월장부', 794);
+      openShotModal(files, '', '이월장부');
+    } catch (e) { console.error(e); showToast('이미지를 만들지 못했어요. 인쇄로 이용해주세요'); }
+    return;
   }
 
   const memoSection = `
@@ -6516,7 +6550,10 @@ function buildStatementHTMLInner(customerName, startDate, endDate, entryIdFilter
     </table>
   `;
 
-  const renderCopy = (copyLabel, rowsHtmlForPage, fit) => `
+  const qrOn = settings.stmQr !== false && typeof CAT_BRAND !== 'undefined' && !!CAT_BRAND.qr;
+  // QR + 안내문구: 글자 두 줄 높이가 QR 높이와 맞게 (qr px 기준으로 글자 크기/줄간격 계산)
+  const qrGuideHtml = (q, fs) => `<div style="display:flex; align-items:center; gap:${Math.round(q * 0.18)}px;"><div style="height:${q}px; display:flex; flex-direction:column; justify-content:center; font-size:${fs}; line-height:1.55; color:#333; text-align:right; white-space:nowrap;"><span>채널 추가하시고 채팅방 메뉴에서</span><span><b>신상 및 베스트 품목</b>을 확인하실 수 있습니다</span></div><img src="${CAT_BRAND.qr}" style="width:${q}px;height:${q}px;display:block;flex:none;"></div>`;
+  const renderCopy = (copyLabel, rowsHtmlForPage, fit, withQr) => `
     <div class="${compact ? 'compact-statement' : ''}" style="padding:${sizes.pad}; font-family:-apple-system,'Malgun Gothic',sans-serif; box-sizing:border-box; ${fit ? 'min-height:1123px;' : 'height:50%; overflow:hidden;'} display:flex; flex-direction:column;">
       <div style="flex:none;">
         <div style="display:flex; justify-content:space-between; align-items:baseline; margin-bottom:${sizes.titleGap};">
@@ -6557,8 +6594,13 @@ function buildStatementHTMLInner(customerName, startDate, endDate, entryIdFilter
             <tr><td style="color:#1a5f8a;font-weight:800;padding:3px 4px;border:1px solid #ccc;">총 미수금액(전체)</td><td colspan="3" style="text-align:right;font-weight:800;padding:3px 4px;border:1px solid #ccc;">${balance.toLocaleString()}원</td></tr>
           </table>`;
         })()}
-        ${b.bankInfo ? `<div style="margin-top:${sizes.bankGap}; font-size:${sizes.bankSize}; color:#333;">입금계좌: ${esc(b.bankInfo)}</div>` : ''}
-        ${b.noteText ? `<div style="margin-top:2px; font-size:${sizes.bankSize}; color:#555;">참고사항: ${esc(b.noteText)}</div>` : ''}
+        ${(() => {
+          if (!(qrOn && withQr)) return `${b.bankInfo ? `<div style="margin-top:${sizes.bankGap}; font-size:${sizes.bankSize}; color:#333;">입금계좌: ${esc(b.bankInfo)}</div>` : ''}${b.noteText ? `<div style="margin-top:2px; font-size:${sizes.bankSize}; color:#555;">참고사항: ${esc(b.noteText)}</div>` : ''}`;
+          // QR이 있을 땐 왼쪽(입금계좌·참고사항)과 오른쪽(안내문구)이 같은 글자 크기·줄 간격·높이(=QR 높이)로 나란히
+          const q = options.shareImage ? 44 : 36, fs = sizes.bankSize;
+          const lines = [b.bankInfo ? `입금계좌: ${esc(b.bankInfo)}` : '', b.noteText ? `참고사항: ${esc(b.noteText)}` : ''].filter(Boolean).map(t => `<span>${t}</span>`).join('');
+          return `<div style="display:flex; justify-content:space-between; align-items:center; gap:12px; margin-top:${options.shareImage ? '8px' : '5px'};"><div style="flex:1 1 auto; min-width:0; min-height:${q}px; display:flex; flex-direction:column; justify-content:center; font-size:${fs}; line-height:1.55; color:#333; text-align:left;">${lines}</div><div style="flex:none;">${qrGuideHtml(q, fs)}</div></div>`;
+        })()}
       </div>
     </div>
   `;
@@ -6577,11 +6619,11 @@ function buildStatementHTMLInner(customerName, startDate, endDate, entryIdFilter
 
   return pages.map((pageRows, pageIdx) => {
     const rowsHtmlForPage = buildRowsHtml(pageRows);
-    if (options.shareImage) return `<div class="stm-img-page" style="width:794px;background:#fff;">${renderCopy(pages.length > 1 ? `공급받는자용 · ${pageIdx + 1}/${pages.length}` : '공급받는자용', rowsHtmlForPage, true)}</div>`; // 이미지용: 한 장에 한 부만, 높이는 내용만큼
+    if (options.shareImage) return `<div class="stm-img-page" style="width:794px;background:#fff;">${renderCopy(pages.length > 1 ? `공급받는자용 · ${pageIdx + 1}/${pages.length}` : '공급받는자용', rowsHtmlForPage, true, true)}</div>`; // 이미지용: 한 장에 한 부만, 높이는 내용만큼
     const pageHtml = `
     <div style="width:100%; height:285mm; display:flex; flex-direction:column;">
       ${renderCopy('공급자 보관용', rowsHtmlForPage)}
-      ${renderCopy('공급받는자 보관용', rowsHtmlForPage)}
+      ${renderCopy('공급받는자 보관용', rowsHtmlForPage, false, true)}
     </div>
   `;
     return pageIdx < pages.length - 1 ? `<div style="page-break-after: always;">${pageHtml}</div>` : pageHtml;
@@ -7082,7 +7124,7 @@ async function buildCatalogPages(cfg, items) {
   const isNew = cfg.mode === 'new';
   const B = CAT_BRAND;
   const QS = wide ? 62 : 72; // QR 한 변 (4:3은 세로 공간이 모자라 조금 작게)
-  const footer = `<div style="padding:${wide ? '9px 24px 9px' : '16px 24px 18px'}; border-top:1px solid ${HAIR}; background:${PAPER}; flex:none;">
+  const footer = cfg.noFooter ? '' : `<div style="padding:${wide ? '9px 24px 9px' : '16px 24px 18px'}; border-top:1px solid ${HAIR}; background:${PAPER}; flex:none;">
         <div style="display:flex; align-items:flex-start; gap:16px;">
           <div style="flex:none; width:${QS}px;"><img src="${B.qr}" style="display:block; width:${QS}px; height:${QS}px;"><div style="margin-top:${wide ? 4 : 5}px; width:${QS}px; box-sizing:border-box; background:${BRAND}; color:#fff; border-radius:3px; text-align:center; font-size:${wide ? 10 : 11}px; font-weight:700; line-height:${wide ? 16 : 18}px; white-space:nowrap; letter-spacing:${wide ? '-.3px' : '0'};">${B.qrLabel}</div></div>
           <div style="flex:none; height:${QS}px; display:flex; flex-direction:column; justify-content:space-between; text-align:left; color:${BRAND}; font-size:${wide ? 16 : 17}px; line-height:1;">
@@ -7344,7 +7386,7 @@ let _pubBusy = false;
 async function publishCatalog() {
   if (_pubBusy) return;
   const sec = document.getElementById('pub-sec').value;
-  const cfg = { ...readCatalogCfg(), format: 'chat' }; // 고객 페이지는 폰 세로 화면이라 세로로 긴 이미지
+  const cfg = { ...readCatalogCfg(), format: 'chat', noFooter: true }; // 고객 페이지는 폰 세로 화면이라 세로로 긴 이미지, 전화/주소/QR은 페이지 자체에 있으니 이미지 아래 문구는 뺌
   const items = catPicked(cfg);
   if (items.length === 0) { showToast(cfg.mode === 'new' ? '올릴 컬러를 먼저 검색해서 추가해주세요' : '올릴 품목을 먼저 검색해서 추가해주세요'); return; }
   if (items.length > 20) { showToast(`품목이 ${items.length}개예요 - 한 번에 20개까지 올릴 수 있어요`); return; }
@@ -13929,6 +13971,7 @@ function openBizInfoModal() {
   document.getElementById('biz-item').value = settings.bizItem || '';
   document.getElementById('biz-bank').value = settings.bankInfo || '';
   document.getElementById('biz-note').value = settings.noteText || '';
+  document.getElementById('biz-qr').checked = settings.stmQr !== false;
   document.getElementById('bizInfoModal').classList.add('open');
 }
 function closeBizInfoModal() { document.getElementById('bizInfoModal').classList.remove('open'); }
@@ -13943,6 +13986,7 @@ async function saveBizInfo() {
     bizItem: document.getElementById('biz-item').value.trim(),
     bankInfo: document.getElementById('biz-bank').value.trim(),
     noteText: document.getElementById('biz-note').value.trim(),
+    stmQr: document.getElementById('biz-qr').checked,
   };
   await persistSettings();
   closeBizInfoModal();
