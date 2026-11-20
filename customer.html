@@ -43,6 +43,24 @@ a { color:inherit; text-decoration:none; }
 .pages img { display:block; width:100%; height:auto; }
 .pages .ph { width:100%; aspect-ratio:3/4; background:linear-gradient(90deg,#e8e2e2,#f1ecec,#e8e2e2); background-size:200% 100%; animation:sh 1.2s infinite; }
 .pages > * + * { margin-top:8px; }
+.chip { display:inline-block; font-size:11.5px; font-weight:800; border-radius:5px; padding:1px 7px; line-height:1.5; background:#e6e1e1; color:#7d7676; margin-top:6px; }
+.sgrid { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; padding:10px 14px; }
+.sw { background:#fff; border:1px solid var(--hair); border-radius:12px; overflow:hidden; }
+.sw .ph { aspect-ratio:1/1; background-size:cover; background-position:center; background-color:#e8e2e2; position:relative; }
+.sw .no { font-weight:800; font-size:15px; padding:6px 8px 0; word-break:keep-all; overflow-wrap:anywhere; line-height:1.25; }
+.sw .st { padding:3px 8px 0; }
+.sw .st .chip { margin-top:0; }
+.sw::after { content:''; display:block; height:8px; }
+.sw.out .ph, .sw.low .ph { filter:grayscale(1); opacity:.5; }
+.sw.out .no { color:#a39c9c; text-decoration:line-through; }
+.sw.low .no { color:#8a8383; }
+.sw .x { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; font-weight:900; color:#6b6565; font-size:16px; letter-spacing:1px; }
+.tog { display:flex; justify-content:space-between; align-items:center; padding:12px 16px 0; }
+.tog button { border:none; background:none; display:flex; gap:8px; align-items:center; font-size:14px; font-weight:700; color:var(--ink); font-family:inherit; }
+.tog .sv { width:42px; height:24px; border-radius:12px; background:#aaa; position:relative; flex:none; }
+.tog .sv::after { content:''; position:absolute; left:2px; top:2px; width:20px; height:20px; border-radius:50%; background:#fff; transition:left .15s; }
+.tog .sv.on { background:var(--brand); } .tog .sv.on::after { left:20px; }
+.note { padding:8px 16px 14px; font-size:12.5px; color:var(--muted); line-height:1.6; }
 .bar { position:fixed; left:0; right:0; bottom:0; z-index:20; background:var(--paper); border-top:1px solid var(--hair); padding:10px 14px calc(10px + env(safe-area-inset-bottom)); }
 .bar a { display:flex; align-items:center; justify-content:center; gap:8px; max-width:692px; margin:0 auto; background:var(--brand); color:#fff; border-radius:12px; padding:14px 0; font-size:17px; font-weight:800; }
 .bar small { display:block; text-align:center; font-size:12px; color:var(--muted); margin-top:6px; }
@@ -59,6 +77,9 @@ const LOGO = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAArwAAABTCAYAAAB9N9Q9
 const cfg = { apiKey: "AIzaSyA4Qrz16VpQuBVxTzGMyoAD9BtzIgXV0cQ", projectId: "project-8895328122777928786", appId: "1:995742705102:web:7294216d6e4745dd1df79f" };
 const app = document.getElementById('app');
 let db = null, idx = null, loadErr = false;
+let sIdx = null, sErr = false;  // 재고 탭: 서버의 pubstock_idx (품목별 컬러 재고 상태)
+const sCache = {};             // 품목 id -> {item, mix, cols}
+let hideOut = false;           // 품절 컬러 숨기기
 const pageCache = {};      // id -> [dataUrl,...]
 const scrollMap = {};      // url -> scrollY
 const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -87,6 +108,24 @@ function cardHtml(e, p, s) {
   const go_ = { p, i: e.id }; if (s) go_.s = s;
   return `<a class="card" href="${url(go_)}" data-go='${JSON.stringify(go_)}'>${th}<div class="meta">${tag}<div class="nm">${esc(e.item)}</div><div class="ds">${esc(sub)}${p === 'new' && e.date ? `${sub ? ' · ' : ''}${esc(e.date)} 입고` : ''}</div></div><span class="chev">›</span></a>`;
 }
+function stockCard(e) {
+  const th = e.th ? `<img class="th" src="${e.th}" alt="">` : `<div class="th" style="background:#eceae4"></div>`;
+  const sub = [e.mix, e.n ? `컬러 ${e.n}` : ''].filter(Boolean).join(' · ');
+  const go_ = { p: 'stock', i: e.id };
+  return `<a class="card" href="${url(go_)}" data-go='${JSON.stringify(go_)}'>${th}<div class="meta"><div class="nm">${esc(e.item)}</div><div class="ds">${esc(sub)}</div>${e.out > 0 ? `<span class="chip">품절 ${e.out}</span>` : ''}</div><span class="chev">›</span></a>`;
+}
+function stockCards(items) { return items.length ? items.map(stockCard).join('') : '<div class="empty">준비 중이에요</div>'; }
+function swGrid(o) {
+  const cols = o.cols.filter(c => !(hideOut && c.s > 0));
+  return cols.map(c => `<div class="sw${c.s === 2 ? ' out' : c.s === 1 ? ' low' : ''}"><div class="ph"${c.t ? ` style="background-image:url(${c.t})"` : ''}>${c.s === 2 ? '<div class="x">품절</div>' : ''}</div><div class="no">${esc(c.c)}</div>${c.s === 1 ? '<div class="st"><span class="chip">품절/샘플가능</span></div>' : c.s === 2 ? '<div class="st"><span class="chip">품절</span></div>' : ''}</div>`).join('') || '<div class="empty" style="grid-column:1/-1;padding:30px 0">보여줄 컬러가 없어요</div>';
+}
+function stockDetailBody(o) {
+  const nOut = o.cols.filter(c => c.s > 0).length;
+  const sub = [o.mix, `컬러 ${o.cols.length}`, o.date ? `${o.date} 입고` : ''].filter(Boolean).join(' · ');
+  return `<div style="padding:10px 16px 0;font-size:13.5px;color:var(--muted)">${esc(sub)}</div>`
+    + (nOut > 0 ? `<div class="tog"><button type="button" id="hideBtn"><span>품절 컬러 숨기기</span><span class="sv${hideOut ? ' on' : ''}"></span></button><span style="font-size:12px;color:var(--muted)">품절 ${nOut}</span></div>` : '')
+    + `<div class="sgrid" id="sgrid">${swGrid(o)}</div><div class="note">· 재고는 수시로 바뀌어요.<br>· <b>정확한 수량은 채널을 통해 담당자분과 확인해주시길 바랍니다.</b></div>`;
+}
 function listView(P) {
   if (!idx) return head(P.p) + (loadErr ? `<div class="msg">불러오지 못했어요.<br>잠시 후 다시 시도해주세요.<br><button onclick="boot()">다시 불러오기</button></div>` : '<div class="skel"></div><div class="skel"></div><div class="skel"></div>');
   const all = idx.entries;
@@ -98,8 +137,9 @@ function listView(P) {
     return head('best') + `<div class="sub"><div class="seg">${['fw', 'ss'].map(k => `<a href="${url({ p: 'best', s: k })}" data-go='${JSON.stringify({ p: 'best', s: k })}' class="${k === s ? 'on' : ''}">${k === 'fw' ? 'F/W' : 'S/S'}</a>`).join('')}</div></div><div class="list">${list.length ? list.map(e => cardHtml(e, 'best', s)).join('') : '<div class="empty">준비 중이에요</div>'}</div>`;
   }
   if (P.p === 'stock') {
-    const list = all.filter(e => e.sec === 'stock');
-    return head('stock') + `<div class="sub"><input class="search" id="q" type="search" placeholder="품번 검색" autocomplete="off"></div><div class="list" id="stocklist">${list.length ? list.map(e => cardHtml(e, 'stock')).join('') : '<div class="empty">준비 중이에요</div>'}</div>`;
+    if (sErr) return head('stock') + `<div class="msg">재고를 불러오지 못했어요.<br>잠시 후 다시 시도해주세요.<br><button onclick="boot()">다시 불러오기</button></div>`;
+    if (!sIdx) return head('stock') + '<div class="skel"></div><div class="skel"></div><div class="skel"></div>';
+    return head('stock') + `<div class="sub"><input class="search" id="q" type="search" placeholder="품번 검색" autocomplete="off"></div><div class="note" style="padding:10px 16px 0;">정확한 수량은 채널을 통해 담당자분과 확인해주시길 바랍니다.</div><div class="list" id="stocklist">${stockCards(sIdx.items)}</div>`;
   }
   const list = all.filter(e => e.sec === 'new');
   return head('new') + `<div class="list">${list.length ? list.map(e => cardHtml(e, 'new')).join('') : '<div class="empty">곧 신상이 올라와요</div>'}</div>`;
@@ -123,6 +163,22 @@ function detailView(P) {
 }
 async function render() {
   const P = params();
+  if (P.i && P.p === 'stock') {
+    const e0 = sIdx && sIdx.items.find(x => x.id === P.i);
+    const back = { p: 'stock' };
+    app.innerHTML = `<div class="dhead"><a class="back" href="${url(back)}" data-go='${JSON.stringify(back)}' aria-label="뒤로">‹</a><div class="t">${esc(e0 ? e0.item : '')}</div></div><div id="sbody">${sIdx ? '<div class="skel"></div>' : (sErr ? '<div class="empty">불러오지 못했어요</div>' : '<div class="skel"></div>')}</div>`;
+    window.scrollTo(0, 0);
+    if (!e0) { if (sIdx) document.getElementById('sbody').innerHTML = '<div class="empty">내려간 품목이에요</div>'; return; }
+    document.title = e0.item + ' · 백야';
+    let o = sCache[e0.id];
+    if (!o) { try { const d = await db.collection('inventory').doc('pubstock_' + e0.id).get(); if (d.exists) { o = JSON.parse(d.data().data || '{}'); sCache[e0.id] = o; } } catch (err) { o = null; } }
+    if (params().i !== P.i) return;
+    const body = document.getElementById('sbody'); if (!body) return;
+    if (!o || !Array.isArray(o.cols)) { body.innerHTML = '<div class="empty">불러오지 못했어요</div>'; return; }
+    const paint = () => { body.innerHTML = stockDetailBody(o); const hb = document.getElementById('hideBtn'); if (hb) hb.addEventListener('click', () => { hideOut = !hideOut; paint(); }); };
+    paint();
+    return;
+  }
   if (P.i) {
     app.innerHTML = detailView(P);
     window.scrollTo(0, 0);
@@ -140,18 +196,24 @@ async function render() {
   const y = scrollMap[location.search]; window.scrollTo(0, y || 0);
   const q = document.getElementById('q');
   if (q) q.addEventListener('input', () => {
-    const k = norm(q.value), list = idx.entries.filter(e => e.sec === 'stock' && (!k || norm(e.item).includes(k)));
-    document.getElementById('stocklist').innerHTML = list.length ? list.map(e => cardHtml(e, 'stock')).join('') : '<div class="empty">검색 결과가 없어요</div>';
+    const k = norm(q.value), list = ((sIdx && sIdx.items) || []).filter(e => !k || norm(e.item).includes(k));
+    document.getElementById('stocklist').innerHTML = list.length ? list.map(stockCard).join('') : '<div class="empty">검색 결과가 없어요</div>';
   });
 }
 async function boot() {
-  loadErr = false; idx = null; render();
+  loadErr = false; idx = null; sIdx = null; sErr = false; render();
   try {
     if (!db) { firebase.initializeApp(cfg); db = firebase.firestore(); try { await firebase.auth().signInAnonymously(); } catch (e) { /* 규칙이 열려 있으면 인증 없이도 읽힘 */ } }
     const d = await db.collection('inventory').doc('pubIndex').get();
     let entries = [];
     if (d.exists) { try { const o = JSON.parse(d.data().data || '{}'); entries = Array.isArray(o.entries) ? o.entries : []; } catch (e) { throw e; } }
     idx = { entries };
+    try { // 재고 탭: 서버의 최신 재고 상태 (실패해도 신상/Best는 그대로 보임)
+      const sd = await db.collection('inventory').doc('pubstock_idx').get();
+      let items = [];
+      if (sd.exists) { const o = JSON.parse(sd.data().data || '{}'); items = Array.isArray(o.items) ? o.items : []; }
+      sIdx = { items };
+    } catch (e) { sErr = true; }
   } catch (e) { loadErr = true; idx = null; }
   render();
 }

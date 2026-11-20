@@ -837,14 +837,13 @@
       <button type="button" onclick="generateCatalog('preview')" style="flex:1;border:none;background:#e8edf5;color:#3d4f6b;border-radius:8px;padding:10px 4px;font-size:13px;font-weight:600;">미리보기</button>
       <button type="button" onclick="generateCatalog('share')" style="flex:1;border:none;background:#fee500;color:#191919;border-radius:8px;padding:10px 4px;font-size:13px;font-weight:700;">💬 <span class="kakao-lbl">카톡으로 보내기</span></button>
     </div>
-    <div style="margin-top:14px; padding-top:6px; border-top:1px solid var(--border);">
+    <div id="pub-block" style="margin-top:14px; padding-top:6px; border-top:1px solid var(--border);">
       <label style="margin-top:6px;">고객 페이지에 올리기 (카톡 채널 메뉴 링크)</label>
       <div style="display:flex; gap:6px;">
         <select id="pub-sec" style="flex:1;">
           <option value="new">신상 입고</option>
           <option value="best_fw">Best Item - F/W</option>
           <option value="best_ss">Best Item - S/S</option>
-          <option value="stock">원단 보러가기</option>
         </select>
         <button type="button" id="pub-btn" onclick="publishCatalog()" style="flex:none;border:none;background:#595959;color:#fff;border-radius:8px;padding:0 16px;font-size:13px;font-weight:700;">🌐 올리기</button>
       </div>
@@ -858,6 +857,7 @@
   <div class="modal">
     <h3>🌐 고객 페이지</h3>
     <div id="pub-links"></div>
+    <div id="pub-stock-box" style="margin-top:10px; padding:10px; background:#f4f1ec; border-radius:8px; font-size:12px; line-height:1.6;"></div>
     <div id="pub-list" style="max-height:52vh; overflow-y:auto; margin-top:8px;"></div>
     <div class="modal-actions"><button class="btn-cancel" onclick="closePubModal()">닫기</button></div>
   </div>
@@ -1364,7 +1364,7 @@
 const PASSWORD = "3059";
 const ADMIN_PASSWORD = "9503"; // 매출/미수금 탭 전용 - 필요하면 이 값만 바꿔서 변경 가능
 const DATA_VERSION = "2026-08-03-v4"; // 재고/이월장부 씨앗 데이터를 바꿀 때마다 이 값을 새로 바꿔주세요
-const APP_CODE_VERSION = "2026-11-20-zb"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
+const APP_CODE_VERSION = "2026-11-20-ze"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
 const SCHEMA_STAMP = 2; // 서버 저장규칙이 확인하는 "최신 앱 도장" - 절대 자주 바꾸지 않음(이 값을 아는 코드만 저장 가능하게 서버에서 막을 때 씀)
 const CONFIRMED_EMPTY = '__CONFIRMED_EMPTY__'; // "서버가 확실하게 문서가 없다고 확인해줬다"는 걸 표시하는 특수값
                                                  // (한번도 확인 안 한 null과 구분해서, 그 사이 다른 사람이 첫 데이터를 만들었으면 충돌로 감지하기 위함)
@@ -2157,7 +2157,9 @@ async function persistRolls() {
     alert('⚠️ 아직 서버에서 재고를 불러오는 중이에요.\n잠시 후 다시 시도해주세요. (계속 뜨면 화면을 새로고침해주세요)');
     return false;
   }
-  return await persistGuarded('rolls', 'rolls', rolls);
+  const okRolls = await persistGuarded('rolls', 'rolls', rolls);
+  if (okRolls) pubStockSchedule(); // 고객 페이지 재고 탭에도 반영
+  return okRolls;
 }
 async function persistCosts() {
   if (useFirebase && !costsFirstLoadDone) {
@@ -2247,7 +2249,9 @@ async function persistSwatchInfo() {
     const ok = await waitForFlag(() => swatchInfoFirstLoadDone, 5000);
     if (!ok) { alert('⚠️ 서버 연결이 원활하지 않아요.\n화면을 새로고침한 다음 다시 시도해주세요.'); return false; }
   }
-  return await persistGuarded('swatchInfo', 'swatchInfo', swatchInfo);
+  const okSw = await persistGuarded('swatchInfo', 'swatchInfo', swatchInfo);
+  if (okSw) pubStockSchedule();
+  return okSw;
 }
 async function persistShipmentLog() {
   if (useFirebase && !shipmentLogFirstLoadDone) {
@@ -6918,7 +6922,7 @@ async function catPhotoChosen(inp) {
     const data = await catPhotoCompress(file);
     if (typeof db === 'undefined' || !db) throw new Error('nodb');
     await db.collection('inventory').doc(catPhotoDocId(row.key)).set({ kind: 'catPhoto', key: row.key, item: row.item, dataUrl: data, updatedAt: new Date().toISOString(), stamp: SCHEMA_STAMP });
-    _catPhotos[row.key] = data;
+    _catPhotos[row.key] = data; pubStockDirtyKey(row.key);
     showToast(`${row.item} 사진을 저장했어요`);
   } catch (e) { showToast('사진을 저장하지 못했어요 (사진 파일이나 인터넷 연결을 확인해주세요)'); }
   catUpdateCount();
@@ -6926,7 +6930,7 @@ async function catPhotoChosen(inp) {
 async function catPhotoRemove(i) {
   const row = _catPhotoRows[i]; if (!row) return;
   if (!confirm(`${row.item} 사진을 지울까요?`)) return;
-  try { await db.collection('inventory').doc(catPhotoDocId(row.key)).delete(); _catPhotos[row.key] = ''; showToast('사진을 지웠어요'); }
+  try { await db.collection('inventory').doc(catPhotoDocId(row.key)).delete(); _catPhotos[row.key] = ''; pubStockDirtyKey(row.key); showToast('사진을 지웠어요'); }
   catch (e) { showToast('사진을 지우지 못했어요 (인터넷 연결을 확인해주세요)'); }
   catUpdateCount();
 }
@@ -7009,7 +7013,7 @@ async function cpChosen(inp) {
     const data = await catPhotoCompress(file, 400);
     if (typeof db === 'undefined' || !db) throw new Error('nodb');
     await db.collection('inventory').doc(catPhotoDocId(row.key)).set({ kind: 'catPhoto', key: row.key, item: _cpItem.item, color: row.color, dataUrl: data, updatedAt: new Date().toISOString(), stamp: SCHEMA_STAMP });
-    _catPhotos[row.key] = data;
+    _catPhotos[row.key] = data; pubStockDirtyKey(row.key);
     showToast(`${row.color} 사진을 저장했어요`);
   } catch (e) { showToast('사진을 저장하지 못했어요 (사진 파일이나 인터넷 연결을 확인해주세요)'); }
   cpRender();
@@ -7017,7 +7021,7 @@ async function cpChosen(inp) {
 async function cpRemove(i) {
   const row = _cpRows[i]; if (!row) return;
   if (!confirm(`${row.color} 사진을 지울까요?`)) return;
-  try { await db.collection('inventory').doc(catPhotoDocId(row.key)).delete(); _catPhotos[row.key] = ''; showToast('사진을 지웠어요'); }
+  try { await db.collection('inventory').doc(catPhotoDocId(row.key)).delete(); _catPhotos[row.key] = ''; pubStockDirtyKey(row.key); showToast('사진을 지웠어요'); }
   catch (e) { showToast('사진을 지우지 못했어요 (인터넷 연결을 확인해주세요)'); }
   cpRender();
 }
@@ -7121,7 +7125,7 @@ async function buildCatalogPages(cfg, items) {
       </div>`;
   };
   const biz = esc(settings.bizName || '');
-  const isNew = cfg.mode === 'new';
+  const isNew = cfg.mode === 'new' && !cfg.noNewTag; // Best로 올릴 땐 NEW 딱지를 안 붙임
   const B = CAT_BRAND;
   const QS = wide ? 62 : 72; // QR 한 변 (4:3은 세로 공간이 모자라 조금 작게)
   const footer = cfg.noFooter ? '' : `<div style="padding:${wide ? '9px 24px 9px' : '16px 24px 18px'}; border-top:1px solid ${HAIR}; background:${PAPER}; flex:none;">
@@ -7204,7 +7208,7 @@ function catSetMode(m, init) {
   document.getElementById('cat-mode-stock').style.cssText = base + (m === 'stock' ? on : off);
   document.getElementById('cat-mode-new').style.cssText = base + (m === 'new' ? on : off);
   document.getElementById('cat-title').value = CAT_DEFAULT_TITLE[m];
-  { const ps = document.getElementById('pub-sec'); if (ps && !(init === 'keep')) ps.value = m === 'new' ? 'new' : 'stock'; }
+  { const ps = document.getElementById('pub-sec'); if (ps && !(init === 'keep')) ps.value = 'new'; const pb = document.getElementById('pub-block'); if (pb) pb.style.display = m === 'new' ? '' : 'none'; } // 재고 탭은 재고가 바뀔 때마다 자동으로 반영돼서, 따로 올리는 건 신상/Best만
   sel.value = _catPrefDisplay[m];
   document.getElementById('cat-stock-scope').style.display = m === 'stock' ? '' : 'none';
   document.getElementById('cat-new-scope').style.display = m === 'new' ? '' : 'none';
@@ -7335,8 +7339,8 @@ async function generateCatalog(mode) {
 // ── 고객 페이지 (customer.html): 카톡 채널 메뉴 버튼 → 링크 → 올려둔 이미지 ──
 // 저장: inventory/pubIndex (목록 메타 + 작은 썸네일) + inventory/pubpg_<id>_<n> (이미지 한 장씩, JPG).  모두 stamp 포함
 const PUB_SECS = { new: '신상 입고', best_fw: 'Best Item - F/W', best_ss: 'Best Item - S/S', stock: '원단 보러가기' };
-const PUB_ORDER = ['new', 'best_fw', 'best_ss', 'stock'];
-const PUB_LINKS = [['new', '신상 입고 (New Item)'], ['best', '시즌별 Best Item'], ['stock', '원단 보러가기']];
+const PUB_ORDER = ['new', 'best_fw', 'best_ss']; // 'stock'은 예전 방식(이미지로 올림) - 지금은 재고 탭이 자동으로 읽어서 목록에 안 보임
+const PUB_LINKS = [['new', '신상 입고 (New Item)'], ['best', '시즌별 Best Item'], ['stock', '원단 보러가기 (재고 - 자동)']];
 function pubId(sec, item) { return sec + '_' + catPhotoDocId(normalizeNameForMatch(item)).replace('catphoto_', ''); }
 function pubPageDoc(id, i) { return 'pubpg_' + id + '_' + i; }
 function pubCol() { if (typeof db === 'undefined' || !db) throw new Error('nodb'); return db.collection('inventory'); }
@@ -7386,7 +7390,8 @@ let _pubBusy = false;
 async function publishCatalog() {
   if (_pubBusy) return;
   const sec = document.getElementById('pub-sec').value;
-  const cfg = { ...readCatalogCfg(), format: 'chat', noFooter: true }; // 고객 페이지는 폰 세로 화면이라 세로로 긴 이미지, 전화/주소/QR은 페이지 자체에 있으니 이미지 아래 문구는 뺌
+  const isBestSec = sec === 'best_fw' || sec === 'best_ss';
+  const cfg = { ...readCatalogCfg(), format: 'chat', noFooter: true, display: 'none', ...(isBestSec ? { noNewTag: true, title: 'Best Item' } : {}) }; // 고객 페이지 신상/Best 이미지엔 재고(있음/소량/야드)를 넣지 않음 - 재고는 재고 탭에서만 // 고객 페이지는 폰 세로 화면이라 세로로 긴 이미지, 전화/주소/QR은 페이지 자체에 있으니 이미지 아래 문구는 뺌
   const items = catPicked(cfg);
   if (items.length === 0) { showToast(cfg.mode === 'new' ? '올릴 컬러를 먼저 검색해서 추가해주세요' : '올릴 품목을 먼저 검색해서 추가해주세요'); return; }
   if (items.length > 20) { showToast(`품목이 ${items.length}개예요 - 한 번에 20개까지 올릴 수 있어요`); return; }
@@ -7434,6 +7439,7 @@ async function openPubModal() {
   document.getElementById('pub-links').innerHTML = `<div style="font-size:12px; color:var(--muted); margin-bottom:4px;">카톡 채널 메뉴 버튼에 넣을 링크</div>` + PUB_LINKS.map(([p, nm]) => `<div style="display:flex; align-items:center; gap:8px; padding:6px 0; border-bottom:1px solid #f0f0f0;"><div style="flex:1; min-width:0;"><div style="font-size:13px; font-weight:700;">${esc(nm)}</div><div style="font-size:11px; color:var(--muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${esc(pubLinkUrl(p))}</div></div><button type="button" onclick="pubOpenLink('${p}')" style="border:none; background:#595959; color:#fff; border-radius:7px; padding:7px 11px; font-size:12px; font-weight:700; flex:none;">열어보기</button><button type="button" onclick="pubCopyLink('${p}')" style="border:none; background:#e8edf5; color:#3d4f6b; border-radius:7px; padding:7px 11px; font-size:12px; font-weight:600; flex:none;">복사</button></div>`).join('');
   const box = document.getElementById('pub-list');
   box.innerHTML = '<div style="font-size:12px; color:var(--muted); padding:10px 0;">불러오는 중...</div>';
+  pubStockRenderBox();
   try { _pubIdx = await pubLoadIndex(); } catch (e) { _pubIdx = null; box.innerHTML = '<div style="font-size:12px; color:#a33; padding:10px 0;">목록을 불러오지 못했어요 (인터넷 연결을 확인해주세요)</div>'; return; }
   renderPubList();
 }
@@ -7470,6 +7476,105 @@ async function pubRemove(id) {
     showToast('내렸어요');
   } catch (err) { showToast('내리지 못했어요 (인터넷 연결을 확인해주세요)'); }
   renderPubList();
+}
+
+
+// ── 고객 페이지 "재고" 탭: 재고가 바뀔 때마다 품목별 컬러 재고 상태(품절 / 품절·샘플가능)를 자동으로 서버에 반영 ──
+// 정확한 야드 수는 올리지 않고 상태만 올림. 서버 문서: pubstock_idx(목록) + pubstock_<id>(품목별 컬러). 사진은 작은 썸네일만.
+const PUBSTOCK_SAMPLE_Y = 10; // 이 야드 이하(0 초과)면 "품절/샘플가능", 0이면 "품절"
+let _pubStockTimer = null, _pubStockBusy = false, _pubStockAgain = false;
+const _pubStockDirtyKeys = new Set(); // 사진이 바뀐 품목/컬러 키 - 썸네일을 다시 만들어야 함
+let _pubStockInfo = null; // {ok, count, updatedAt}
+function pubStockItemId(it) { return 'st_' + catPhotoDocId(normalizeNameForMatch((it.cat || '') + ' ' + it.item)).replace('catphoto_', ''); }
+function pubStockHash(str) { let h = 5381; for (let i = 0; i < str.length; i++) h = ((h * 33) ^ str.charCodeAt(i)) >>> 0; return h.toString(36); }
+function pubStockBuild() {
+  const out = [];
+  for (const it of catalogUniverse()) {
+    const cols = it.colors.map(c => ({ c: c.color, s: c.stock <= 0 ? 2 : (c.stock <= PUBSTOCK_SAMPLE_Y ? 1 : 0), nk: c.nk })); // 0 정상 / 1 품절·샘플가능 / 2 품절
+    if (!cols.some(c => c.s < 2)) continue; // 재고가 하나도 없는 품목은 고객 페이지에 안 보여줌
+    const date = it.colors.reduce((m, c) => (c.stock > 0 && c.newestIn > m) ? c.newestIn : m, '');
+    out.push({ id: pubStockItemId(it), it, item: it.item, mix: it.mix || '', cols, date });
+  }
+  return out;
+}
+function pubStockSig(e) { return pubStockHash(JSON.stringify([e.item, e.mix, e.date, e.cols.map(c => [c.c, c.s])])); }
+function pubStockSquare(src, size) {
+  if (!src) return Promise.resolve('');
+  return new Promise(resolve => {
+    const img = new Image();
+    img.onload = () => { try { const m = Math.min(img.naturalWidth, img.naturalHeight), cv = document.createElement('canvas'); cv.width = cv.height = Math.min(size, m); cv.getContext('2d').drawImage(img, (img.naturalWidth - m) / 2, (img.naturalHeight - m) / 2, m, m, 0, 0, cv.width, cv.height); resolve(cv.toDataURL('image/jpeg', 0.72)); } catch (e) { resolve(''); } };
+    img.onerror = () => resolve('');
+    img.src = src;
+  });
+}
+function pubStockDirtyKey(key) { if (key) _pubStockDirtyKeys.add(key); pubStockSchedule(); }
+function pubStockSchedule() {
+  if (!useFirebase || typeof db === 'undefined' || !db) return;
+  clearTimeout(_pubStockTimer);
+  _pubStockTimer = setTimeout(() => { pubStockSync().catch(() => {}); }, 5000); // 연달아 고칠 땐 마지막 수정 5초 뒤 한 번만
+}
+async function pubStockSync(manual) {
+  if (!useFirebase || typeof db === 'undefined' || !db) { if (manual) showToast('서버에 연결된 상태에서만 반영할 수 있어요'); return false; }
+  if (!rollsFirstLoadDone || !swatchInfoFirstLoadDone) { if (manual) showToast('아직 재고를 불러오는 중이에요. 잠시 후 다시 눌러주세요'); return false; }
+  if (_pubStockBusy) { _pubStockAgain = true; return false; }
+  _pubStockBusy = true;
+  try {
+    const list = pubStockBuild();
+    const d = await pubCol().doc('pubstock_idx').get();
+    const old = {};
+    if (d.exists) { try { (JSON.parse(d.data().data || '{}').items || []).forEach(e => { old[e.id] = e; }); } catch (e) { /* 깨진 목록이면 새로 씀 */ } }
+    const oldCount = Object.keys(old).length;
+    if (list.length === 0 && oldCount > 0 && !(manual && confirm('지금 재고가 하나도 없는 걸로 보여요.\n고객 페이지 재고 탭을 비울까요?'))) return false; // 불러오기 문제로 빈 목록이 올라가 통째로 지워지는 사고 방지
+    const dirty = new Set(_pubStockDirtyKeys); _pubStockDirtyKeys.clear();
+    const items = []; let wrote = 0;
+    for (const e of list) {
+      const sig = pubStockSig(e), prev = old[e.id];
+      const photoDirty = dirty.has(catPhotoKey(e.it)) || e.cols.some(c => dirty.has(c.nk));
+      if (prev && prev.h === sig && !photoDirty) { items.push(prev); continue; }
+      await catPhotoLoad([catPhotoKey(e.it), ...e.cols.map(c => c.nk)]);
+      const th = await pubStockSquare(_catPhotos[catPhotoKey(e.it)] || e.cols.map(c => _catPhotos[c.nk]).find(Boolean) || '', 140);
+      const cols = [];
+      for (const c of e.cols) cols.push({ c: c.c, s: c.s, t: await pubStockSquare(_catPhotos[c.nk] || '', 120) });
+      await pubCol().doc('pubstock_' + e.id).set({ stamp: SCHEMA_STAMP, kind: 'pubStockItem', data: JSON.stringify({ item: e.item, mix: e.mix, date: e.date, cols }) });
+      items.push({ id: e.id, item: e.item, mix: e.mix, n: cols.length, out: cols.filter(c => c.s > 0).length, th, date: e.date, h: sig });
+      wrote++;
+    }
+    const keep = new Set(items.map(x => x.id)); let removed = 0;
+    for (const id of Object.keys(old)) if (!keep.has(id)) { removed++; try { await pubCol().doc('pubstock_' + id).delete(); } catch (err) { /* 목록에서 빠지면 안 보임 */ } }
+    const orderChanged = !d.exists || items.map(x => x.id).join() !== Object.keys(old).join();
+    let updatedAt = null;
+    if (wrote > 0 || removed > 0 || orderChanged) {
+      updatedAt = new Date().toISOString();
+      await pubCol().doc('pubstock_idx').set({ stamp: SCHEMA_STAMP, kind: 'pubStockIdx', data: JSON.stringify({ v: 1, updatedAt, items }) });
+    }
+    _pubStockInfo = { ok: true, count: items.length, updatedAt: updatedAt || (_pubStockInfo && _pubStockInfo.updatedAt) || null };
+    if (manual) showToast(wrote || removed ? `재고를 반영했어요 (바뀐 품목 ${wrote}개${removed ? `, 내린 품목 ${removed}개` : ''})` : '이미 최신이에요');
+    pubStockRenderBox();
+    return true;
+  } catch (err) {
+    console.error('pubStockSync', err);
+    _pubStockInfo = { ok: false };
+    if (manual) showToast('재고를 반영하지 못했어요 (인터넷 연결을 확인해주세요)');
+    pubStockRenderBox();
+    return false;
+  } finally {
+    _pubStockBusy = false;
+    if (_pubStockAgain) { _pubStockAgain = false; pubStockSchedule(); }
+  }
+}
+async function pubStockRenderBox() {
+  const box = document.getElementById('pub-stock-box'); if (!box) return;
+  box.innerHTML = '<b>재고 탭은 자동으로 반영돼요</b><br><span style="color:var(--muted);">재고가 바뀌면 몇 초 뒤 고객 페이지에도 반영돼요. 정확한 야드 수는 안 올라가고, 0y는 "품절", ' + PUBSTOCK_SAMPLE_Y + 'y 이하는 "품절/샘플가능"으로만 보여요.</span><div id="pub-stock-state" style="margin-top:4px; color:var(--muted);">확인 중...</div><button type="button" onclick="pubStockSync(true)" style="margin-top:6px; border:none; background:#595959; color:#fff; border-radius:8px; padding:8px 14px; font-size:12px; font-weight:700;">지금 재고 반영하기</button>';
+  const st = document.getElementById('pub-stock-state');
+  let info = _pubStockInfo;
+  try {
+    if (!info) {
+      const d = await pubCol().doc('pubstock_idx').get();
+      if (d.exists) { const o = JSON.parse(d.data().data || '{}'); info = { ok: true, count: (o.items || []).length, updatedAt: o.updatedAt || null }; } else info = { ok: true, count: 0, updatedAt: null };
+    }
+    if (!st) return;
+    st.textContent = info.ok === false ? '지난번 반영에 실패했어요 (인터넷 연결 확인 후 "지금 재고 반영하기")' : (info.updatedAt ? `고객 페이지에 ${info.count}개 품목이 올라가 있어요 · 마지막으로 바뀐 때: ${new Date(info.updatedAt).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}` : '아직 한 번도 반영하지 않았어요 - "지금 재고 반영하기"를 눌러주세요');
+  } catch (e) { if (st) st.textContent = '상태를 불러오지 못했어요'; }
 }
 
 async function printStatementForRange(customerName, startDate, endDate, mode) {
