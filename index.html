@@ -1385,7 +1385,7 @@
 const PASSWORD = "3059";
 const ADMIN_PASSWORD = "9503"; // 매출/미수금 탭 전용 - 필요하면 이 값만 바꿔서 변경 가능
 const DATA_VERSION = "2026-08-03-v4"; // 재고/이월장부 씨앗 데이터를 바꿀 때마다 이 값을 새로 바꿔주세요
-const APP_CODE_VERSION = "2026-11-20-zs"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
+const APP_CODE_VERSION = "2026-11-20-zt"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
 const SCHEMA_STAMP = 2; // 서버 저장규칙이 확인하는 "최신 앱 도장" - 절대 자주 바꾸지 않음(이 값을 아는 코드만 저장 가능하게 서버에서 막을 때 씀)
 const CONFIRMED_EMPTY = '__CONFIRMED_EMPTY__'; // "서버가 확실하게 문서가 없다고 확인해줬다"는 걸 표시하는 특수값
                                                  // (한번도 확인 안 한 null과 구분해서, 그 사이 다른 사람이 첫 데이터를 만들었으면 충돌로 감지하기 위함)
@@ -7472,6 +7472,20 @@ async function ledgerHash(str) {
   try { const b = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str)); return Array.from(new Uint8Array(b), x => x.toString(16).padStart(2, '0')).join(''); }
   catch (e) { return 'x' + pubStockHash(str); }
 }
+function ledgerPinOf(c) { const p = settings && settings.ledgerPins && settings.ledgerPins[c]; return (typeof p === 'string' && /^\d{6}$/.test(p)) ? p : ''; } // 거래처별 6자리 비밀번호 (없으면 예전 공통 비밀번호 방식)
+function ledgerNewPin() { const r = new Uint32Array(6); crypto.getRandomValues(r); return Array.from(r, v => String(v % 10)).join(''); }
+const _ledgerKeys = {};
+function _b64(buf) { const u = new Uint8Array(buf); let t = ''; for (let i = 0; i < u.length; i += 8192) t += String.fromCharCode.apply(null, u.subarray(i, i + 8192)); return btoa(t); }
+async function ledgerKey(token, pin) { // 비밀번호 + 링크 토큰으로 암호 열쇠를 만듦 (거래처 화면이 같은 방식으로 풂)
+  const id = token + ':' + pin; if (_ledgerKeys[id]) return _ledgerKeys[id];
+  const te = new TextEncoder(), base = await crypto.subtle.importKey('raw', te.encode(pin), 'PBKDF2', false, ['deriveKey']);
+  return (_ledgerKeys[id] = await crypto.subtle.deriveKey({ name: 'PBKDF2', salt: te.encode(token), iterations: 210000, hash: 'SHA-256' }, base, { name: 'AES-GCM', length: 256 }, false, ['encrypt']));
+}
+async function ledgerEncrypt(plain, token, pin) {
+  const key = await ledgerKey(token, pin), iv = crypto.getRandomValues(new Uint8Array(12));
+  const ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, new TextEncoder().encode(plain));
+  return { v: 2, i: _b64(iv), c: _b64(ct) };
+}
 function ledgerCutoff(days) { const d = new Date(); d.setDate(d.getDate() - days); return `${String(d.getFullYear()).slice(2)}.${String(d.getMonth() + 1).padStart(2, '0')}.${String(d.getDate()).padStart(2, '0')}`; }
 async function ledgerBuild(customer, token) {
   const t_c = String(customer).trim();
@@ -7505,11 +7519,12 @@ async function ledgerBuild(customer, token) {
 }
 async function ledgerPublish(customer) {
   const token = ledgerLinks()[customer]; if (!token) return false;
-  const snap = await ledgerBuild(customer, token);
-  const h = pubStockHash(JSON.stringify(snap));
+  const snap = await ledgerBuild(customer, token), pin = ledgerPinOf(customer);
+  const h = pubStockHash(JSON.stringify(snap) + '|' + pin);
   if (_ledgerHashes[token] === h) return false;
   snap.asOf = new Date().toISOString();
-  await pubCol().doc('ledger_' + token).set({ stamp: SCHEMA_STAMP, kind: 'ledgerSnap', data: JSON.stringify(snap) });
+  if (pin) { delete snap.pin; await pubCol().doc('ledger_' + token).set({ stamp: SCHEMA_STAMP, kind: 'ledgerSnap', enc: await ledgerEncrypt(JSON.stringify(snap), token, pin) }); } // 비밀번호 없이는 내용을 못 읽게 암호화해서 올림
+  else await pubCol().doc('ledger_' + token).set({ stamp: SCHEMA_STAMP, kind: 'ledgerSnap', data: JSON.stringify(snap) }); // 예전 링크(공통 비밀번호) 방식
   _ledgerHashes[token] = h;
   return true;
 }
@@ -7665,14 +7680,41 @@ function closeLedgerLinkModal() { document.getElementById('ledgerLinkModal').cla
 function renderLedgerLinkModal() {
   const c = _ledgerModalCustomer, token = ledgerLinks()[c], box = document.getElementById('ll-body');
   const bs = 'border:none; border-radius:8px; padding:10px 12px; font-size:13px; font-weight:700;';
+  const pin = token ? ledgerPinOf(c) : '';
+  const sec = 'margin-top:14px; padding-top:12px; border-top:1px solid var(--border);';
   box.innerHTML = `<div style="font-size:15px; font-weight:800; margin-bottom:8px;">${esc(c)}</div>`
     + (token
       ? `<input id="ll-url" type="text" readonly value="${esc(ledgerUrl(token))}" style="width:100%; box-sizing:border-box; font-size:12px; padding:9px; border:1px solid var(--border); border-radius:8px;" onclick="this.select()">
          <div style="display:flex; gap:6px; margin-top:8px;"><button type="button" onclick="ledgerCopy()" style="${bs} flex:1; background:#595959; color:#fff;">링크 복사</button><button type="button" onclick="window.open(document.getElementById('ll-url').value,'_blank')" style="${bs} flex:1; background:#e8e3da; color:#444;">열어보기</button></div>
-         <div style="display:flex; gap:6px; margin-top:6px;"><button type="button" onclick="ledgerRefreshNow()" style="${bs} flex:1; background:#e8e3da; color:#444;">지금 갱신</button><button type="button" onclick="ledgerRegen()" style="${bs} flex:1; background:#e8e3da; color:#444;">링크 다시 만들기</button><button type="button" onclick="ledgerOff()" style="${bs} flex:1; background:#f3dcd6; color:#8a2f1d;">링크 끄기</button></div>`
+         <div style="display:flex; gap:6px; margin-top:6px; white-space:nowrap;"><button type="button" onclick="ledgerRefreshNow()" style="${bs} flex:1; background:#e8e3da; color:#444;">지금 갱신</button><button type="button" onclick="ledgerRegen()" style="${bs} flex:1.3; background:#e8e3da; color:#444;">링크 다시 만들기</button><button type="button" onclick="ledgerOff()" style="${bs} flex:1; background:#f3dcd6; color:#8a2f1d;">링크 끄기</button></div>
+         <div style="${sec}"><div style="font-size:13.5px; font-weight:800;">이 거래처 비밀번호</div>`
+        + (pin
+          ? `<div style="font-size:12px; color:var(--muted); margin-top:3px;">이 비밀번호가 없으면 링크를 열어도 내용이 안 보여요.</div>
+             <div style="display:flex; align-items:center; gap:8px; margin-top:10px;"><div id="ll-pinv" style="flex:1; border:1px solid var(--border); background:#faf8f4; border-radius:10px; padding:10px 14px; font-size:22px; font-weight:800; letter-spacing:6px;">${pin.slice(0, 3)} ${pin.slice(3)}</div><button type="button" onclick="ledgerPinReset()" style="${bs} background:#e8e3da; color:#444; white-space:nowrap;">새로 만들기</button><button type="button" onclick="ledgerCopyPin()" style="${bs} background:#e8e3da; color:#444;">복사</button></div>`
+          : `<div style="font-size:12px; color:var(--muted); margin-top:3px; line-height:1.5;">아직 예전 방식이에요 (모든 거래처 공통 비밀번호 ${esc(ledgerPin())}). 비밀번호를 만들면 이 거래처 전용 번호가 생기고 장부 내용이 암호화돼요.</div>
+             <button type="button" onclick="ledgerPinReset()" style="${bs} width:100%; margin-top:10px; background:#595959; color:#fff;">비밀번호 만들기</button>`)
+        + `</div>
+         <div style="${sec}"><div style="font-size:13.5px; font-weight:800;">거래처에 보낼 문구</div><div style="font-size:12px; color:var(--muted); margin-top:3px;">이대로 복사해서 카톡에 붙여넣으세요.</div>
+           <div id="ll-msg" style="margin-top:10px; background:#fbf7e6; border:1px solid #efe5b8; border-radius:12px; padding:12px 14px; font-size:13.5px; line-height:1.65; white-space:pre-line; word-break:break-all;">${esc(ledgerMsgText(c))}</div>
+           <button type="button" onclick="ledgerCopyMsg()" style="${bs} width:100%; margin-top:8px; background:#595959; color:#fff;">문구 복사</button>`
+        + (pin ? `<div style="margin-top:10px; background:#f6ece9; border-radius:10px; padding:9px 12px; font-size:12px; color:#a2402f; line-height:1.5;">비밀번호를 새로 만들면 거래처가 예전 비밀번호로는 못 열어요. 새 비밀번호를 다시 알려줘야 해요.</div>` : '')
+        + `</div>`
       : `<button type="button" onclick="ledgerCreate()" style="${bs} width:100%; background:#595959; color:#fff;">장부 링크 만들기</button>`)
-    + (token ? ledgerMemoHtml(c) : '')
-    + `<div style="margin-top:12px; padding-top:10px; border-top:1px solid var(--border); display:flex; align-items:center; gap:8px;"><span style="font-size:12px; color:var(--muted); white-space:nowrap;">비밀번호 (전체 공통)</span><input id="ll-pin" type="text" inputmode="numeric" value="${esc(ledgerPin())}" style="flex:1; min-width:0; font-size:14px; padding:8px; border:1px solid var(--border); border-radius:8px;"><button type="button" onclick="ledgerSavePin()" style="${bs} background:#e8e3da; color:#444;">저장</button></div>`;
+    + (token ? ledgerMemoHtml(c) : '');
+}
+function ledgerMsgText(c) { const t = ledgerLinks()[c]; return `${c} - 백야 장부 링크입니다.\n${ledgerUrl(t)}\n\n비밀번호는 ${ledgerPinOf(c) || ledgerPin()} 입니다.`; }
+function ledgerClip(txt, okMsg) { const ok = () => showToast(okMsg); if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(txt).then(ok, () => prompt('복사하세요', txt)); else prompt('복사하세요', txt); }
+function ledgerCopyMsg() { ledgerClip(ledgerMsgText(_ledgerModalCustomer), '문구를 복사했어요'); }
+function ledgerCopyPin() { const p = ledgerPinOf(_ledgerModalCustomer); if (p) ledgerClip(p, '비밀번호를 복사했어요'); }
+async function ledgerPinReset() {
+  const c = _ledgerModalCustomer, token = ledgerLinks()[c]; if (!token) return;
+  const had = !!ledgerPinOf(c);
+  if (!confirm(had ? `"${c}" 비밀번호를 새로 만들까요?\n거래처가 예전 비밀번호로는 못 열어요. 새 비밀번호를 다시 알려줘야 해요.` : `"${c}" 장부에 이 거래처 전용 비밀번호를 만들까요?\n장부 내용이 암호화되고, 거래처에 새 비밀번호를 알려줘야 해요.`)) return;
+  const pins = { ...(settings.ledgerPins || {}), [c]: ledgerNewPin() };
+  if (!(await ledgerSaveLinks(ledgerLinks(), null, pins))) return;
+  delete _ledgerHashes[token];
+  try { await ledgerPublish(c); showToast('새 비밀번호를 만들었어요'); } catch (e) { console.error(e); showToast('비밀번호는 만들었지만 장부를 올리지 못했어요 - "지금 갱신"을 눌러주세요'); }
+  renderLedgerLinkModal();
 }
 function ledgerMemoHtml(c) { // 이월 항목마다 거래처 장부에 보여줄 짧은 메모 (출고 완료되면 목록에서 빠지면서 같이 사라짐)
   const list = orders.filter(o => o && !o.done && !o.isSample && String(o.customer || '').trim() === String(c).trim()).sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')) || (a.id - b.id));
@@ -7691,8 +7733,8 @@ async function ledgerMemoSave(id, el) {
   if (!ok) { if (prev) o.cmemo = prev; else delete o.cmemo; el.value = prev; showToast('저장하지 못했어요 (인터넷 연결을 확인해주세요)'); return; }
   el.value = v; showToast(v ? '메모를 저장했어요' : '메모를 지웠어요');
 }
-async function ledgerSaveLinks(links, msg) {
-  const before = settings; settings = { ...settings, ledgerLinks: links };
+async function ledgerSaveLinks(links, msg, pins) {
+  const before = settings; settings = { ...settings, ledgerLinks: links, ...(pins ? { ledgerPins: pins } : {}) };
   let ok = false; try { ok = await persistSettings(); } catch (e) { ok = false; }
   if (!ok) { settings = before; showToast('저장하지 못했어요 (인터넷 연결을 확인해주세요)'); return false; }
   if (msg) showToast(msg);
@@ -7700,7 +7742,7 @@ async function ledgerSaveLinks(links, msg) {
 }
 async function ledgerCreate() {
   const c = _ledgerModalCustomer; if (!c || ledgerLinks()[c]) return;
-  if (!(await ledgerSaveLinks({ ...ledgerLinks(), [c]: ledgerNewToken() }))) return;
+  if (!(await ledgerSaveLinks({ ...ledgerLinks(), [c]: ledgerNewToken() }, null, { ...(settings.ledgerPins || {}), [c]: ledgerNewPin() }))) return;
   try { await ledgerPublish(c); showToast('장부 링크를 만들었어요'); } catch (e) { showToast('링크는 만들었지만 장부를 올리지 못했어요 - "지금 갱신"을 눌러주세요'); }
   renderLedgerLinkModal();
 }
@@ -7713,7 +7755,7 @@ async function ledgerDeleteDoc(token) { try { await pubCol().doc('ledger_' + tok
 async function ledgerRegen() {
   const c = _ledgerModalCustomer, old = ledgerLinks()[c]; if (!old) return;
   if (!confirm(`"${c}" 장부 링크를 다시 만들까요?\n예전 링크는 바로 안 열리게 돼요. 거래처에 새 링크를 다시 보내야 해요.`)) return;
-  if (!(await ledgerSaveLinks({ ...ledgerLinks(), [c]: ledgerNewToken() }))) return;
+  if (!(await ledgerSaveLinks({ ...ledgerLinks(), [c]: ledgerNewToken() }, null, { ...(settings.ledgerPins || {}), [c]: ledgerNewPin() }))) return;
   await ledgerDeleteDoc(old);
   try { await ledgerPublish(c); showToast('새 링크를 만들었어요'); } catch (e) { showToast('새 링크는 만들었지만 장부를 올리지 못했어요 - "지금 갱신"을 눌러주세요'); }
   renderLedgerLinkModal();
@@ -7722,19 +7764,11 @@ async function ledgerOff() {
   const c = _ledgerModalCustomer, old = ledgerLinks()[c]; if (!old) return;
   if (!confirm(`"${c}" 장부 링크를 끌까요?\n서버의 장부도 지워지고 링크가 안 열려요.`)) return;
   const rest = { ...ledgerLinks() }; delete rest[c];
-  if (!(await ledgerSaveLinks(rest, '링크를 껐어요'))) return;
+  const restPins = { ...(settings.ledgerPins || {}) }; delete restPins[c];
+  if (!(await ledgerSaveLinks(rest, '링크를 껐어요', restPins))) return;
   await ledgerDeleteDoc(old);
   renderLedgerLinkModal();
 }
-async function ledgerSavePin() {
-  const v = String(document.getElementById('ll-pin').value || '').trim();
-  if (!v) { showToast('비밀번호를 입력해주세요'); return; }
-  const before = settings; settings = { ...settings, ledgerPin: v };
-  let ok = false; try { ok = await persistSettings(); } catch (e) { ok = false; }
-  if (!ok) { settings = before; showToast('저장하지 못했어요 (인터넷 연결을 확인해주세요)'); return; }
-  showToast('비밀번호를 바꿨어요'); Object.keys(_ledgerHashes).forEach(k => delete _ledgerHashes[k]); ledgerSyncAll(false);
-}
-
 function pubLinkUrl(p) { try { return new URL('customer.html?p=' + p, location.href).href; } catch (e) { return 'customer.html?p=' + p; } }
 function pubOpenLink(p) { window.open(pubLinkUrl(p), '_blank'); }
 function pubCopyLink(p) {

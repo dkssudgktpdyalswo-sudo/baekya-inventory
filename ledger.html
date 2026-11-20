@@ -50,6 +50,17 @@ button{font-family:inherit}
 .pin input{width:100%;font-size:22px;text-align:center;letter-spacing:6px;padding:12px;border:1px solid var(--hair);border-radius:12px;background:#fff;color:var(--ink);outline:none}
 .pin button{width:100%;margin-top:10px;border:none;background:var(--brand);color:#fff;border-radius:12px;padding:14px;font-size:16px;font-weight:800}
 .pin .er{color:#b5483a;font-size:13px;margin-top:10px;min-height:18px}
+.pin2{max-width:320px;margin:70px auto 0;padding:0 20px;text-align:center}
+.pin2 img{width:210px;height:auto;display:block;margin:0 auto 34px}
+.pin2 .ds{font-size:15px;color:var(--ink);font-weight:600;margin-bottom:18px}
+.pin2 .bx{position:relative;display:flex;gap:7px;justify-content:center}
+.pin2 .bx i{flex:1;max-width:44px;height:54px;border:1px solid var(--hair);border-radius:11px;background:#fff;display:flex;align-items:center;justify-content:center;font-style:normal;font-size:22px;font-weight:800}
+.pin2 .bx i.on{border-color:var(--brand)}
+.pin2 .bx input{position:absolute;inset:0;width:100%;height:100%;opacity:0;font-size:16px;border:0;padding:0}
+.pin2 button{width:100%;margin-top:16px;border:none;background:var(--brand);color:#fff;border-radius:12px;padding:14px;font-size:16px;font-weight:800}
+.pin2 button:disabled{opacity:.45}
+.pin2 .er{color:#b5483a;font-size:13px;margin-top:10px;min-height:18px}
+.pin2 .ft2{font-size:12px;color:var(--muted);margin-top:26px}
 .bar{position:fixed;left:0;right:0;bottom:0;z-index:20;background:var(--paper);border-top:1px solid var(--hair);padding:10px 14px calc(10px + env(safe-area-inset-bottom));display:flex;gap:8px;justify-content:center}
 .bar a{flex:1;display:flex;align-items:center;justify-content:center;gap:6px;max-width:342px;background:var(--brand);color:#fff;border-radius:12px;padding:14px 0;font-size:16px;font-weight:800;white-space:nowrap}
 .ft a{text-decoration:underline}
@@ -58,7 +69,7 @@ button{font-family:inherit}
 </head>
 <body>
 <div id="app"></div>
-<div class="bar"><a href="customer.html?p=new">✨ 신상 · Best 품목 보러가기</a></div>
+<div class="bar" id="bar"><a href="customer.html?p=new">✨ 신상 · Best 품목 보러가기</a></div>
 <div class="toast" id="toast"></div>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
@@ -68,7 +79,7 @@ const LOGO = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAArwAAABTCAYAAAB9N9Q9
 const cfg = { apiKey: "AIzaSyA4Qrz16VpQuBVxTzGMyoAD9BtzIgXV0cQ", projectId: "project-8895328122777928786", appId: "1:995742705102:web:7294216d6e4745dd1df79f" };
 const app = document.getElementById('app');
 const TOKEN = new URLSearchParams(location.search).get('t') || '';
-let snap = null, tab = 'a', unlocked = false, state = 'load'; // load | none | err | pin | ok
+let snap = null, tab = 'a', unlocked = false, state = 'load'; // load | none | err | pin | pin2 | ok
 const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const won = n => Math.round(n).toLocaleString('ko-KR') + '원';
 const r2 = v => Math.round(v * 100) / 100;
@@ -77,6 +88,17 @@ const nowKey = () => { const d = new Date(); return String(d.getFullYear()).slic
 const prevKey = () => { const d = new Date(); d.setMonth(d.getMonth() - 1, 1); return String(d.getFullYear()).slice(2) + '.' + String(d.getMonth() + 1).padStart(2, '0'); };
 const mmdd = d => String(d).slice(3);
 function toast(m) { const t = document.getElementById('toast'); t.textContent = m; t.classList.add('on'); setTimeout(() => t.classList.remove('on'), 1800); }
+function unb64(t) { const b = atob(t), u = new Uint8Array(b.length); for (let i = 0; i < b.length; i++) u[i] = b.charCodeAt(i); return u; }
+let ENC = null, PIN = '';
+async function decryptWith(pin) { // 비밀번호로 암호를 풀어 장부를 돌려줌 (틀리면 null)
+  try {
+    const te = new TextEncoder(), base = await crypto.subtle.importKey('raw', te.encode(pin), 'PBKDF2', false, ['deriveKey']);
+    const key = await crypto.subtle.deriveKey({ name: 'PBKDF2', salt: te.encode(TOKEN), iterations: 210000, hash: 'SHA-256' }, base, { name: 'AES-GCM', length: 256 }, false, ['decrypt']);
+    const pt = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: unb64(ENC.i) }, key, unb64(ENC.c));
+    const o = JSON.parse(new TextDecoder().decode(pt));
+    return (o && Array.isArray(o.ev)) ? o : null;
+  } catch (e) { return null; }
+}
 async function sha(str) {
   try { const b = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str)); return Array.from(new Uint8Array(b), x => x.toString(16).padStart(2, '0')).join(''); }
   catch (e) { return null; }
@@ -152,9 +174,25 @@ function viewC() {
     + '<div class="ft">정확한 입고일은 <a href="https://pf.kakao.com/_cnMsn/chat">채널로 문의</a>해 주세요</div>';
 }
 function render() {
+  const barEl = document.getElementById('bar'); if (barEl) barEl.style.display = (state === 'pin2' || state === 'pin') ? 'none' : '';
   if (state === 'load') { app.innerHTML = '<div class="empty">불러오는 중...</div>'; return; }
   if (state === 'none') { app.innerHTML = '<div class="msg">이 링크는 열리지 않아요.<br>담당자에게 새 링크를 요청해 주세요.</div>'; return; }
   if (state === 'err') { app.innerHTML = '<div class="msg">불러오지 못했어요.<br>잠시 후 다시 시도해주세요.<br><button id="retry">다시 불러오기</button></div>'; document.getElementById('retry').onclick = boot; return; }
+  if (state === 'pin2') {
+    app.innerHTML = `<div class="pin2"><img src="${LOGO}" alt="BAEK YA"><div class="ds">비밀번호 6자리를 입력해 주세요</div><div class="bx" id="bx">${'<i></i>'.repeat(6)}<input id="pin" type="tel" inputmode="numeric" maxlength="6" autocomplete="off" autofocus></div><button id="go" disabled>열기</button><div class="er" id="er"></div><div class="ft2">한 번 열면 저장됩니다</div></div>`;
+    const inp = document.getElementById('pin'), boxes = document.querySelectorAll('#bx i'), btn = document.getElementById('go'), er = document.getElementById('er');
+    const paint = () => { const v = inp.value; boxes.forEach((b, k) => { b.textContent = v[k] ? '●' : ''; b.classList.toggle('on', k === Math.min(v.length, 5)); }); btn.disabled = v.length !== 6; };
+    inp.addEventListener('input', () => { inp.value = inp.value.replace(/\D/g, '').slice(0, 6); er.textContent = ''; paint(); });
+    const go = async () => {
+      const v = inp.value; if (v.length !== 6) return;
+      btn.disabled = true; btn.textContent = '확인 중...';
+      const o = await decryptWith(v);
+      if (o) { snap = o; PIN = v; try { localStorage.setItem('lg2_' + TOKEN, v); } catch (e) { /* 저장 못 해도 열림 */ } state = 'ok'; render(); }
+      else { er.textContent = '비밀번호가 맞지 않아요'; inp.value = ''; btn.textContent = '열기'; paint(); inp.focus(); }
+    };
+    btn.onclick = go; inp.addEventListener('keydown', e => { if (e.key === 'Enter') go(); }); paint();
+    return;
+  }
   if (state === 'pin') {
     app.innerHTML = `<div class="pin"><img src="${LOGO}" alt="BAEK YA"><div class="nm">${esc(snap.name)} 귀하</div><div class="ds">비밀번호를 입력해주세요</div><input id="pin" type="password" inputmode="numeric" autocomplete="off" autofocus><button id="go">확인</button><div class="er" id="er"></div></div>`;
     const go = async () => {
@@ -187,7 +225,15 @@ async function boot() {
     if (!db) { firebase.initializeApp(cfg); db = firebase.firestore(); try { await firebase.auth().signInAnonymously(); } catch (e) { /* 규칙이 열려 있으면 인증 없이도 읽힘 */ } }
     const d = await db.collection('inventory').doc('ledger_' + TOKEN).get();
     if (!d.exists) { state = 'none'; render(); return; }
-    snap = JSON.parse(d.data().data || '{}');
+    const dd = d.data();
+    if (dd.enc && dd.enc.c) { // 비밀번호로 암호화된 장부
+      ENC = dd.enc; snap = null;
+      let sv = ''; try { sv = localStorage.getItem('lg2_' + TOKEN) || ''; } catch (e) { sv = ''; }
+      const o = /^\d{6}$/.test(sv) ? await decryptWith(sv) : null;
+      if (o) { snap = o; PIN = sv; state = 'ok'; } else { try { localStorage.removeItem('lg2_' + TOKEN); } catch (e) { /* 무시 */ } state = 'pin2'; }
+      render(); return;
+    }
+    snap = JSON.parse(dd.data || '{}');
     if (!snap || !Array.isArray(snap.ev)) { state = 'err'; render(); return; }
     let saved = null; try { saved = localStorage.getItem('lg_' + TOKEN); } catch (e) { saved = null; }
     state = (saved && saved === snap.pin) ? 'ok' : 'pin';
