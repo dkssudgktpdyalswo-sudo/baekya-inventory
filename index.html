@@ -420,6 +420,13 @@
   </div>
 </div>
 
+<div class="modal-overlay" id="ledgerLinkModal">
+  <div class="modal">
+    <h3>📱 거래처 장부 링크</h3>
+    <div id="ll-body"></div>
+    <div class="modal-actions"><button class="btn-cancel" onclick="closeLedgerLinkModal()">닫기</button></div>
+  </div>
+</div>
 <div class="modal-overlay" id="customerNoteModal">
   <div class="modal">
     <h3>거래처 메모</h3>
@@ -1370,7 +1377,7 @@
 const PASSWORD = "3059";
 const ADMIN_PASSWORD = "9503"; // 매출/미수금 탭 전용 - 필요하면 이 값만 바꿔서 변경 가능
 const DATA_VERSION = "2026-08-03-v4"; // 재고/이월장부 씨앗 데이터를 바꿀 때마다 이 값을 새로 바꿔주세요
-const APP_CODE_VERSION = "2026-11-20-zl"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
+const APP_CODE_VERSION = "2026-11-20-zm"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
 const SCHEMA_STAMP = 2; // 서버 저장규칙이 확인하는 "최신 앱 도장" - 절대 자주 바꾸지 않음(이 값을 아는 코드만 저장 가능하게 서버에서 막을 때 씀)
 const CONFIRMED_EMPTY = '__CONFIRMED_EMPTY__'; // "서버가 확실하게 문서가 없다고 확인해줬다"는 걸 표시하는 특수값
                                                  // (한번도 확인 안 한 null과 구분해서, 그 사이 다른 사람이 첫 데이터를 만들었으면 충돌로 감지하기 위함)
@@ -2228,7 +2235,9 @@ async function persistOrders() {
     alert('⚠️ 아직 서버에서 이월장부를 불러오는 중이에요.\n잠시 후 다시 시도해주세요. (계속 뜨면 화면을 새로고침해주세요)');
     return false;
   }
-  return await persistGuarded('orders', 'orders', orders);
+  const okOr = await persistGuarded('orders', 'orders', orders);
+  if (okOr) ledgerSchedule();
+  return okOr;
 }
 async function persistChinaOrders() {
   if (useFirebase && !chinaOrdersFirstLoadDone) {
@@ -2265,7 +2274,9 @@ async function persistShipmentLog() {
     if (!ok) { alert('⚠️ 서버 연결이 원활하지 않아요.\n화면을 새로고침한 다음 다시 시도해주세요.'); return false; }
   }
   freezeEntryCosts(); // 저장할 때마다, 아직 원가가 안 고정된 매출이 있으면 이 시점 원가로 고정
-  return await persistGuarded('shipmentLog', 'shipmentLog', shipmentLog);
+  const okSl = await persistGuarded('shipmentLog', 'shipmentLog', shipmentLog);
+  if (okSl) ledgerSchedule(); // 장부 링크를 만들어 둔 거래처는 바뀐 장부를 자동으로 다시 올림
+  return okSl;
 }
 async function persistPriceBook() {
   if (useFirebase && !priceBookFirstLoadDone) {
@@ -7438,6 +7449,132 @@ async function publishCatalog() {
     showToast(e && e.message === 'toobig' ? '이미지가 너무 커서 올리지 못했어요 (컬러를 나눠서 올려주세요)' : '올리지 못했어요 (인터넷 연결을 확인해주세요)');
   } finally { _pubBusy = false; btn.textContent = btnTxt; }
 }
+// ── 거래처 장부 링크 (ledger.html): 거래처마다 긴 비밀 링크 하나. 미수금/출고내역/이월을 폰에서 읽기 전용으로 봄 ──
+// 서버 문서: ledger_<토큰> (그 거래처 몫만). 장부 계산은 원장/명세서와 똑같은 함수를 그대로 씀
+let _ledgerTimer = null, _ledgerBusy = false, _ledgerAgain = false;
+const _ledgerHashes = {}; // 토큰 -> 마지막으로 올린 내용의 해시 (바뀐 게 없으면 안 올림)
+function ledgerLinks() { return (settings && settings.ledgerLinks && typeof settings.ledgerLinks === 'object') ? settings.ledgerLinks : {}; }
+function ledgerPin() { return String((settings && settings.ledgerPin) || '100'); }
+function ledgerNewToken() {
+  const abc = 'abcdefghjkmnpqrstuvwxyz23456789', r = new Uint32Array(26); crypto.getRandomValues(r);
+  return Array.from(r, v => abc[v % abc.length]).join('');
+}
+function ledgerUrl(token) { try { return new URL('ledger.html?t=' + token, location.href).href; } catch (e) { return 'ledger.html?t=' + token; } }
+async function ledgerHash(str) {
+  try { const b = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str)); return Array.from(new Uint8Array(b), x => x.toString(16).padStart(2, '0')).join(''); }
+  catch (e) { return 'x' + pubStockHash(str); }
+}
+function ledgerCutoff(days) { const d = new Date(); d.setDate(d.getDate() - days); return `${String(d.getFullYear()).slice(2)}.${String(d.getMonth() + 1).padStart(2, '0')}.${String(d.getDate()).padStart(2, '0')}`; }
+async function ledgerBuild(customer, token) {
+  const t_c = String(customer).trim();
+  const archived = await fetchAllArchivedEntriesForCustomer(t_c); // 원장의 "이월" 잔액처럼 이 거래처의 전체 과거 흐름이 필요함
+  const orig = shipmentLog; let events, balance, credit;
+  if (archived.length > 0) shipmentLog = shipmentLog.concat(archived);
+  try { events = buildCustomerLedgerEvents(t_c); balance = getCustomerTrueUnpaid(t_c); credit = getCustomerCredit(t_c); }
+  finally { shipmentLog = orig; }
+  const cut = ledgerCutoff(400);
+  let opening = 0; const ev = [];
+  for (const e of events) {
+    if (String(e.date) < cut) { opening += e.amount; continue; }
+    ev.push({ d: e.date, t: e.type, n: String(e.desc || '').trim(), q: e.detail || '', a: Math.round(e.amount * 100) / 100, ...(e.isCarry ? { c: 1 } : {}) });
+  }
+  const evOut = ev.slice(-600);
+  if (ev.length > evOut.length) for (const e of ev.slice(0, ev.length - evOut.length)) opening += e.a;
+  const mine = orders.filter(o => o && String(o.customer || '').trim() === t_c && !o.isSample);
+  const pack = o => ({ d: o.date || '', i: o.item || '', c: o.color || '', u: o.unit === '절' ? '절' : 'y', q: Number(o.orderQty) || 0, r: Number(o.received) || 0, s: orderStatus(o) });
+  const active = mine.filter(o => !o.done).map(pack).slice(0, 60);
+  const done = mine.filter(o => o.done).sort((a, b) => String(b.date || '').localeCompare(String(a.date || ''))).slice(0, 5).map(pack);
+  return { v: 1, name: t_c, pin: await ledgerHash(token + ':' + ledgerPin()), acct: String(settings.bankInfo || ''), balance, credit, opening: Math.round(opening * 100) / 100, ev: evOut, active, done };
+}
+async function ledgerPublish(customer) {
+  const token = ledgerLinks()[customer]; if (!token) return false;
+  const snap = await ledgerBuild(customer, token);
+  const h = pubStockHash(JSON.stringify(snap));
+  if (_ledgerHashes[token] === h) return false;
+  snap.asOf = new Date().toISOString();
+  await pubCol().doc('ledger_' + token).set({ stamp: SCHEMA_STAMP, kind: 'ledgerSnap', data: JSON.stringify(snap) });
+  _ledgerHashes[token] = h;
+  return true;
+}
+function ledgerSchedule() {
+  if (!useFirebase || typeof db === 'undefined' || !db) return;
+  if (!Object.keys(ledgerLinks()).length) return;
+  clearTimeout(_ledgerTimer);
+  _ledgerTimer = setTimeout(() => { ledgerSyncAll().catch(() => {}); }, 6000); // 연달아 고칠 땐 마지막 수정 6초 뒤 한 번만
+}
+async function ledgerSyncAll(manual) {
+  if (!useFirebase || typeof db === 'undefined' || !db) return false;
+  if (!shipmentLogFirstLoadDone || !ordersFirstLoadDone) return false; // 불러오기 전 빈 상태로 올리는 사고 방지
+  if (_ledgerBusy) { _ledgerAgain = true; return false; }
+  _ledgerBusy = true; let n = 0;
+  try {
+    for (const c of Object.keys(ledgerLinks())) { try { if (await ledgerPublish(c)) n++; } catch (e) { console.error('ledgerPublish', c, e); } }
+    if (manual) showToast(n ? `장부를 갱신했어요 (${n}곳)` : '이미 최신이에요');
+    return true;
+  } finally { _ledgerBusy = false; if (_ledgerAgain) { _ledgerAgain = false; ledgerSchedule(); } }
+}
+let _ledgerModalCustomer = '';
+function openLedgerLinkModal(customer) {
+  _ledgerModalCustomer = String(customer).trim();
+  renderLedgerLinkModal();
+  document.getElementById('ledgerLinkModal').classList.add('open');
+}
+function closeLedgerLinkModal() { document.getElementById('ledgerLinkModal').classList.remove('open'); }
+function renderLedgerLinkModal() {
+  const c = _ledgerModalCustomer, token = ledgerLinks()[c], box = document.getElementById('ll-body');
+  const bs = 'border:none; border-radius:8px; padding:10px 12px; font-size:13px; font-weight:700;';
+  box.innerHTML = `<div style="font-size:15px; font-weight:800; margin-bottom:8px;">${esc(c)}</div>`
+    + (token
+      ? `<input id="ll-url" type="text" readonly value="${esc(ledgerUrl(token))}" style="width:100%; box-sizing:border-box; font-size:12px; padding:9px; border:1px solid var(--border); border-radius:8px;" onclick="this.select()">
+         <div style="display:flex; gap:6px; margin-top:8px;"><button type="button" onclick="ledgerCopy()" style="${bs} flex:1; background:#595959; color:#fff;">링크 복사</button><button type="button" onclick="window.open(document.getElementById('ll-url').value,'_blank')" style="${bs} flex:1; background:#e8e3da; color:#444;">열어보기</button></div>
+         <div style="display:flex; gap:6px; margin-top:6px;"><button type="button" onclick="ledgerRefreshNow()" style="${bs} flex:1; background:#e8e3da; color:#444;">지금 갱신</button><button type="button" onclick="ledgerRegen()" style="${bs} flex:1; background:#e8e3da; color:#444;">링크 다시 만들기</button><button type="button" onclick="ledgerOff()" style="${bs} flex:1; background:#f3dcd6; color:#8a2f1d;">링크 끄기</button></div>`
+      : `<button type="button" onclick="ledgerCreate()" style="${bs} width:100%; background:#595959; color:#fff;">장부 링크 만들기</button>`)
+    + `<div style="margin-top:12px; padding-top:10px; border-top:1px solid var(--border); display:flex; align-items:center; gap:8px;"><span style="font-size:12px; color:var(--muted); white-space:nowrap;">비밀번호 (전체 공통)</span><input id="ll-pin" type="text" inputmode="numeric" value="${esc(ledgerPin())}" style="flex:1; min-width:0; font-size:14px; padding:8px; border:1px solid var(--border); border-radius:8px;"><button type="button" onclick="ledgerSavePin()" style="${bs} background:#e8e3da; color:#444;">저장</button></div>`;
+}
+async function ledgerSaveLinks(links, msg) {
+  const before = settings; settings = { ...settings, ledgerLinks: links };
+  let ok = false; try { ok = await persistSettings(); } catch (e) { ok = false; }
+  if (!ok) { settings = before; showToast('저장하지 못했어요 (인터넷 연결을 확인해주세요)'); return false; }
+  if (msg) showToast(msg);
+  return true;
+}
+async function ledgerCreate() {
+  const c = _ledgerModalCustomer; if (!c || ledgerLinks()[c]) return;
+  if (!(await ledgerSaveLinks({ ...ledgerLinks(), [c]: ledgerNewToken() }))) return;
+  try { await ledgerPublish(c); showToast('장부 링크를 만들었어요'); } catch (e) { showToast('링크는 만들었지만 장부를 올리지 못했어요 - "지금 갱신"을 눌러주세요'); }
+  renderLedgerLinkModal();
+}
+function ledgerCopy() {
+  const u = document.getElementById('ll-url').value, ok = () => showToast('링크를 복사했어요');
+  if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(u).then(ok, () => prompt('링크를 복사하세요', u)); else prompt('링크를 복사하세요', u);
+}
+async function ledgerRefreshNow() { const t = ledgerLinks()[_ledgerModalCustomer]; if (t) delete _ledgerHashes[t]; await ledgerSyncAll(true); }
+async function ledgerDeleteDoc(token) { try { await pubCol().doc('ledger_' + token).delete(); } catch (e) { /* 이미 없으면 그대로 */ } delete _ledgerHashes[token]; }
+async function ledgerRegen() {
+  const c = _ledgerModalCustomer, old = ledgerLinks()[c]; if (!old) return;
+  if (!confirm(`"${c}" 장부 링크를 다시 만들까요?\n예전 링크는 바로 안 열리게 돼요. 거래처에 새 링크를 다시 보내야 해요.`)) return;
+  if (!(await ledgerSaveLinks({ ...ledgerLinks(), [c]: ledgerNewToken() }))) return;
+  await ledgerDeleteDoc(old);
+  try { await ledgerPublish(c); showToast('새 링크를 만들었어요'); } catch (e) { showToast('새 링크는 만들었지만 장부를 올리지 못했어요 - "지금 갱신"을 눌러주세요'); }
+  renderLedgerLinkModal();
+}
+async function ledgerOff() {
+  const c = _ledgerModalCustomer, old = ledgerLinks()[c]; if (!old) return;
+  if (!confirm(`"${c}" 장부 링크를 끌까요?\n서버의 장부도 지워지고 링크가 안 열려요.`)) return;
+  const rest = { ...ledgerLinks() }; delete rest[c];
+  if (!(await ledgerSaveLinks(rest, '링크를 껐어요'))) return;
+  await ledgerDeleteDoc(old);
+  renderLedgerLinkModal();
+}
+async function ledgerSavePin() {
+  const v = String(document.getElementById('ll-pin').value || '').trim();
+  if (!v) { showToast('비밀번호를 입력해주세요'); return; }
+  const before = settings; settings = { ...settings, ledgerPin: v };
+  let ok = false; try { ok = await persistSettings(); } catch (e) { ok = false; }
+  if (!ok) { settings = before; showToast('저장하지 못했어요 (인터넷 연결을 확인해주세요)'); return; }
+  showToast('비밀번호를 바꿨어요'); Object.keys(_ledgerHashes).forEach(k => delete _ledgerHashes[k]); ledgerSyncAll(false);
+}
+
 function pubLinkUrl(p) { try { return new URL('customer.html?p=' + p, location.href).href; } catch (e) { return 'customer.html?p=' + p; } }
 function pubOpenLink(p) { window.open(pubLinkUrl(p), '_blank'); }
 function pubCopyLink(p) {
@@ -8926,7 +9063,7 @@ function renderCustomerProfileSummary(t_c) {
   wrap.innerHTML = `
     <div style="background:var(--primary-dark); border-radius:10px 10px 0 0; padding:10px 14px; color:#fff; font-weight:700; font-size:14px; display:flex; justify-content:space-between; align-items:center;">
       <span>${esc(t_c)}</span>
-      <button onclick="editCustomerNote('${escAttr(t_c)}')" style="border:none;background:rgba(255,255,255,0.15);color:#fff;border-radius:6px;padding:4px 8px;font-size:11px;">메모 수정</button>
+      <span style="display:flex; gap:6px;"><button onclick="openLedgerLinkModal('${escAttr(t_c)}')" style="border:none;background:rgba(255,255,255,0.15);color:#fff;border-radius:6px;padding:4px 8px;font-size:11px;">📱 장부 링크${ledgerLinks()[t_c] ? ' ✓' : ''}</button><button onclick="editCustomerNote('${escAttr(t_c)}')" style="border:none;background:rgba(255,255,255,0.15);color:#fff;border-radius:6px;padding:4px 8px;font-size:11px;">메모 수정</button></span>
     </div>
     ${customerNotes[t_c] ? `
       <div style="background:#fff; border:1px solid var(--border); border-top:none; padding:10px 14px; display:flex; gap:10px; align-items:flex-start;">
