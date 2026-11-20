@@ -1362,7 +1362,7 @@
 const PASSWORD = "3059";
 const ADMIN_PASSWORD = "9503"; // 매출/미수금 탭 전용 - 필요하면 이 값만 바꿔서 변경 가능
 const DATA_VERSION = "2026-08-03-v4"; // 재고/이월장부 씨앗 데이터를 바꿀 때마다 이 값을 새로 바꿔주세요
-const APP_CODE_VERSION = "2026-11-20-z2"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
+const APP_CODE_VERSION = "2026-11-20-z3"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
 const SCHEMA_STAMP = 2; // 서버 저장규칙이 확인하는 "최신 앱 도장" - 절대 자주 바꾸지 않음(이 값을 아는 코드만 저장 가능하게 서버에서 막을 때 씀)
 const CONFIRMED_EMPTY = '__CONFIRMED_EMPTY__'; // "서버가 확실하게 문서가 없다고 확인해줬다"는 걸 표시하는 특수값
                                                  // (한번도 확인 안 한 null과 구분해서, 그 사이 다른 사람이 첫 데이터를 만들었으면 충돌로 감지하기 위함)
@@ -7380,6 +7380,7 @@ async function publishCatalog() {
   } finally { _pubBusy = false; btn.textContent = btnTxt; }
 }
 function pubLinkUrl(p) { try { return new URL('customer.html?p=' + p, location.href).href; } catch (e) { return 'customer.html?p=' + p; } }
+function pubOpenLink(p) { window.open(pubLinkUrl(p), '_blank'); }
 function pubCopyLink(p) {
   const u = pubLinkUrl(p);
   const ok = () => showToast('링크를 복사했어요');
@@ -7388,7 +7389,7 @@ function pubCopyLink(p) {
 let _pubIdx = null;
 async function openPubModal() {
   document.getElementById('pubModal').classList.add('open');
-  document.getElementById('pub-links').innerHTML = `<div style="font-size:12px; color:var(--muted); margin-bottom:4px;">카톡 채널 메뉴 버튼에 넣을 링크</div>` + PUB_LINKS.map(([p, nm]) => `<div style="display:flex; align-items:center; gap:8px; padding:6px 0; border-bottom:1px solid #f0f0f0;"><div style="flex:1; min-width:0;"><div style="font-size:13px; font-weight:700;">${esc(nm)}</div><div style="font-size:11px; color:var(--muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${esc(pubLinkUrl(p))}</div></div><button type="button" onclick="pubCopyLink('${p}')" style="border:none; background:#e8edf5; color:#3d4f6b; border-radius:7px; padding:7px 11px; font-size:12px; font-weight:600; flex:none;">복사</button></div>`).join('');
+  document.getElementById('pub-links').innerHTML = `<div style="font-size:12px; color:var(--muted); margin-bottom:4px;">카톡 채널 메뉴 버튼에 넣을 링크</div>` + PUB_LINKS.map(([p, nm]) => `<div style="display:flex; align-items:center; gap:8px; padding:6px 0; border-bottom:1px solid #f0f0f0;"><div style="flex:1; min-width:0;"><div style="font-size:13px; font-weight:700;">${esc(nm)}</div><div style="font-size:11px; color:var(--muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${esc(pubLinkUrl(p))}</div></div><button type="button" onclick="pubOpenLink('${p}')" style="border:none; background:#595959; color:#fff; border-radius:7px; padding:7px 11px; font-size:12px; font-weight:700; flex:none;">열어보기</button><button type="button" onclick="pubCopyLink('${p}')" style="border:none; background:#e8edf5; color:#3d4f6b; border-radius:7px; padding:7px 11px; font-size:12px; font-weight:600; flex:none;">복사</button></div>`).join('');
   const box = document.getElementById('pub-list');
   box.innerHTML = '<div style="font-size:12px; color:var(--muted); padding:10px 0;">불러오는 중...</div>';
   try { _pubIdx = await pubLoadIndex(); } catch (e) { _pubIdx = null; box.innerHTML = '<div style="font-size:12px; color:#a33; padding:10px 0;">목록을 불러오지 못했어요 (인터넷 연결을 확인해주세요)</div>'; return; }
