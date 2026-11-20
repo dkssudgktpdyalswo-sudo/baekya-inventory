@@ -857,7 +857,12 @@
   <div class="modal">
     <h3>🌐 고객 페이지</h3>
     <div id="pub-links"></div>
-    <div id="pub-stock-box" style="margin-top:10px; padding:10px; background:#f4f1ec; border-radius:8px; font-size:12px; line-height:1.6;"></div>
+    <div id="pub-stock-box" style="display:flex; gap:8px; margin-top:10px;"></div>
+    <div id="pub-hide-box" style="display:none; margin-top:8px; padding:10px; background:#f4f1ec; border-radius:8px;">
+      <input id="pub-hide-q" type="text" placeholder="숨길 품목 검색" oninput="pubHideSearch()" autocomplete="off" style="width:100%;">
+      <div id="pub-hide-res"></div>
+      <div id="pub-hide-list" style="margin-top:4px;"></div>
+    </div>
     <div id="pub-list" style="max-height:52vh; overflow-y:auto; margin-top:8px;"></div>
     <div class="modal-actions"><button class="btn-cancel" onclick="closePubModal()">닫기</button></div>
   </div>
@@ -1364,7 +1369,7 @@
 const PASSWORD = "3059";
 const ADMIN_PASSWORD = "9503"; // 매출/미수금 탭 전용 - 필요하면 이 값만 바꿔서 변경 가능
 const DATA_VERSION = "2026-08-03-v4"; // 재고/이월장부 씨앗 데이터를 바꿀 때마다 이 값을 새로 바꿔주세요
-const APP_CODE_VERSION = "2026-11-20-ze"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
+const APP_CODE_VERSION = "2026-11-20-zg"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
 const SCHEMA_STAMP = 2; // 서버 저장규칙이 확인하는 "최신 앱 도장" - 절대 자주 바꾸지 않음(이 값을 아는 코드만 저장 가능하게 서버에서 막을 때 씀)
 const CONFIRMED_EMPTY = '__CONFIRMED_EMPTY__'; // "서버가 확실하게 문서가 없다고 확인해줬다"는 걸 표시하는 특수값
                                                  // (한번도 확인 안 한 null과 구분해서, 그 사이 다른 사람이 첫 데이터를 만들었으면 충돌로 감지하기 위함)
@@ -7340,7 +7345,7 @@ async function generateCatalog(mode) {
 // 저장: inventory/pubIndex (목록 메타 + 작은 썸네일) + inventory/pubpg_<id>_<n> (이미지 한 장씩, JPG).  모두 stamp 포함
 const PUB_SECS = { new: '신상 입고', best_fw: 'Best Item - F/W', best_ss: 'Best Item - S/S', stock: '원단 보러가기' };
 const PUB_ORDER = ['new', 'best_fw', 'best_ss']; // 'stock'은 예전 방식(이미지로 올림) - 지금은 재고 탭이 자동으로 읽어서 목록에 안 보임
-const PUB_LINKS = [['new', '신상 입고 (New Item)'], ['best', '시즌별 Best Item'], ['stock', '원단 보러가기 (재고 - 자동)']];
+const PUB_LINKS = [['new', '신상 입고 (New Item)'], ['best', '시즌별 Best Item'], ['stock', '원단 보러가기 (재고)']];
 function pubId(sec, item) { return sec + '_' + catPhotoDocId(normalizeNameForMatch(item)).replace('catphoto_', ''); }
 function pubPageDoc(id, i) { return 'pubpg_' + id + '_' + i; }
 function pubCol() { if (typeof db === 'undefined' || !db) throw new Error('nodb'); return db.collection('inventory'); }
@@ -7436,10 +7441,10 @@ function pubCopyLink(p) {
 let _pubIdx = null;
 async function openPubModal() {
   document.getElementById('pubModal').classList.add('open');
-  document.getElementById('pub-links').innerHTML = `<div style="font-size:12px; color:var(--muted); margin-bottom:4px;">카톡 채널 메뉴 버튼에 넣을 링크</div>` + PUB_LINKS.map(([p, nm]) => `<div style="display:flex; align-items:center; gap:8px; padding:6px 0; border-bottom:1px solid #f0f0f0;"><div style="flex:1; min-width:0;"><div style="font-size:13px; font-weight:700;">${esc(nm)}</div><div style="font-size:11px; color:var(--muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${esc(pubLinkUrl(p))}</div></div><button type="button" onclick="pubOpenLink('${p}')" style="border:none; background:#595959; color:#fff; border-radius:7px; padding:7px 11px; font-size:12px; font-weight:700; flex:none;">열어보기</button><button type="button" onclick="pubCopyLink('${p}')" style="border:none; background:#e8edf5; color:#3d4f6b; border-radius:7px; padding:7px 11px; font-size:12px; font-weight:600; flex:none;">복사</button></div>`).join('');
+  document.getElementById('pub-links').innerHTML = PUB_LINKS.map(([p, nm]) => `<div style="display:flex; align-items:center; gap:8px; padding:6px 0; border-bottom:1px solid #f0f0f0;"><div style="flex:1; min-width:0;"><div style="font-size:13px; font-weight:700;">${esc(nm)}</div><div style="font-size:11px; color:var(--muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${esc(pubLinkUrl(p))}</div></div><button type="button" onclick="pubOpenLink('${p}')" style="border:none; background:#595959; color:#fff; border-radius:7px; padding:7px 11px; font-size:12px; font-weight:700; flex:none;">열어보기</button><button type="button" onclick="pubCopyLink('${p}')" style="border:none; background:#e8edf5; color:#3d4f6b; border-radius:7px; padding:7px 11px; font-size:12px; font-weight:600; flex:none;">복사</button></div>`).join('');
   const box = document.getElementById('pub-list');
   box.innerHTML = '<div style="font-size:12px; color:var(--muted); padding:10px 0;">불러오는 중...</div>';
-  pubStockRenderBox();
+  _pubHideUnlocked = false; pubStockRenderBox(); pubHideRender(); { const hq = document.getElementById('pub-hide-q'); if (hq) hq.value = ''; pubHideSearch(); }
   try { _pubIdx = await pubLoadIndex(); } catch (e) { _pubIdx = null; box.innerHTML = '<div style="font-size:12px; color:#a33; padding:10px 0;">목록을 불러오지 못했어요 (인터넷 연결을 확인해주세요)</div>'; return; }
   renderPubList();
 }
@@ -7489,7 +7494,9 @@ function pubStockItemId(it) { return 'st_' + catPhotoDocId(normalizeNameForMatch
 function pubStockHash(str) { let h = 5381; for (let i = 0; i < str.length; i++) h = ((h * 33) ^ str.charCodeAt(i)) >>> 0; return h.toString(36); }
 function pubStockBuild() {
   const out = [];
+  const hidden = new Set(((settings && settings.pubHidden) || []).map(n => normalizeNameForMatch(n)));
   for (const it of catalogUniverse()) {
+    if (hidden.has(normalizeNameForMatch(it.item))) continue; // 공개하기 싫다고 골라둔 품목은 고객 페이지에 안 올림
     const cols = it.colors.map(c => ({ c: c.color, s: c.stock <= 0 ? 2 : (c.stock <= PUBSTOCK_SAMPLE_Y ? 1 : 0), nk: c.nk })); // 0 정상 / 1 품절·샘플가능 / 2 품절
     if (!cols.some(c => c.s < 2)) continue; // 재고가 하나도 없는 품목은 고객 페이지에 안 보여줌
     const date = it.colors.reduce((m, c) => (c.stock > 0 && c.newestIn > m) ? c.newestIn : m, '');
@@ -7562,19 +7569,51 @@ async function pubStockSync(manual) {
     if (_pubStockAgain) { _pubStockAgain = false; pubStockSchedule(); }
   }
 }
-async function pubStockRenderBox() {
+
+// ── 재고 탭에서 숨길 품목 (설정에 저장: settings.pubHidden = 품목 이름 목록) ──
+function pubHiddenList() { return Array.isArray(settings.pubHidden) ? settings.pubHidden : []; }
+let _pubHideUnlocked = false; // 관리자 비밀번호를 넣은 뒤 이 창을 닫을 때까지만 풀림 (매출 탭 잠금과는 따로)
+function pubHideUnlock() {
+  if (_pubHideUnlocked) _pubHideUnlocked = false; // 이미 풀려 있으면 다시 잠금
+  else if (askAdminPassword('관리자 비밀번호를 입력하세요.')) _pubHideUnlocked = true;
+  else return;
+  pubStockRenderBox(); pubHideRender(); pubHideSearch();
+}
+function pubHideRender() {
+  const box = document.getElementById('pub-hide-list'); if (!box) return;
+  const wrap = document.getElementById('pub-hide-box'), q = document.getElementById('pub-hide-q');
+  if (wrap) wrap.style.display = _pubHideUnlocked ? '' : 'none'; // 관리자만 열림
+  if (q && !_pubHideUnlocked) q.value = '';
+  box.innerHTML = pubHiddenList().map(n => `<div style="display:flex; align-items:center; justify-content:space-between; padding:5px 0; border-bottom:1px solid #e8e3da;"><span style="font-size:13px;">${esc(n)}</span><button type="button" data-n="${esc(n)}" onclick="pubHideRemove(this.dataset.n)" style="border:none; background:none; color:#999; font-size:12px; padding:2px 6px;">해제</button></div>`).join('');
+}
+function pubHideSearch() {
+  if (!_pubHideUnlocked) { const r0 = document.getElementById('pub-hide-res'); if (r0) r0.innerHTML = ''; return; }
+  const q = normalizeNameForMatch(document.getElementById('pub-hide-q').value || ''), res = document.getElementById('pub-hide-res');
+  if (!q) { res.innerHTML = ''; return; }
+  const hidden = new Set(pubHiddenList().map(n => normalizeNameForMatch(n))), seen = new Set(), out = [];
+  for (const it of catalogUniverse()) {
+    const k = normalizeNameForMatch(it.item);
+    if (seen.has(k) || hidden.has(k) || !k.includes(q)) continue;
+    seen.add(k); out.push(it.item);
+    if (out.length >= 8) break;
+  }
+  res.innerHTML = out.map(n => `<button type="button" data-n="${esc(n)}" onclick="pubHideAdd(this.dataset.n)" style="display:inline-block; margin:4px 4px 0 0; border:none; background:#fff; border:1px solid #d6d0c4; border-radius:14px; padding:5px 11px; font-size:12.5px;">+ ${esc(n)}</button>`).join('');
+}
+async function pubHideSave(list, msg) {
+  if (!_pubHideUnlocked) { pubHideUnlock(); if (!_pubHideUnlocked) return; } // 혹시 잠금 없이 불려도 한 번 더 막음
+  const before = settings;
+  settings = { ...settings, pubHidden: list };
+  let ok = false;
+  try { ok = await persistSettings(); } catch (e) { ok = false; }
+  if (!ok) { settings = before; showToast('저장하지 못했어요 (인터넷 연결을 확인해주세요)'); pubHideRender(); return; }
+  showToast(msg); pubHideRender(); pubHideSearch(); pubStockSchedule(); // 바로 고객 페이지에도 반영
+}
+async function pubHideAdd(name) { if (pubHiddenList().some(n => normalizeNameForMatch(n) === normalizeNameForMatch(name))) return; document.getElementById('pub-hide-q').value = ''; await pubHideSave([...pubHiddenList(), name], `"${name}"을(를) 숨겼어요`); }
+async function pubHideRemove(name) { await pubHideSave(pubHiddenList().filter(n => n !== name), `"${name}"을(를) 다시 공개해요`); }
+function pubStockRenderBox() {
   const box = document.getElementById('pub-stock-box'); if (!box) return;
-  box.innerHTML = '<b>재고 탭은 자동으로 반영돼요</b><br><span style="color:var(--muted);">재고가 바뀌면 몇 초 뒤 고객 페이지에도 반영돼요. 정확한 야드 수는 안 올라가고, 0y는 "품절", ' + PUBSTOCK_SAMPLE_Y + 'y 이하는 "품절/샘플가능"으로만 보여요.</span><div id="pub-stock-state" style="margin-top:4px; color:var(--muted);">확인 중...</div><button type="button" onclick="pubStockSync(true)" style="margin-top:6px; border:none; background:#595959; color:#fff; border-radius:8px; padding:8px 14px; font-size:12px; font-weight:700;">지금 재고 반영하기</button>';
-  const st = document.getElementById('pub-stock-state');
-  let info = _pubStockInfo;
-  try {
-    if (!info) {
-      const d = await pubCol().doc('pubstock_idx').get();
-      if (d.exists) { const o = JSON.parse(d.data().data || '{}'); info = { ok: true, count: (o.items || []).length, updatedAt: o.updatedAt || null }; } else info = { ok: true, count: 0, updatedAt: null };
-    }
-    if (!st) return;
-    st.textContent = info.ok === false ? '지난번 반영에 실패했어요 (인터넷 연결 확인 후 "지금 재고 반영하기")' : (info.updatedAt ? `고객 페이지에 ${info.count}개 품목이 올라가 있어요 · 마지막으로 바뀐 때: ${new Date(info.updatedAt).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}` : '아직 한 번도 반영하지 않았어요 - "지금 재고 반영하기"를 눌러주세요');
-  } catch (e) { if (st) st.textContent = '상태를 불러오지 못했어요'; }
+  const bs = 'flex:1; border:none; border-radius:8px; padding:11px 4px; font-size:13px; font-weight:700;';
+  box.innerHTML = `<button type="button" onclick="pubStockSync(true)" style="${bs} background:#595959; color:#fff;">현재고 반영하기</button><button type="button" onclick="pubHideUnlock()" style="${bs} background:${_pubHideUnlocked ? '#1a5f8a; color:#fff' : '#e8e3da; color:#444'};">${_pubHideUnlocked ? '🔓' : '🔒'} 관리자</button>`;
 }
 
 async function printStatementForRange(customerName, startDate, endDate, mode) {
