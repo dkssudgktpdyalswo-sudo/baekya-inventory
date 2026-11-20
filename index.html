@@ -262,6 +262,7 @@
   <div id="invTools" class="hidden" style="display:flex; gap:6px; margin-top:6px; flex-wrap:wrap;">
     <button id="sortToggleBtn" onclick="toggleSortMode()" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;"></button>
     <button onclick="showStockCheck()" style="border:none;background:#fce8d6;color:#a15c1e;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">재고 실사 (오늘 출고분)</button>
+    <button onclick="openCatalogModal()" style="border:none;background:#fee500;color:#191919;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:700;">📤 카톡용 재고표</button>
   </div>
   <div id="orderTools" class="hidden" style="display:flex; gap:6px; margin-top:6px; flex-wrap:wrap; align-items:center;">
     <button id="orderGroupToggleBtn" onclick="toggleOrderGroupMode()" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;"></button>
@@ -304,6 +305,7 @@
     <button onclick="showPaymentLedger()" style="border:none;background:#e6f0fa;color:#1a56db;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;white-space:nowrap;">입금 장부</button>
     <button onclick="showCustomerRanking()" style="border:none;background:#f0e6fa;color:#6b3fa0;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;white-space:nowrap;">거래처 순위</button>
     <button onclick="showReportMenu()" style="border:none;background:#e6faf0;color:#1a7a4a;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;white-space:nowrap;">리포트</button>
+    <button onclick="openSampleStmt()" style="border:none;background:#fff3d6;color:#a15c1e;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;white-space:nowrap;">🎁 샘플 내역서</button>
     <button onclick="showItemMonthlyStats()" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;white-space:nowrap;">품목별 출고량</button>
   </div>
   <div id="sales-dd-manage" class="hidden" style="display:flex; flex-wrap:wrap; gap:6px; margin-top:6px; padding:8px; background:#f6f4f0; border-radius:10px;">
@@ -592,6 +594,8 @@
       <button type="button" onclick="openCustomerPicker('o-customer')" style="border:none;background:#e8edf5;color:#3d4f6b;border-radius:8px;padding:0 10px;height:38px;font-size:12px;flex:none;">목록</button>
     </div>
 
+    <label style="display:flex;align-items:center;gap:6px;font-size:14px;color:var(--text);margin-top:10px;background:#fff3d6;padding:8px 10px;border-radius:8px;"><input type="checkbox" id="o-sample" style="width:auto;"> 🎁 샘플 발주 <span style="font-size:11px;color:#a15c1e;font-weight:500;">(샘플 내역서에 자동으로 모여요)</span></label>
+
     <div id="o-multi-wrap">
       <div id="o-multi-list"></div>
       <button onclick="addFactoryGroup()" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;margin-top:6px;">+ 공장 추가</button>
@@ -772,6 +776,69 @@
 </div>
 
 <!-- 기간별 내역서 모달 -->
+<!-- 카톡용 재고표 / 신상 입고 모달 -->
+<div class="modal-overlay" id="catalogModal">
+  <div class="modal">
+    <h3>📤 카톡 이미지</h3>
+    <div style="display:flex; gap:6px;">
+      <button type="button" id="cat-mode-stock" onclick="catSetMode('stock')">재고표</button>
+      <button type="button" id="cat-mode-new" onclick="catSetMode('new')">신상 입고</button>
+    </div>
+    <div id="cat-stock-scope">
+      <label>품목</label>
+      <input id="cat-item-search" type="text" placeholder="품번 검색 (미선택 시 전체)" oninput="renderCatalogScope()" style="width:100%;">
+      <div id="cat-item-results"></div>
+      <div id="cat-items-sel" style="margin-top:8px;"></div>
+    </div>
+    <div id="cat-new-scope" style="display:none;">
+      <label>컬러 선택</label>
+      <div style="display:flex; gap:6px; flex-wrap:wrap; margin-bottom:6px;">
+        <button type="button" onclick="catQuick('pending')" style="border:none;background:#eaf3ec;color:#2f6b46;border-radius:8px;padding:6px 10px;font-size:12px;font-weight:600;">발주중인 것 전부</button>
+        <button type="button" onclick="catQuick('recent')" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:8px;padding:6px 10px;font-size:12px;font-weight:600;">최근 7일 입고</button>
+        <button type="button" onclick="catQuick('clear')" style="border:none;background:#eee;color:#555;border-radius:8px;padding:6px 10px;font-size:12px;">해제</button>
+      </div>
+      <input id="cat-search" type="text" placeholder="품번 · 컬러 검색" oninput="renderCatalogScope()" style="width:100%;">
+      <div id="cat-picker" style="max-height:220px; overflow-y:auto; margin-top:6px; border:1px solid var(--border); border-radius:8px; padding:6px 8px;"></div>
+    </div>
+    <div id="cat-photo-wrap"><label>소재 사진</label>
+    <div id="cat-photo-list" style="max-height:200px; overflow-y:auto;"></div></div>
+    <input type="file" id="cat-photo-input" accept="image/*" style="display:none;" onchange="catPhotoChosen(this)">
+    <label>제목</label>
+    <input id="cat-title" type="text" style="width:100%;">
+    <label>재고 표시</label>
+    <select id="cat-display" onchange="catOnDisplayChange()" style="width:100%;">
+      <option value="status">상태만 (재고있음 · 소량 · 품절)</option>
+      <option value="qty">야드수까지</option>
+      <option value="none">표시 안 함</option>
+    </select>
+    <div id="cat-low-wrap" style="font-size:12px; color:var(--muted); margin-top:6px;">소량 기준 <input id="cat-low" type="number" min="1" style="width:70px; padding:4px;"> y 미만 소량</div>
+    <div style="margin-top:8px;">
+      <label style="display:flex; align-items:center; gap:6px; font-size:13px; color:#333; margin:6px 0;"><input type="checkbox" style="width:auto; flex:none; margin:0;" id="cat-bestcolor"> 베스트 컬러 표시</label>
+      <div style="font-size:12px; color:var(--muted); margin:2px 0 6px 22px;">집계 기간
+        <select id="cat-bestdays" style="padding:3px;"><option value="30">최근 30일</option><option value="90">최근 90일</option><option value="365">최근 1년</option></select>
+      </div>
+    </div>
+    <label>하단 문구</label>
+    <input id="cat-msg" type="text" style="width:100%;">
+    <div id="cat-count" style="font-size:12px; color:var(--primary-dark); font-weight:600; margin-top:10px;"></div>
+    <div style="display:flex; gap:6px; margin-top:8px;">
+      <button type="button" onclick="generateCatalog('preview')" style="flex:1;border:none;background:#e8edf5;color:#3d4f6b;border-radius:8px;padding:10px 4px;font-size:13px;font-weight:600;">미리보기</button>
+      <button type="button" onclick="generateCatalog('share')" style="flex:1;border:none;background:#fee500;color:#191919;border-radius:8px;padding:10px 4px;font-size:13px;font-weight:700;">💬 카톡으로 보내기</button>
+    </div>
+    <div class="modal-actions"><button class="btn-cancel" onclick="closeCatalogModal()">닫기</button></div>
+  </div>
+</div>
+<!-- 내역서 이미지 미리보기 / 카톡 보내기 모달 -->
+<div class="modal-overlay" id="shotModal">
+  <div class="modal">
+    <h3 id="shot-title">내역서 이미지</h3>
+    <div style="display:flex; gap:6px; margin-bottom:10px;">
+      <button type="button" onclick="shareShotFiles()" style="flex:1;border:none;background:#fee500;color:#191919;border-radius:8px;padding:10px 4px;font-size:13px;font-weight:700;">💬 카톡으로 보내기</button>
+    </div>
+    <div id="shot-imgs"></div>
+    <div class="modal-actions"><button class="btn-cancel" onclick="closeShotModal()">닫기</button></div>
+  </div>
+</div>
 <!-- 오늘 내역서(거래처 선택) 모달 -->
 <!-- 사업자 정보 설정 모달 -->
 <div class="modal-overlay" id="bizInfoModal">
@@ -949,9 +1016,40 @@
       <button onclick="setStatementPreset('this-month')" style="border:none;background:#eee;border-radius:8px;padding:6px 10px;font-size:12px;">이번달 전체</button>
       <button onclick="setStatementPreset('last-month')" style="border:none;background:#eee;border-radius:8px;padding:6px 10px;font-size:12px;">지난달 전체</button>
     </div>
+    <div style="display:flex; gap:6px; margin-top:12px;">
+      <button type="button" onclick="generateStatementFromModal('share')" style="flex:1;border:none;background:#fee500;color:#191919;border-radius:8px;padding:10px 4px;font-size:13px;font-weight:700;">💬 카톡으로 보내기</button>
+    </div>
+    <div style="font-size:11px;color:var(--muted);margin-top:4px;">카톡 보내기는 거래처를 하나 골랐을 때만 돼요</div>
     <div class="modal-actions">
       <button class="btn-cancel" onclick="closeStatementModal()">취소</button>
       <button class="btn-save" onclick="generateStatementFromModal()">내역서 뽑기</button>
+    </div>
+  </div>
+</div>
+
+<!-- 샘플 내역서 모달 -->
+<div class="modal-overlay" id="sampleStmtModal">
+  <div class="modal">
+    <h3>샘플 내역서</h3>
+    <label>거래처 (비워두면 전체 거래처)</label>
+    <div style="display:flex; gap:6px; align-items:center;">
+      <input id="sps-customer" placeholder="비워두면 전체 거래처" autocomplete="off" oninput="showCustomerSuggestions(this); renderSampleStmt()" onchange="spsCustChanged()" onfocus="showCustomerSuggestions(this)" onblur="hideItemSuggestionsDelayed(); setTimeout(spsCustChanged, 250)" style="flex:1;">
+      <button type="button" onclick="openCustomerPicker('sps-customer')" style="border:none;background:#e8edf5;color:#3d4f6b;border-radius:8px;padding:0 10px;height:38px;font-size:12px;flex:none;">목록</button>
+    </div>
+    <div id="sps-tabs" style="display:flex; gap:6px; margin:12px 0 4px;"></div>
+    <div id="sps-list"></div>
+    <div id="sps-foot"></div>
+    <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:var(--text);margin-top:12px;"><input type="checkbox" id="sps-tax" onchange="spsRefreshAmounts()" style="width:auto;"> 세액(10%) 추가해서 인쇄 <span style="font-size:11px;color:var(--muted);">(금액은 공급가액 기준)</span></label>
+    <label>인쇄 시작 칸 (쓰다 남은 종이면 비어있는 칸부터)</label>
+    <select id="sps-slot">
+      <option value="1">1번 칸 (왼쪽 위)</option>
+      <option value="2">2번 칸 (오른쪽 위)</option>
+      <option value="3">3번 칸 (왼쪽 아래)</option>
+      <option value="4">4번 칸 (오른쪽 아래)</option>
+    </select>
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="closeSampleStmt()">닫기</button>
+      <button class="btn-save" id="sps-print-btn" onclick="printSampleStmt()">인쇄</button>
     </div>
   </div>
 </div>
@@ -1217,7 +1315,7 @@
 const PASSWORD = "3059";
 const ADMIN_PASSWORD = "9503"; // 매출/미수금 탭 전용 - 필요하면 이 값만 바꿔서 변경 가능
 const DATA_VERSION = "2026-08-03-v4"; // 재고/이월장부 씨앗 데이터를 바꿀 때마다 이 값을 새로 바꿔주세요
-const APP_CODE_VERSION = "2026-11-19-l"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
+const APP_CODE_VERSION = "2026-11-20-k"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
 const SCHEMA_STAMP = 2; // 서버 저장규칙이 확인하는 "최신 앱 도장" - 절대 자주 바꾸지 않음(이 값을 아는 코드만 저장 가능하게 서버에서 막을 때 씀)
 const CONFIRMED_EMPTY = '__CONFIRMED_EMPTY__'; // "서버가 확실하게 문서가 없다고 확인해줬다"는 걸 표시하는 특수값
                                                  // (한번도 확인 안 한 null과 구분해서, 그 사이 다른 사람이 첫 데이터를 만들었으면 충돌로 감지하기 위함)
@@ -2456,6 +2554,9 @@ function updateItemNameList() {
   all.delete('');
   _suggestItemNames = Array.from(all).sort((a, b) => a.localeCompare(b, 'ko'));
 }
+function canRestoreStockFor(e) { // 출고를 되돌릴 때 재고로 돌려놔도 되는지: 그 품목 롤이 지금 남아있거나, 그 출고가 실제로 재고에서 뺀 기록이 있으면 (품목이 전부 팔려서 롤이 하나도 없어도 되돌려야 함)
+  return hasKnownItem(e.item) || (e.invDeductedAmount || 0) > 0 || (e.deductBreakdown || []).some(b => b && b.rollId != null && b.qty > 0);
+}
 function isKnownItemForReturn(item) { // 반품은 재고가 0이어도(품목이 이미 다 나간 경우도) 우리가 취급하던 품목이면 재고로 다시 넣어줌
   const t = String(item || '').trim();
   if (!t) return false;
@@ -3154,7 +3255,7 @@ function renderInv() {
     itemDiv.innerHTML = `
       <div class="group-head" onclick="toggleGroup('${escAttr(ik)}')">
         <div class="info">
-          <div class="name">${esc(ig.item)}${itemChina ? ` <span style="font-weight:400;font-size:12px;color:var(--muted);">#${esc(itemChina)}</span>` : ''}</div>
+          <div class="name">${esc(ig.item)}${itemChina ? ` <span style="font-weight:400;font-size:12px;color:var(--muted);">#${esc(itemChina)}</span>` : ''}${storePriceChipHtml(ig.item)}</div>
           ${mixMap.get(normalizeNameForMatch(ig.item)) ? `<div class="sub" style="font-size:11px; color:#8a8a8a; margin-top:1px;">혼용률 ${esc(mixMap.get(normalizeNameForMatch(ig.item)))}</div>` : ''}
           <div class="sub">분류 ${esc(ig.cat || '미분류')} · 컬러 ${seasonView ? `${seasonView} ${viewColors.length}종` : `${ig.colors.length}종`}${itemCarry ? ` · <span class="carry-chip">이월 ${fmtCarry(itemCarry)}</span>` : ''}</div>
           <div style="margin-top:4px; display:flex; gap:4px;"><button onclick="event.stopPropagation(); renameInventoryItem('${escAttr(ig.item)}')" style="border:none;background:#f1eee7;color:var(--muted);border-radius:6px;padding:3px 8px;font-size:11px;">품목 이름 수정</button><button onclick="event.stopPropagation(); openSwatchBulkModal('${escAttr(ig.cat)}','${escAttr(ig.item)}')" style="border:none;background:#eaf3ec;color:#2f6b46;border-radius:6px;padding:3px 8px;font-size:11px;font-weight:700;">스왓치 일괄수정</button><button onclick="event.stopPropagation(); deleteAllRollsForItem('${escAttr(ig.item)}')" style="border:none;background:#fdecea;color:var(--danger);border-radius:6px;padding:3px 8px;font-size:11px;">이 품목 전체 삭제</button></div>
@@ -3795,20 +3896,25 @@ function openOutModal(id) {
   document.getElementById('outModal').classList.add('open');
 }
 function closeOutModal() { document.getElementById('outModal').classList.remove('open'); pendingOut = null; }
+let _confirmingOut = false;
 async function confirmOut() {
+  if (_confirmingOut) return; // 연타해도 한 번만 빠지게 (저장하는 동안 두 번째 클릭이 또 차감하던 문제)
   const amt = parseFloat(document.getElementById('out-qty').value);
   if (!amt || amt <= 0) { showToast('출고 마수를 입력해주세요'); return; }
   const r = rolls.find(x => x.id === pendingOut);
   if (!r) return;
-  const item = r.item, color = r.color;
-  if (amt >= r.qty) {
-    r.qty = 0;
-    await cleanupDepletedRolls(r.item, r.color, [r.id]);
-    showToast('전체 출고 처리됐어요');
-  }
-  else { r.qty = Math.round((r.qty - amt) * 100) / 100; showToast(`${amt}y 출고, 남은 마수 ${r.qty}y`); }
-  compactTangsForItemColor(item, color);
-  await persistRolls(); closeOutModal(); render();
+  _confirmingOut = true;
+  try {
+    const item = r.item, color = r.color;
+    if (amt >= r.qty) {
+      r.qty = 0;
+      await cleanupDepletedRolls(r.item, r.color, [r.id]);
+      showToast('전체 출고 처리됐어요');
+    }
+    else { r.qty = Math.round((r.qty - amt) * 100) / 100; showToast(`${amt}y 출고, 남은 마수 ${r.qty}y`); }
+    compactTangsForItemColor(item, color);
+    await persistRolls(); closeOutModal(); render();
+  } finally { _confirmingOut = false; }
 }
 let _rollEditId = null;
 let _noteModalHandler = null;
@@ -4052,6 +4158,44 @@ async function renameFieldInArchive(fieldName, oldValue, newValue) {
   } catch (e) { /* 보관함 자체를 못 읽으면 그냥 넘어감 - 라이브 변경은 이미 됐으니 */ }
   return { changed: changedCount, failedMonths };
 }
+// ---------- 매장 판매단가 (샘플 내역서에 찍히는 품목별 기준 단가) ----------
+function getStorePrice(item) {
+  const m = settings.storePrices || {};
+  const v = Number(m[String(item).trim()]);
+  return v > 0 ? v : null;
+}
+function storePriceChipHtml(item) {
+  const p = getStorePrice(item);
+  const base = `event.stopPropagation(); editStorePrice('${escAttr(item)}')`;
+  return p != null
+    ? ` <span onclick="${base}" style="margin-left:7px;font-size:10.5px;font-weight:600;color:#1a5f8a;background:#e3eef5;border-radius:5px;padding:1px 6px;vertical-align:2px;cursor:pointer;white-space:nowrap;">매장 ${p.toLocaleString()}</span>`
+    : ` <span onclick="${base}" style="margin-left:7px;font-size:10px;font-weight:500;color:#8a8780;border:1px dashed #b9b5aa;border-radius:5px;padding:0 6px;vertical-align:2px;cursor:pointer;white-space:nowrap;">+ 매장가</span>`;
+}
+async function setStorePrice(item, price) { // price가 없거나 0 이하면 삭제. 저장 실패하면 원래대로 되돌리고 false
+  const t = String(item).trim();
+  const before = settings;
+  const m = { ...(settings.storePrices || {}) };
+  if (price > 0) m[t] = price; else delete m[t];
+  settings = { ...settings, storePrices: m };
+  const ok = await persistSettings();
+  if (ok === false) { settings = before; return false; }
+  return true;
+}
+async function editStorePrice(item) {
+  const cur = getStorePrice(item);
+  const res = await askForm(`${item} 매장 판매단가`, [{ label: '매장 판매단가 (원/y) — 비우면 삭제', value: cur != null ? String(cur) : '', numeric: true, placeholder: '예: 4500' }], { okText: '저장', desc: '샘플 내역서의 단가로 쓰여요' });
+  if (res === null) return;
+  const raw = String(res[0]).replace(/[,\s원]/g, '');
+  let price = 0;
+  if (raw !== '') {
+    price = parseFloat(raw);
+    if (isNaN(price) || price < 0) { showToast('단가를 숫자로 입력해주세요'); return; }
+  }
+  const ok = await setStorePrice(item, price);
+  if (!ok) return;
+  render();
+  showToast(price > 0 ? `${item} 매장 판매단가 ${price.toLocaleString()}원 저장` : `${item} 매장 판매단가를 지웠습니다`);
+}
 async function renameInventoryItem(oldName) {
   const raw = await askText('품목 이름 수정', oldName, { desc: '재고·원가표·이월장부·매출장부의 이 품목이 모두 같이 바뀌어요', label: '품목명' });
   if (raw === null) return;
@@ -4065,6 +4209,21 @@ async function renameInventoryItem(oldName) {
   for (const c of costs) if (String(c.item).trim() === t_old) { c.item = newName; }
   for (const o of orders) if (String(o.item).trim() === t_old) { o.item = newName; }
   for (const e of shipmentLog) if (e.item != null && String(e.item).trim() === t_old) { e.item = newName; }
+  let priceBookChanged = false;
+  for (const pb of priceBook) { // 거래처별 기억된 단가도 새 품목명으로 (안 옮기면 이름 바꾼 뒤 단가가 사라져서 엉뚱한 단가가 나옴). 새 이름에 이미 같은 거래처·컬러 단가가 있으면 그쪽을 그대로 둠
+    if (String(pb.item).trim() !== t_old) continue;
+    const dup = priceBook.some(x => x !== pb && String(x.customer).trim() === String(pb.customer).trim() && String(x.item).trim() === newName && String(x.color).trim() === String(pb.color).trim());
+    if (dup) pb._drop = true; else pb.item = newName;
+    priceBookChanged = true;
+  }
+  if (priceBookChanged) { priceBook = priceBook.filter(x => !x._drop); await persistPriceBook(); }
+  if (settings.storePrices && settings.storePrices[t_old] != null) { // 매장판가도 새 이름으로 옮김 (새 이름에 이미 있으면 그대로 둠)
+    const m = { ...settings.storePrices };
+    if (m[newName] == null) m[newName] = m[t_old];
+    delete m[t_old];
+    settings = { ...settings, storePrices: m };
+    await persistSettings();
+  }
 
   await persistRolls();
   await persistSwatchInfo();
@@ -4503,7 +4662,8 @@ function renderOrderCard(o, showItemAsTitle) {
   const remain = (o.orderQty && o.orderQty > o.received) ? Math.round((o.orderQty - o.received) * 100) / 100 : 0;
   const wd = getWeekdayKorean(o.date);
   const dateTag = o.date ? `<span style="font-weight:400;font-size:11px;color:var(--muted);margin-left:6px;">${esc(o.date)}${wd ? `(${wd})` : ''}</span>` : '';
-  const title = showItemAsTitle ? `${esc(o.item)} ${esc(o.color || '')}` : `${esc(o.customer || '')}${dateTag}`;
+  const sampleTag = o.isSample ? ' <span style="color:#a15c1e; font-weight:600; font-size:12px;">🎁 샘플</span>' : '';
+  const title = (showItemAsTitle ? `${esc(o.item)} ${esc(o.color || '')}` : `${esc(o.customer || '')}${dateTag}`) + sampleTag;
   const sub = (showItemAsTitle
     ? `${esc(o.date || '')} · 공장/연락처 ${esc(o.factory || '-')}`
     : `${esc(o.date || '')} · 공장/연락처 ${esc(o.factory || '-')}`) + (o.pendingFee ? ` · 💸 보류된 추가금 있음` : '');
@@ -4867,7 +5027,7 @@ function openLogEditModal(logId) {
     qtyLabel.classList.remove('hidden'); qtyWrap.classList.remove('hidden');
     qtyLabel.textContent = `처리 수량(${e.unit || 'y'})`;
     qtyWrap.value = Math.abs(e.amount);
-    if (hasKnownItem(e.item)) {
+    if (canRestoreStockFor(e)) {
       // 그 컬러의 지금 있는 롤 전부 + 이번에 나갔던 롤(지금은 없어졌어도) 다 같이 보여줌 - 출고할 때랑 똑같은 인터페이스
       const isJeol = (e.unit || 'y') === '절';
       if (isJeol) qtyLabel.textContent = `절 개수`;
@@ -4948,14 +5108,30 @@ function autoFillLogEditRolls() {
 }
 function closeLogEditModal() { document.getElementById('logEditModal').classList.remove('open'); pendingLogEditId = null; }
 
+function findOverTangInput(selector) { // 탕별 칸에 "그 롤에서 뺄 수 있는 최대치"보다 큰 수가 들어갔는지 (넘으면 재고는 0까지만 깎이는데 기록은 그대로 남아서, 나중에 되돌릴 때 없던 재고가 생김)
+  for (const inp of document.querySelectorAll(selector)) {
+    const max = parseFloat(inp.dataset.max);
+    const v = parseFloat(inp.value) || 0;
+    if (!isNaN(max) && v > max + 0.001) return { tang: inp.dataset.tang, max };
+  }
+  return null;
+}
 async function confirmLogEdit() {
   const e = shipmentLog.find(x => x.id === pendingLogEditId);
   if (!e) return;
+  if (!document.getElementById('log-edit-breakdown-wrap').classList.contains('hidden')) {
+    const over = findOverTangInput('.log-edit-tang-qty');
+    if (over) { showToast(`탕${over.tang}은 최대 ${over.max}y까지만 뺄 수 있어요 (재고보다 많이 입력됐어요)`); return; }
+  }
   const newDate = fromDateInputValue(document.getElementById('log-edit-date').value) || e.date;
   const newNote = document.getElementById('log-edit-note').value.trim();
   const priceRawForEdit = document.getElementById('log-edit-price').value;
   const newPriceForEdit = priceRawForEdit.trim() !== '' ? parseFloat(priceRawForEdit) : null;
   const newTaxIncludedForEdit = document.getElementById('log-edit-tax').checked;
+  const priceBefore = e.unitPrice;
+  const rememberEditedPrice = async () => { // 출고기록 수정에서 단가를 바꿨으면 "기억된 단가"도 같이 (안 그러면 다음 출고 때 예전 단가가 다시 나옴)
+    if (e.unitPrice !== priceBefore && isPriceSourceEntry(e) && isLatestPriceSource(e)) await rememberPrice(e.customer, e.item, e.color, e.unitPrice);
+  };
   const applyNewPrice = (entry, yards) => {
     // 단가를 입력하셨으면 그 단가로, 원래 단가가 있었는데 이번에 그대로 두셨으면 그 단가 그대로 매출액을 다시 계산함
     const priceToUse = newPriceForEdit != null ? newPriceForEdit : entry.unitPrice;
@@ -4975,6 +5151,7 @@ async function confirmLogEdit() {
     e.date = newDate;
     e.note = newNote;
     if (!e.isReturn && !e.isDefect) applyNewPrice(e, e.yardsShipped || Math.abs(e.amount) || 0); // 반품/불량 자체는 별도 금액구조라 건드리지 않음
+    await rememberEditedPrice();
     await persistShipmentLog();
     closeLogEditModal(); render();
     showToast('수정되었습니다');
@@ -5018,6 +5195,7 @@ async function confirmLogEdit() {
     if (newTotal <= 0) { showToast('수량을 확인해주세요'); return; }
     await persistRolls();
     if (breakdownSig(newBreakdown) !== breakdownSig(e.deductBreakdown)) delete e.fcost; // 어느 탕에서 나갔는지 실제로 바꾼 경우만 원가를 다시 정함 (안 건드렸으면 고정된 원가 그대로)
+    enrichBreakdown(newBreakdown, e.deductBreakdown);
     e.deductBreakdown = newBreakdown;
     e.invDeductedAmount = newBreakdown.filter(b => b.rollId != null).reduce((s, b) => s + b.qty, 0);
     newTotal = Math.round(newTotal * 100) / 100;
@@ -5041,6 +5219,7 @@ async function confirmLogEdit() {
     e.yardsShipped = newTotal; // 야드는 항상 탕별 합계 (절이든 y든)
     applyNewPrice(e, newTotal);
     const overpaidLogEdit1 = await creditOverpaymentIfAny(e);
+    await rememberEditedPrice();
     await persistShipmentLog();
     closeLogEditModal();
     render();
@@ -5053,12 +5232,12 @@ async function confirmLogEdit() {
 
   // 1) 기존 효과 되돌리기: 재고 다시 채우고, 주문 진행량 되돌리기
   const restoreQtyForEdit = e.invDeductedAmount != null ? e.invDeductedAmount : e.yardsShipped;
-  if (restoreQtyForEdit > 0 && hasKnownItem(e.item)) {
+  if (restoreQtyForEdit > 0 && canRestoreStockFor(e)) {
     const existingCat = (rolls.find(r => String(r.item).trim() === String(e.item).trim()) || {}).cat || '';
     const resolvedColorForRestore = resolveInventoryColor(e.item, e.color);
     if (e.deductBreakdown && e.deductBreakdown.length > 0) {
       for (const b of e.deductBreakdown) {
-        restoreToInventory(e.item, resolvedColorForRestore, existingCat, b.tang, b.qty, b.rollId);
+        restoreToInventory(e.item, resolvedColorForRestore, existingCat, b.tang, b.qty, b.rollId, b);
       }
     } else {
       restoreToInventory(e.item, resolvedColorForRestore, existingCat, 1, restoreQtyForEdit);
@@ -5093,6 +5272,7 @@ async function confirmLogEdit() {
   e.yardsShipped = newYards;
   applyNewPrice(e, newYards);
   const overpaidLogEdit2 = await creditOverpaymentIfAny(e);
+  await rememberEditedPrice();
 
   await persistShipmentLog();
   closeLogEditModal();
@@ -5100,7 +5280,7 @@ async function confirmLogEdit() {
   showToast(`수정되었습니다 (재고·이월장부도 같이 반영됐어요)${overpaidLogEdit2 > 0 ? ` · 이미 받은 돈 중 ${overpaidLogEdit2.toLocaleString()}원은 선수금으로 기록했어요` : ''}`);
 }
 
-function restoreToInventory(item, color, cat, tang, qty, rollId) {
+function restoreToInventory(item, color, cat, tang, qty, rollId, snap) {
   const t_item = String(item).trim();
   const t_color = String(color).trim();
   // 1순위: 그때 그 롤(고유id)이 지금도 있으면 정확히 거기로 되돌림 (탕 자동압축으로 탕번호가 밀렸어도 안전함)
@@ -5116,8 +5296,9 @@ function restoreToInventory(item, color, cat, tang, qty, rollId) {
   const placeholder = rolls.find(r => String(r.item).trim() === t_item && String(r.color).trim() === t_color && r.tang === tang && !r.defective && r.qty === 0);
   if (placeholder) {
     placeholder.qty = qty;
+    if (snap && !placeholder.inDate) Object.assign(placeholder, rollSnapshot(snap));
   } else {
-    rolls.push({ id: nextId++, cat, item, color, tang, qty });
+    rolls.push({ id: nextId++, cat, item, color, tang, qty, ...(snap ? rollSnapshot(snap) : {}) });
   }
 }
 async function cancelShipmentLogEntry(logId) {
@@ -5126,7 +5307,14 @@ async function cancelShipmentLogEntry(logId) {
   const desc = entry.manualClose
     ? `${entry.item} ${entry.color || ''} 수동 완료 처리`
     : `${entry.item} ${entry.color || ''} ${entry.amount}${entry.unit} 출고`;
-  if (!confirm(`이 기록(${desc})을 취소할까요?\n이월장부와 재고가 이 처리 이전 상태로 되돌아가요.`)) return;
+  // 이 출고를 취소하면 출고량 전체가 재고로 돌아가는데, 그 사이 같은 거래처·품목·컬러로 반품 기록이 이미 있으면 반품분은 이미 재고에 들어가 있어서 그만큼 재고가 이중으로 늘어남 → 미리 알려줌
+  let returnWarn = '';
+  if (!entry.isReturn && !entry.isDefect && !entry.isFee && !entry.manualClose && !entry.isSample) {
+    const rets = shipmentLog.filter(r => r.isReturn && r.id !== entry.id && String(r.customer || '').trim() === String(entry.customer || '').trim() && String(r.item || '').trim() === String(entry.item || '').trim() && String(r.color || '').trim() === String(entry.color || '').trim() && String(r.date) >= String(entry.date));
+    const retY = Math.round(rets.reduce((a, r) => a + Math.abs(r.yardsShipped || r.amount || 0), 0) * 100) / 100;
+    if (retY > 0) returnWarn = `\n\n⚠️ 이 거래처의 같은 품목·컬러 반품 기록(${retY}y)이 있어요. 반품분은 이미 재고에 들어가 있어서, 이 출고를 취소하면 그만큼 재고가 두 번 늘어날 수 있어요. 반품 기록이 이 출고에 대한 것이면 반품 기록도 같이 삭제해주세요.`;
+  }
+  if (!confirm(`이 기록(${desc})을 취소할까요?\n이월장부와 재고가 이 처리 이전 상태로 되돌아가요.${returnWarn}`)) return;
 
   const alreadyPaidOnCancel = getPaidAmount(entry);
   const custForCredit = entry.customer;
@@ -5155,12 +5343,12 @@ async function cancelShipmentLogEntry(logId) {
   }
 
   const restoreQty0 = entry.invDeductedAmount != null ? entry.invDeductedAmount : (entry.yardsShipped != null ? entry.yardsShipped : entry.amount);
-  if (!entry.manualClose && restoreQty0 > 0 && hasKnownItem(entry.item)) {
+  if (!entry.manualClose && restoreQty0 > 0 && canRestoreStockFor(entry)) {
     const existingCat = (rolls.find(r => String(r.item).trim() === String(entry.item).trim()) || {}).cat || '';
     const resolvedColorForRestore = resolveInventoryColor(entry.item, entry.color);
     if (entry.deductBreakdown && entry.deductBreakdown.length > 0) {
       for (const b of entry.deductBreakdown) {
-        restoreToInventory(entry.item, resolvedColorForRestore, existingCat, b.tang, b.qty, b.rollId);
+        restoreToInventory(entry.item, resolvedColorForRestore, existingCat, b.tang, b.qty, b.rollId, b);
       }
     } else {
       restoreToInventory(entry.item, resolvedColorForRestore, existingCat, 1, restoreQty0);
@@ -5172,8 +5360,9 @@ async function cancelShipmentLogEntry(logId) {
     await memoAppendDepositCredit(custForCredit, alreadyPaidOnCancel, todayStr());
   }
   await persistShipmentLog();
+  const priceRevert = await revertPriceMemoryAfterRemoval(entry);
   render();
-  showToast(`출고 기록을 취소하고 되돌렸습니다${alreadyPaidOnCancel > 0 ? ` · 이미 받은 돈 ${alreadyPaidOnCancel.toLocaleString()}원은 선수금으로 기록했어요` : ''}`);
+  showToast(`출고 기록을 취소하고 되돌렸습니다${alreadyPaidOnCancel > 0 ? ` · 이미 받은 돈 ${alreadyPaidOnCancel.toLocaleString()}원은 선수금으로 기록했어요` : ''}${priceRevert ? ` · 기억된 단가는 이전 기록의 ${priceRevert.to.toLocaleString()}원으로 되돌렸어요` : ''}`);
 }
 
 function getPaidAmount(e) {
@@ -5445,6 +5634,10 @@ async function confirmSaleEditInner(keepOpen) {
   if (!item) { showToast('품목을 확인해주세요'); return; }
   if (!yardsRaw || yardsRaw <= 0) { showToast('출고 수량을 확인해주세요'); return; }
   if (!priceRaw || priceRaw <= 0) { showToast('판매단가를 확인해주세요'); return; }
+  if (!isNew && !document.getElementById('sale-edit-breakdown-wrap').classList.contains('hidden')) {
+    const over = findOverTangInput('.sale-edit-tang-qty');
+    if (over) { showToast(`탕${over.tang}은 최대 ${over.max}y까지만 뺄 수 있어요 (재고보다 많이 입력됐어요)`); return; }
+  }
   let costEdit = null; // 원가 칸을 고쳤을 때만 {set:값} 또는 {clear:true} (안 건드렸으면 null이라 원가는 그대로)
   if (!isNew && !document.getElementById('sale-edit-cost-wrap').classList.contains('hidden')) {
     const ci = document.getElementById('sale-edit-cost');
@@ -5513,6 +5706,7 @@ async function confirmSaleEditInner(keepOpen) {
     return;
   }
 
+  const oldPriceKey = `${entry.customer}|${entry.item}|${entry.color || ''}|${entry.unitPrice}`;
   entry.customer = customer;
   entry.date = dateVal;
   if (entry.item !== item || entry.color !== color) delete entry.fcost; // 품목/컬러를 바꾼 경우만 원가를 다시 정함 (수량/단가만 고친 건 원가 그대로)
@@ -5563,6 +5757,7 @@ async function confirmSaleEditInner(keepOpen) {
     });
     if (breakdownSig(newBreakdown) !== breakdownSig(entry.deductBreakdown)) { // 탕별 내역을 실제로 바꾼 경우에만 반영 (안 건드렸으면 원가/재고 기록은 그대로 둠)
       delete entry.fcost; // 어느 탕에서 나갔는지 바꿨으니 원가도 다시 정해지게
+      enrichBreakdown(newBreakdown, entry.deductBreakdown);
       entry.deductBreakdown = newBreakdown;
       entry.invDeductedAmount = newBreakdown.filter(b => b.rollId != null).reduce((s, b) => s + b.qty, 0);
       await persistRolls();
@@ -5573,7 +5768,8 @@ async function confirmSaleEditInner(keepOpen) {
     delete entry.fcost;
     if (costEdit.clear) delete entry.manualCostPerY; else entry.manualCostPerY = costEdit.set;
   }
-  await rememberPrice(entry.customer, entry.item, entry.color, priceRaw);
+  // 단가(또는 거래처·품목·컬러)를 실제로 바꿨고 이 건이 가장 최근 매출일 때만 "기억된 단가"를 갱신 (날짜/메모만 고쳤거나 옛날 건을 고친 걸로 지금 단가가 바뀌지 않게)
+  if (oldPriceKey !== `${entry.customer}|${entry.item}|${entry.color || ''}|${priceRaw}` && isLatestPriceSource(entry)) await rememberPrice(entry.customer, entry.item, entry.color, priceRaw);
   const overpaidSaleEdit = await creditOverpaymentIfAny(entry);
   await persistShipmentLog();
   closeSaleEditModal();
@@ -5919,8 +6115,9 @@ function setStatementPreset(preset) {
   document.getElementById('stmt-end').value = fmt(endD);
 }
 
-async function generateStatementFromModal() {
+async function generateStatementFromModal(mode) {
   const customer = document.getElementById('stmt-customer').value.trim();
+  if (mode && !customer) { showToast('카톡으로 보내려면 거래처를 먼저 골라주세요'); return; }
   const startV = document.getElementById('stmt-start').value;
   const endV = document.getElementById('stmt-end').value;
   if (!startV || !endV) { showToast('기간을 선택해주세요'); return; }
@@ -5928,7 +6125,7 @@ async function generateStatementFromModal() {
   const endDate = fromDateInputValue(endV);
   closeStatementModal();
   if (customer) {
-    await printStatementForRange(customer, startDate, endDate);
+    await printStatementForRange(customer, startDate, endDate, mode);
   } else {
     await printAllCustomersStatement(startDate, endDate);
   }
@@ -6203,7 +6400,7 @@ function buildStatementHTMLInner(customerName, startDate, endDate, entryIdFilter
   const rows = [...saleRows, ...paymentRows];
 
   // 한 반쪽에 최대 이만큼만 넣고, 그 이상이면 폰트를 더 줄이지 않고 다음 장으로 자연스럽게 넘김
-  const ROWS_PER_PAGE = 14;
+  const ROWS_PER_PAGE = options.shareImage ? 22 : 14; // 이미지로 보낼 땐 한 장에 더 많이 (폰에서 길게 스크롤해서 보니까)
   const noteLines = (txt) => {
     const w = Array.from(String(txt || '')).reduce((sum, ch) => sum + (ch.charCodeAt(0) > 255 ? 1 : 0.55), 0); // 한글은 1칸, 영문/숫자는 약 반 칸
     return Math.max(1, Math.ceil(w / 15));
@@ -6215,12 +6412,14 @@ function buildStatementHTMLInner(customerName, startDate, endDate, entryIdFilter
   else if (n <= 10) { rowFontPx = 9; rowPadPx = 2.2; }
   else { rowFontPx = 7.5; rowPadPx = 1.6; }
 
-  const sizes = compact
+  const sizes = options.shareImage
+    ? { pad: '14px 16px', titleSize: '24px', titleGap: '6px', metaSize: '13px', metaGap: '8px', boxGap: '8px', boxFont: '13px', innerFont: '12px', rowFont: '13.5px', rowPad: '6px', totalsFont: '14px', totalsGap: '8px', bankSize: '13px', bankGap: '8px' }
+    : compact
     ? { pad: '2mm 4mm 3mm 4mm', titleSize: '13px', titleGap: '2px', metaSize: '8px', metaGap: '2px', boxGap: '1px', boxFont: '8px', innerFont: '8px', rowFont: rowFontPx + 'px', rowPad: rowPadPx + 'px', totalsFont: '8px', totalsGap: '1px', bankSize: '8px', bankGap: '1px' }
     : { pad: '3mm 5mm 3mm 5mm', titleSize: '16px', titleGap: '4px', metaSize: '10px', metaGap: '4px', boxGap: '3px', boxFont: '10px', innerFont: '10px', rowFont: '10px', rowPad: '3px', totalsFont: '10px', totalsGap: '3px', bankSize: '10px', bankGap: '3px' };
 
   // 비고란은 글자를 더 줄이거나 ...로 자르지 않고, 길면 2줄로 내려서 보여줌 (최소 8.5px 아래로는 안 작아지게)
-  const noteFontPx = compact ? Math.max(rowFontPx, 8.5) : 10;
+  const noteFontPx = options.shareImage ? 12.5 : (compact ? Math.max(rowFontPx, 8.5) : 10);
   const buildRowsHtml = (rowsForPage) => rowsForPage.map(r => {
     const style = r.color === 'blue' ? 'color:#1a56db;' : r.color === 'red' ? 'color:#c0392b;' : '';
     const fmt = (v) => v == null ? '' : (v < 0 ? `-${Math.abs(v).toLocaleString()}` : v.toLocaleString());
@@ -6270,8 +6469,8 @@ function buildStatementHTMLInner(customerName, startDate, endDate, entryIdFilter
     </table>
   `;
 
-  const renderCopy = (copyLabel, rowsHtmlForPage) => `
-    <div class="${compact ? 'compact-statement' : ''}" style="padding:${sizes.pad}; font-family:-apple-system,'Malgun Gothic',sans-serif; box-sizing:border-box; height:50%; overflow:hidden; display:flex; flex-direction:column;">
+  const renderCopy = (copyLabel, rowsHtmlForPage, fit) => `
+    <div class="${compact ? 'compact-statement' : ''}" style="padding:${sizes.pad}; font-family:-apple-system,'Malgun Gothic',sans-serif; box-sizing:border-box; ${fit ? 'min-height:1123px;' : 'height:50%; overflow:hidden;'} display:flex; flex-direction:column;">
       <div style="flex:none;">
         <div style="display:flex; justify-content:space-between; align-items:baseline; margin-bottom:${sizes.titleGap};">
           <h2 style="margin:0; font-size:${sizes.titleSize}; letter-spacing:2px; color:#1a5f8a;">거 래 명 세 표</h2>
@@ -6331,6 +6530,7 @@ function buildStatementHTMLInner(customerName, startDate, endDate, entryIdFilter
 
   return pages.map((pageRows, pageIdx) => {
     const rowsHtmlForPage = buildRowsHtml(pageRows);
+    if (options.shareImage) return `<div class="stm-img-page" style="width:794px;background:#fff;">${renderCopy(pages.length > 1 ? `공급받는자용 · ${pageIdx + 1}/${pages.length}` : '공급받는자용', rowsHtmlForPage, true)}</div>`; // 이미지용: 한 장에 한 부만, 높이는 내용만큼
     const pageHtml = `
     <div style="width:100%; height:285mm; display:flex; flex-direction:column;">
       ${renderCopy('공급자 보관용', rowsHtmlForPage)}
@@ -6341,11 +6541,548 @@ function buildStatementHTMLInner(customerName, startDate, endDate, entryIdFilter
   }).join('');
 }
 
-async function printStatementForRange(customerName, startDate, endDate) {
-  const html = await buildStatementHTML(customerName, startDate, endDate);
-  if (html == null) { showToast('해당 기간에 인쇄할 내역이 없습니다'); return; }
-  document.getElementById('printArea').innerHTML = html;
-  setTimeout(() => window.print(), 100);
+// ===== 내역서를 이미지로 만들어 카톡 공유 / 저장 =====
+let _h2cPromise = null;
+function loadHtml2Canvas() { // 처음 쓸 때만 불러옴 (평소 앱 속도에는 영향 없음)
+  if (window.html2canvas) return Promise.resolve(window.html2canvas);
+  if (_h2cPromise) return _h2cPromise;
+  _h2cPromise = new Promise((resolve, reject) => {
+    const sc = document.createElement('script');
+    sc.src = 'https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js';
+    sc.onload = () => window.html2canvas ? resolve(window.html2canvas) : (_h2cPromise = null, reject(new Error('h2c')));
+    sc.onerror = () => { _h2cPromise = null; reject(new Error('h2c-load')); };
+    document.head.appendChild(sc);
+  });
+  return _h2cPromise;
+}
+const SHOT_CSS = '#shotRoot .ledger-print td.dhdr{padding:1px 8px !important;font-size:11.5px !important;line-height:1.25}'
+  + '#shotRoot table{width:100%;border-collapse:collapse}#shotRoot th,#shotRoot td{border:1px solid #ccc;padding:6px 8px;font-size:13px;text-align:left}#shotRoot th{color:#1a5f8a}'
+  + '#shotRoot .stm-img-page th,#shotRoot .stm-img-page td{font-size:inherit}'
+  + '#shotRoot .ledger-print{padding:22px 18px !important}#shotRoot .ledger-print th,#shotRoot .ledger-print td{padding:6px 8px !important;font-size:14px !important;border-color:#999 !important}#shotRoot .ledger-print th{background:#eee !important;color:#000 !important}';
+// 종이 인쇄용: 이미지와 똑같은 표 모양을 내려고, 앱 기본 인쇄 표 규칙(작은 글씨/좁은 칸)보다 우선하는 규칙
+const PRINT_LEDGER_CSS = SHOT_CSS.replace(/#shotRoot/g, '#printArea')
+  + '#printArea .stm-img-page.ledger-print th,#printArea .stm-img-page.ledger-print td{padding:6px 8px !important;font-size:14px !important;border-color:#999 !important}'
+  + '#printArea .stm-img-page.ledger-print th{background:#eee !important;color:#000 !important}'
+  + '#printArea .stm-img-page.ledger-print td.dhdr{padding:1px 8px !important;font-size:11.5px !important}'
+  + '#printArea .stm-img-page{-webkit-print-color-adjust:exact;print-color-adjust:exact}';
+let _shotFiles = [], _shotUrls = [], _shotCustomer = '', _shotKind = '내역서';
+async function renderStatementImages(html, customer, kind, width) {
+  kind = kind || '내역서';
+  width = width || 794;
+  const h2c = await loadHtml2Canvas();
+  const root = document.createElement('div');
+  root.id = 'shotRoot';
+  root.style.cssText = `position:fixed;left:-10000px;top:0;width:${width}px;background:#fff;color:#000;font-family:-apple-system,"Malgun Gothic",sans-serif;`;
+  root.innerHTML = `<style>${SHOT_CSS}</style>${html}`;
+  document.body.appendChild(root);
+  const files = [];
+  try {
+    const pageEls = Array.from(root.querySelectorAll('.stm-img-page'));
+    const targets = pageEls.length > 0 ? pageEls : [root];
+    const stamp = todayStr().replace(/[^0-9]/g, '');
+    const safeName = String(customer).replace(/[\\/:*?"<>|\s]+/g, '_');
+    for (let i = 0; i < targets.length; i++) {
+      const el = targets[i];
+      const h = Math.max(el.scrollHeight, 100);
+      const scale = Math.max(1, Math.min(width < 700 ? 3 : 2.5, Math.sqrt(12000000 / (width * h)))); // 아주 긴 내역서도 폰 브라우저의 그림 크기 한도를 안 넘게
+      const canvas = await h2c(el, { scale, backgroundColor: '#ffffff', useCORS: true, logging: false, width, windowWidth: width });
+      const blob = await new Promise(res => canvas.toBlob(res, 'image/png'));
+      if (!blob) throw new Error('blob');
+      files.push(new File([blob], `${safeName ? safeName + '_' : ''}${kind}_${stamp}${targets.length > 1 ? '_' + (i + 1) : ''}.png`, { type: 'image/png' }));
+    }
+  } finally { root.remove(); }
+  return files;
+}
+function openShotModal(files, customer, kind) {
+  kind = kind || '내역서';
+  _shotUrls.forEach(u => URL.revokeObjectURL(u));
+  _shotFiles = files; _shotCustomer = customer; _shotKind = kind;
+  _shotUrls = files.map(f => URL.createObjectURL(f));
+  document.getElementById('shot-title').textContent = `${[customer, kind].filter(Boolean).join(' ')} 이미지 (${files.length}장)`;
+  document.getElementById('shot-imgs').innerHTML = _shotUrls.map(u => `<img src="${u}" style="width:100%;border:1px solid #ddd;border-radius:6px;margin-bottom:8px;display:block;">`).join('');
+  document.getElementById('shotModal').classList.add('open');
+}
+function closeShotModal() {
+  document.getElementById('shotModal').classList.remove('open');
+  document.getElementById('shot-imgs').innerHTML = '';
+  _shotUrls.forEach(u => URL.revokeObjectURL(u)); _shotUrls = []; _shotFiles = [];
+}
+function saveShotFiles() {
+  if (_shotFiles.length === 0) return;
+  const files = _shotFiles.slice(); // 저장 중에 창을 닫아도 끝까지 저장되게, 자기 몫의 파일/주소를 따로 들고 있음
+  files.forEach((f, i) => setTimeout(() => {
+    const url = URL.createObjectURL(f);
+    const a = document.createElement('a');
+    a.href = url; a.download = f.name;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 15000);
+  }, i * 350));
+  showToast(`이미지 ${files.length}장을 저장했어요 (폰은 다운로드/사진첩 확인)`);
+}
+async function shareShotFiles() {
+  if (_shotFiles.length === 0) return;
+  const data = { files: _shotFiles, title: _shotKind === '내역서' ? `${_shotCustomer} 거래내역서` : [_shotCustomer, _shotKind].filter(Boolean).join(' ') };
+  try {
+    if (navigator.canShare && navigator.canShare(data)) { await navigator.share(data); return; }
+    showToast('이 기기에서는 공유창을 열 수 없어서 이미지 파일로 내려받았어요');
+    saveShotFiles();
+  } catch (e) {
+    if (e && e.name === 'AbortError') return; // 공유창을 직접 닫은 것
+    showToast('공유창을 열지 못했어요 - 위의 "카톡으로 보내기"를 다시 눌러주세요');
+  }
+}
+async function deliverStatementHtml(html, mode, customer) {
+  if (!mode) {
+    document.getElementById('printArea').innerHTML = html;
+    setTimeout(() => window.print(), 100);
+    return;
+  }
+  showToast('내역서 이미지를 만드는 중이에요...');
+  let files;
+  try { files = await renderStatementImages(html, customer); }
+  catch (e) { showToast('이미지를 만들지 못했어요 (인터넷 연결을 확인해주세요)'); return; }
+  openShotModal(files, customer);
+  if (mode === 'share') await shareShotFiles(); else saveShotFiles();
+}
+// ===== 카톡용 재고표 / 신상 입고 이미지 =====
+// 재고 탭의 "📤 카톡용 재고표" 버튼 → 창에서 고르고 → 같은 크기(794x1123)의 여러 장 이미지로 만들어 카톡 공유 (내역서 이미지와 같은 방식)
+// 원가/입고단가는 절대 안 나옴. 읽기만 하는 기능이라 재고 데이터는 건드리지 않음.
+const CAT_DOT_COLORS = [['차콜','#4a4a4f'],['검백','#555a66'],['검정','#1b1b1d'],['블랙','#1b1b1d'],['흰','#f4f4f0'],['아이보리','#f1ead7'],['오프화이트','#efeadd'],['크림','#f3e9cc'],['베이지','#d8c7a8'],['네이비','#1f2a5a'],['곤색','#1f2a5a'],['인디고','#25304f'],['그레이','#9a9a9f'],['회색','#9a9a9f'],['멜란지','#a9a9ad'],['카키','#6f7048'],['올리브','#6b6b3a'],['브라운','#6b4a32'],['모카','#7a5a44'],['코코아','#7a5236'],['밤색','#6a4430'],['카멜','#b98a54'],['와인','#6d1f2f'],['버건디','#6d1f2f'],['빨강','#d0302b'],['레드','#d0302b'],['핑크','#f2a5b8'],['살구','#f6b99a'],['오렌지','#f08a2c'],['노랑','#f4d03f'],['옐로','#f4d03f'],['머스타드','#c9a227'],['연두','#9cc94a'],['초록','#2f8f5a'],['그린','#2f8f5a'],['민트','#8fd6c3'],['하늘','#8ec5ea'],['소라','#9fd0ea'],['블루','#2f6fc0'],['파랑','#2f6fc0'],['청','#3b6aa8'],['보라','#7b4fa3'],['퍼플','#7b4fa3'],['라벤더','#b9a4d8']];
+function catDotColor(name) { // 이름에서 색을 짐작할 수 있을 때만 색 점을 보여줌 (모르면 점 없이)
+  const t = String(name || '');
+  for (const [k, h] of CAT_DOT_COLORS) if (t.includes(k)) return h;
+  return null;
+}
+function catalogUniverse() { // 품목(분류+품목) 단위 목록: [{cat,item,mix,colors:[{cat,item,color,stock,newestIn,pending,sw,nk}]}]
+  const groups = buildGroups();
+  const mixMap = buildMixMap();
+  const pendIdx = buildChinaPendingMap(new Set(groups.map(g => `${String(g.item).trim()}|${String(g.color).trim()}`)));
+  { // 재고도 스왓치도 아직 없고 중국발주만 있는 신상 컬러도 목록에 넣음 (재고 탭이 "재고 없음 · 발주중"으로 보여주는 것과 같은 규칙)
+    const haveNorm = new Set(groups.map(g => pendIdx.normKey(`${g.item}|${g.color}`)));
+    const base = groups.slice();
+    for (const [nk, ords] of pendIdx.pendingMap) {
+      if (haveNorm.has(nk) || !ords.length) continue;
+      const it = String(resolveInventoryItem(ords[0].item) || '').trim();
+      const co = String(resolveInventoryColor(it, ords[0].color) || '').trim();
+      if (!it || !co) continue;
+      const g0 = base.find(x => String(x.item).trim() === it);
+      const sw0 = g0 ? null : swatchInfo.find(x => String(x.item).trim() === it && x.cat);
+      groups.push({ cat: g0 ? g0.cat : (sw0 ? sw0.cat : ''), item: it, color: co, rolls: [] });
+      haveNorm.add(nk);
+    }
+  }
+  const byItem = new Map();
+  for (const g of groups) {
+    const item = String(g.item || '').trim(), color = String(g.color || '').trim();
+    if (!item || !color) continue;
+    let stock = 0, newestIn = '';
+    for (const r of g.rolls) {
+      if (r.defective || !(r.qty > 0)) continue;
+      stock += r.qty;
+      if (r.inDate && r.inDate > newestIn) newestIn = r.inDate;
+    }
+    const nk = pendIdx.normKey(`${item}|${color}`);
+    const e = { cat: g.cat || '', item, color, stock: Math.round(stock * 100) / 100, newestIn, pending: (pendIdx.pendingMap.get(nk) || []).length > 0, sw: findSwatchFor(g.cat, item, color), nk };
+    const ik = e.cat + '|' + item;
+    if (!byItem.has(ik)) byItem.set(ik, []);
+    byItem.get(ik).push(e);
+  }
+  const items = [];
+  for (const colors of byItem.values()) {
+    const orderOfColor = (name) => { const c = colors.find(x => x.color === name); return c && c.sw && c.sw.order != null ? c.sw.order : null; };
+    const key = (e) => { // 재고 탭과 같은 순서: 스왓치 번호 순, 기모 같은 가공 컬러는 무지 바로 뒤
+      const kb = splitKimoColorName(e.color);
+      let o = e.sw && e.sw.order != null ? e.sw.order : null;
+      if (o == null && kb != null) o = orderOfColor(kb);
+      return { o: o != null ? o : Infinity, k: kb != null ? 1 : 0 };
+    };
+    colors.sort((a, b) => { const x = key(a), y = key(b); if (x.o !== y.o) return x.o - y.o; if (x.k !== y.k) return x.k - y.k; return a.color.localeCompare(b.color, 'ko'); });
+    items.push({ cat: colors[0].cat, item: colors[0].item, colors, mix: mixMap.get(normalizeNameForMatch(colors[0].item)) || '' });
+  }
+  items.sort((a, b) => (a.cat !== b.cat) ? String(a.cat).localeCompare(String(b.cat), 'ko') : a.item.localeCompare(b.item, 'ko'));
+  return items;
+}
+function catalogBest(days) { // 최근 N일 판매 야드: 컬러별 / 품목별 (반품·불량은 빼고, 추가금·샘플은 제외)
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - days);
+  const cutoffStr = `${String(cutoff.getFullYear()).slice(2)}.${String(cutoff.getMonth() + 1).padStart(2, '0')}.${String(cutoff.getDate()).padStart(2, '0')}`;
+  const colorYards = new Map(), itemYards = new Map();
+  for (const e of shipmentLog) {
+    if (e.isFee || e.isSample || e.manualClose || !e.item || e.item === '이월 미수금') continue;
+    if (!e.date || e.date < cutoffStr) continue;
+    let y = e.yardsShipped != null ? Number(e.yardsShipped) : (((e.unit || 'y') === 'y') ? Number(e.amount) : 0);
+    if (!isFinite(y)) continue;
+    y = Math.abs(y) * ((e.isReturn || e.isDefect) ? -1 : 1);
+    const ni = normalizeNameForMatch(e.item);
+    const ck = ni + '|' + normalizeNameForMatch(e.color || '');
+    colorYards.set(ck, (colorYards.get(ck) || 0) + y);
+    itemYards.set(ni, (itemYards.get(ni) || 0) + y);
+  }
+  return { colorYards, itemYards };
+}
+function selectCatalogItems(cfg, universe) { // 이번에 이미지에 넣을 품목/컬러만 골라냄
+  const out = [];
+  for (const it of universe) {
+    let colors;
+    if (cfg.mode === 'new') colors = it.colors.filter(c => cfg.sel.has(c.item + '|' + c.color));
+    else {
+      if (cfg.itemsSel && cfg.itemsSel.size > 0 && !cfg.itemsSel.has(it.cat + '|' + it.item)) continue;
+      colors = cfg.hideOut ? it.colors.filter(c => c.stock > 0) : it.colors;
+    }
+    if (colors.length > 0) out.push({ ...it, colors });
+  }
+  return out;
+}
+function catalogBizBlockHtml() {
+  const lines = [];
+  if (settings.bizName) lines.push(`<div style="font-size:13px; font-weight:700;">${esc(settings.bizName)}</div>`);
+  const l2 = [settings.bizOwner ? `대표 ${settings.bizOwner}` : '', settings.bizNumber || ''].filter(Boolean).join(' · ');
+  if (l2) lines.push(`<div>${esc(l2)}</div>`);
+  if (settings.bizAddress) lines.push(`<div>${esc(settings.bizAddress)}</div>`);
+  return lines.length ? `<div style="text-align:right; font-size:11.5px; line-height:1.5; color:#333;">${lines.join('')}</div>` : '';
+}
+// 같은 순번을 쓰는 "무지 / 기모" 짝은 한 타일에 묶음 (순번은 한 번만, 각각의 재고는 줄로 따로)
+function catBaseOfColor(name) { const b = splitKimoColorName(name) || getProcessingBaseColor(name); return (b && b !== name) ? b : null; }
+function catGroupsOf(it) {
+  const names = new Set(it.colors.map(c => c.color));
+  const groups = [], byMain = new Map();
+  for (const c of it.colors) {
+    const base = catBaseOfColor(c.color);
+    if (base && names.has(base)) continue; // 짝이 있는 변형(기모 등)은 아래에서 무지 타일에 붙임
+    const g = { main: c, variants: [] };
+    groups.push(g); byMain.set(c.color, g);
+  }
+  for (const c of it.colors) {
+    const base = catBaseOfColor(c.color);
+    if (base && byMain.has(base)) byMain.get(base).variants.push({ c, label: String(c.color).replace(base, '').trim() || c.color });
+  }
+  return groups;
+}
+const CAT_PER_PAGE = 10; // 폰에서 스크롤 없이 한눈에 보이도록 한 장에 최대 10타일 (5줄)
+function catSplitGroups(it) { // 타일이 많으면 비슷한 개수로 나눠서 여러 장으로 (줄이 맞도록 짝수 개씩)
+  const groups = catGroupsOf(it);
+  const P = Math.max(1, Math.ceil(groups.length / CAT_PER_PAGE));
+  let per = Math.ceil(groups.length / P);
+  if (P > 1 && per % 2) per++;
+  const out = [];
+  for (let i = 0; i < groups.length; i += per) out.push(groups.slice(i, i + per));
+  return out.length ? out : [[]];
+}
+// ── 소재 확대샷: 품목마다 사진 1장 (inventory/catphoto_* 문서로 따로 저장, 열 때만 읽음) ──
+const _catPhotos = {}; // 품목키 -> dataURL ('' = 사진 없음 확인됨)
+function catPhotoKey(it) { return normalizeNameForMatch(it.item); }
+function catPhotoDocId(key) { let h = 5381; for (let i = 0; i < key.length; i++) h = ((h * 33) ^ key.charCodeAt(i)) >>> 0; return 'catphoto_' + h.toString(36); }
+async function catPhotoLoad(keys) {
+  let changed = false;
+  if (typeof db === 'undefined' || !db) return false;
+  await Promise.all(keys.filter(k => !(k in _catPhotos)).map(async k => {
+    try {
+      const d = await db.collection('inventory').doc(catPhotoDocId(k)).get();
+      const v = d.exists && d.data() && d.data().key === k ? d.data().dataUrl : '';
+      _catPhotos[k] = v || ''; changed = true;
+    } catch (e) { /* 못 읽으면 이번엔 사진 없이 진행 (다음에 다시 시도) */ }
+  }));
+  return changed;
+}
+function catPhotoCompress(file) { // 폰 사진은 크니까 긴 변 1000px JPEG로 줄여서 저장 (보통 100~200KB)
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file); const img = new Image();
+    img.onload = () => {
+      try {
+        const r = Math.min(1, 1000 / Math.max(img.naturalWidth, img.naturalHeight));
+        const w = Math.max(1, Math.round(img.naturalWidth * r)), h = Math.max(1, Math.round(img.naturalHeight * r));
+        const cv = document.createElement('canvas'); cv.width = w; cv.height = h;
+        const ctx = cv.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, w, h); ctx.drawImage(img, 0, 0, w, h);
+        let q = 0.82, out = cv.toDataURL('image/jpeg', q);
+        while (out.length > 700000 && q > 0.4) { q -= 0.1; out = cv.toDataURL('image/jpeg', q); }
+        URL.revokeObjectURL(url); resolve(out);
+      } catch (e) { URL.revokeObjectURL(url); reject(e); }
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('img')); };
+    img.src = url;
+  });
+}
+let _catPhotoRows = [], _catPhotoPickIdx = -1;
+function catPhotoPick(i) { _catPhotoPickIdx = i; const f = document.getElementById('cat-photo-input'); f.value = ''; f.click(); }
+async function catPhotoChosen(inp) {
+  const file = inp.files && inp.files[0]; const row = _catPhotoRows[_catPhotoPickIdx];
+  if (!file || !row) return;
+  try {
+    const data = await catPhotoCompress(file);
+    if (typeof db === 'undefined' || !db) throw new Error('nodb');
+    await db.collection('inventory').doc(catPhotoDocId(row.key)).set({ kind: 'catPhoto', key: row.key, item: row.item, dataUrl: data, updatedAt: new Date().toISOString() });
+    _catPhotos[row.key] = data;
+    showToast(`${row.item} 사진을 저장했어요`);
+  } catch (e) { showToast('사진을 저장하지 못했어요 (사진 파일이나 인터넷 연결을 확인해주세요)'); }
+  catUpdateCount();
+}
+async function catPhotoRemove(i) {
+  const row = _catPhotoRows[i]; if (!row) return;
+  if (!confirm(`${row.item} 사진을 지울까요?`)) return;
+  try { await db.collection('inventory').doc(catPhotoDocId(row.key)).delete(); _catPhotos[row.key] = ''; showToast('사진을 지웠어요'); }
+  catch (e) { showToast('사진을 지우지 못했어요 (인터넷 연결을 확인해주세요)'); }
+  catUpdateCount();
+}
+function catRenderPhotos() {
+  const box = document.getElementById('cat-photo-list'); if (!box) return;
+  const cfg = readCatalogCfg();
+  const items = selectCatalogItems(cfg, _catUniverse);
+  const wrap = document.getElementById('cat-photo-wrap');
+  if (items.length === 0 || items.length > 15) { box.innerHTML = ''; _catPhotoRows = []; if (wrap) wrap.style.display = 'none'; return; } // 15개 넘게 고르면 등록칸은 숨김 (등록된 사진은 그대로 첫 장에 들어감)
+  if (wrap) wrap.style.display = '';
+  {
+    _catPhotoRows = items.map(it => ({ key: catPhotoKey(it), item: it.item }));
+    box.innerHTML = _catPhotoRows.map((r, i) => {
+      const v = _catPhotos[r.key];
+      const thumb = v ? `<img src="${v}" style="width:44px; height:44px; object-fit:cover; border-radius:6px; flex:none;">` : `<div style="width:44px; height:44px; border-radius:6px; background:#eee; color:#aaa; display:flex; align-items:center; justify-content:center; font-size:18px; flex:none;">📷</div>`;
+      const st = v === undefined ? '' : (v ? '<span style="color:#1f7a3a;">등록됨</span>' : '<span style="color:var(--muted);">미등록</span>');
+      return `<div style="display:flex; align-items:center; gap:8px; padding:5px 0; border-bottom:1px solid #f0f0f0;">${thumb}<div style="flex:1; min-width:0; font-size:13px;"><b>${esc(r.item)}</b><div style="font-size:11px;">${st}</div></div><button type="button" onclick="catPhotoPick(${i})" style="border:none; background:#e8edf5; color:#3d4f6b; border-radius:7px; padding:6px 9px; font-size:12px; font-weight:600;">${v ? '변경' : '등록'}</button>${v ? `<button type="button" onclick="catPhotoRemove(${i})" style="border:none; background:#f6e3e3; color:#a33; border-radius:7px; padding:6px 8px; font-size:12px;">삭제</button>` : ''}</div>`;
+    }).join('');
+    const missing = _catPhotoRows.map(r => r.key).filter(k => !(k in _catPhotos));
+    if (missing.length) catPhotoLoad(missing).then(ch => { if (ch) catUpdateCount(); });
+  }
+}
+const CAT_IMG_W = 600; // 폰 카톡 화면 폭에 맞춰 보면 약 0.6배로 보이니, 글씨를 크게(23px 안팎) 잡음
+async function buildCatalogPages(cfg, items) {
+  const fontFam = "-apple-system,'Malgun Gothic',sans-serif";
+  const fmtY = (n) => Number(n.toFixed(1)).toLocaleString();
+  const baseOfColor = catBaseOfColor, groupsOf = catGroupsOf;
+  // 베스트: 이번에 보여줄 품목/컬러 안에서 뽑음 (품절이라 숨긴 걸 베스트로 잡으면 광고가 이상해지니). 무지+기모는 한 컬러(순번)로 보고 판매량을 합쳐서 순위를 매김
+  const bestColor = new Set();
+  const colorYardsMap = catalogBest(cfg.bestDays).colorYards;
+  if (cfg.bestColor) {
+    for (const it of items) {
+      const groups = groupsOf(it);
+      if (groups.length <= 3) continue; // 컬러가 3개 이하인 품목은 전부 BEST가 돼버려서 의미가 없으니 표시 안 함
+      groups.map(g => ({ g, y: [g.main, ...g.variants.map(v => v.c)].reduce((s2, c) => s2 + (colorYardsMap.get(c.nk) || 0), 0) })).filter(x => x.y > 0).sort((a, b) => b.y - a.y).slice(0, 3).forEach(x => bestColor.add(x.g.main.item + '|' + x.g.main.color));
+    }
+  }
+  const pill = (txt, bg, fg, size) => `<span style="display:inline-block; background:${bg}; color:${fg}; font-size:${size || 16}px; font-weight:800; padding:2px ${size && size < 16 ? 7 : 10}px; border-radius:12px; line-height:1.3; white-space:nowrap;">${txt}</span>`;
+  const swOf = (g) => { // 이 타일의 스왓치 번호: 무지 것, 없으면 기모 등 변형 것, 그래도 없으면 무지 이름으로 찾아봄
+    let sw = g.main.sw && (g.main.sw.order != null || g.main.sw.orderSpring != null) ? g.main.sw : null;
+    if (!sw) for (const v of g.variants) if (v.c.sw && (v.c.sw.order != null || v.c.sw.orderSpring != null)) { sw = v.c.sw; break; }
+    if (!sw) { const base = baseOfColor(g.main.color); if (base) { const f = findSwatchFor(g.main.cat, g.main.item, base); if (f && (f.order != null || f.orderSpring != null)) sw = f; } }
+    return sw;
+  };
+  const numBadge = (sw, itemSpring) => { // 스왓치 번호: 거래처가 스왓치북에서 바로 찾으니 컬러 네모 위에 크고 진하게 (F/W 파랑, S/S 초록 - 앱과 같은 색)
+    if (!sw) return ['', ''];
+    if (!itemSpring) return [sw.order != null ? `<div style="position:absolute; left:-12px; top:-12px; min-width:46px; height:46px; padding:0 6px; box-sizing:border-box; border-radius:23px; background:#1a5f8a; color:#fff; border:3px solid #fff; box-shadow:0 1px 4px rgba(0,0,0,.35); display:flex; align-items:center; justify-content:center; font-size:26px; font-weight:900;">${sw.order}</div>` : '', ''];
+    const pl = (txt, bg) => `<div style="background:${bg}; color:#fff; border:2px solid #fff; box-shadow:0 1px 4px rgba(0,0,0,.35); border-radius:14px; padding:1px 9px; font-size:19px; font-weight:900; line-height:1.3; white-space:nowrap;">${txt}</div>`;
+    return ['', `<div style="position:absolute; left:12px; top:-15px; display:flex; gap:6px;">${sw.order != null ? pl(`F/W ${sw.order}`, '#1a5f8a') : ''}${sw.orderSpring != null ? pl(`S/S ${sw.orderSpring}`, '#2f8f6b') : ''}</div>`];
+  };
+  const stockHtml = (c, compact) => { // compact: 무지/기모 두 줄 타일(한 칸 폭)에 맞춰 작게
+    const ps = compact ? 15 : 17;
+    if (cfg.display === 'qty') return c.stock > 0 ? `<span style="font-size:21px; font-weight:800; color:#222;">${fmtY(c.stock)}y</span>` : pill('품절', '#eee', '#888', ps);
+    if (cfg.display === 'status') return c.stock <= 0 ? pill('품절', '#eee', '#888', ps) : (c.stock < cfg.low ? pill('소량', '#fff0cf', '#9a6200', ps) : pill('재고있음', '#e3f4e6', '#1f7a3a', ps));
+    return '';
+  };
+  const tileHtml = (g, itemSpring) => {
+    const c = g.main;
+    const dot = catDotColor(c.color);
+    const isBest = bestColor.has(c.item + '|' + c.color);
+    const members = [{ c, label: g.variants.length ? '무지' : '' }, ...g.variants];
+    // 무지/기모 중 한쪽이 확실히 더 많이 나갔으면(60% 이상) 그쪽 줄에 "인기" 표시
+    let hotIdx = -1;
+    if (cfg.bestColor && g.variants.length > 0) {
+      const ys = members.map(m => colorYardsMap.get(m.c.nk) || 0);
+      const tot = ys.reduce((a, b) => a + b, 0);
+      if (tot > 0) { const mx = Math.max(...ys); if (mx / tot >= 0.6) hotIdx = ys.indexOf(mx); }
+    }
+    const body = g.variants.length === 0
+      ? `<div style="margin-top:6px; display:flex; gap:6px; flex-wrap:wrap; align-items:center;">${stockHtml(c)}</div>`
+      : members.map((m, i) => `<div style="margin-top:4px; display:flex; gap:5px; align-items:center; flex-wrap:wrap;"><span style="font-size:18px; font-weight:700; color:#444;">${esc(m.label)}</span>${i === hotIdx ? pill('인기', '#ffe9e3', '#d4401a', 14) : ''}${stockHtml(m.c, true)}</div>`).join('');
+    const [badgeSq, badgeTile] = numBadge(swOf(g), itemSpring);
+    return `<div style="position:relative; display:flex; gap:10px; align-items:center; ${isBest ? 'border:3px solid #e8442a; background:#fff4f1; padding:8px; box-shadow:0 2px 6px rgba(232,68,42,.25);' : 'border:1px solid #d9d9d9; background:#fff; padding:10px;'} border-radius:12px; min-width:0;">
+        ${badgeTile}
+        ${isBest ? '<div style="position:absolute; top:-12px; right:10px; background:#e8442a; color:#fff; font-size:18px; font-weight:900; letter-spacing:1px; padding:2px 12px; border-radius:14px; line-height:1.3;">★ BEST</div>' : ''}
+        <div style="position:relative; width:76px; height:76px; flex:none; border-radius:10px; background:${dot || '#eceae4'}; border:1px solid rgba(0,0,0,.18); display:flex; align-items:center; justify-content:center; color:#b5b09f; font-size:30px; font-weight:700;">${dot ? '' : esc(String(c.color).slice(0, 1))}${badgeSq}</div>
+        <div style="flex:1; min-width:0;">
+          <div style="font-size:23px; font-weight:800; line-height:1.2; word-break:keep-all; overflow-wrap:anywhere;">${esc(c.color)}</div>
+          ${body}
+        </div>
+      </div>`;
+  };
+  const biz = esc(settings.bizName || '');
+  const isNew = cfg.mode === 'new';
+  const footer = `<div style="padding:12px 20px 16px; text-align:center; border-top:1px solid #eee; margin-top:10px;">
+        <div style="font-size:17px; color:#444; font-weight:600;">${esc(cfg.msg)}</div>
+        ${settings.bizAddress ? `<div style="font-size:14px; color:#999; margin-top:4px;">${biz ? biz + ' · ' : ''}${esc(settings.bizAddress)}</div>` : ''}
+      </div>`;
+  const headOf = (it, pageNo, total) => `<div style="${isNew ? 'background:#1f2a44; color:#fff;' : 'border-bottom:3px solid #1f2a44;'} padding:18px 20px 14px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; font-size:16px; ${isNew ? 'color:rgba(255,255,255,.8);' : 'color:#666;'}"><span>${biz ? biz + ' · ' : ''}${esc(cfg.title)} · ${todayStr()}</span><span>${total > 1 ? `${pageNo} / ${total}` : ''}</span></div>
+        <div style="display:flex; align-items:center; gap:10px; margin-top:8px; flex-wrap:wrap;"><span style="font-size:36px; font-weight:800; line-height:1.15; word-break:keep-all; overflow-wrap:anywhere;">${esc(it.item)}</span></div>
+        ${it.mix ? `<div style="font-size:17px; margin-top:5px; ${isNew ? 'color:rgba(255,255,255,.75);' : 'color:#777;'}">혼용률 ${esc(it.mix)}</div>` : ''}
+      </div>`;
+  const pageWrap = (inner) => `<div class="stm-img-page" style="width:${CAT_IMG_W}px; box-sizing:border-box; background:#fff; color:#222; font-family:${fontFam};">${inner}${footer}</div>`;
+  // 한 품목 = 첫 장은 소재 확대샷(사진이 있으면 항상) + 다음 장부터 스왓치 순번 순서의 컬러 타일 (한 장에 최대 10타일이라 폰에서 스크롤 없이 보임)
+  const pagesOfItem = (it) => {
+    const itemSpring = itemHasSpring(it.item);
+    const photo = _catPhotos[catPhotoKey(it)] || '';
+    const sp = catSplitGroups(it);
+    const total = (photo ? 1 : 0) + sp.length;
+    const out = [];
+    let no = 1;
+    if (photo) {
+      out.push(pageWrap(`${headOf(it, no++, total)}
+        <img src="${photo}" style="display:block; width:100%; max-height:760px; object-fit:cover;">`));
+    }
+    for (const gs of sp) {
+      out.push(pageWrap(`${headOf(it, no++, total)}
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:22px 14px; padding:26px 22px 6px;">${gs.map(g => tileHtml(g, itemSpring)).join('')}</div>`));
+    }
+    return out;
+  };
+  return items.map(pagesOfItem).flat().join('');
+}
+
+let _catUniverse = [];
+let _catMode = 'stock';
+let _catSel = new Set(); // 신상 입고: 고른 컬러 "품목|컬러"
+let _catItems = new Set(); // 재고표: 고른 품목 "분류|품목" (비어 있으면 전체)
+const CAT_DEFAULT_TITLE = { stock: '재고 현황', new: '신상 입고' };
+const CAT_DEFAULT_MSG = '주문·문의는 카톡으로 편하게 연락주세요';
+function catLoadPrefs() { try { return JSON.parse(localStorage.getItem('catalogPrefs') || '{}') || {}; } catch (e) { return {}; } }
+function catSavePrefs(cfg) { try { localStorage.setItem('catalogPrefs', JSON.stringify({ display: { stock: cfg.stockDisplay, new: cfg.newDisplay }, low: cfg.low, bestColor: cfg.bestColor, bestDays: cfg.bestDays, msg: cfg.msg })); } catch (e) { /* 저장 못 해도 상관없음 */ } }
+function openCatalogModal() {
+  _catUniverse = catalogUniverse();
+  const pr = catLoadPrefs();
+  const disp = pr.display || {};
+  _catPrefDisplay = { stock: disp.stock || 'status', new: disp.new || 'none' };
+  document.getElementById('cat-low').value = pr.low != null ? pr.low : 50;
+  document.getElementById('cat-bestcolor').checked = pr.bestColor !== false;
+  document.getElementById('cat-bestdays').value = String(pr.bestDays || 90);
+  document.getElementById('cat-msg').value = pr.msg || CAT_DEFAULT_MSG;
+  _catItems = new Set();
+  document.getElementById('cat-item-search').value = '';
+  // 신상 기본 선택: 아직 안 들어온 중국발주 컬러 + 최근 7일 안에 입고된 컬러
+  const cut = new Date(); cut.setDate(cut.getDate() - 7);
+  const cutStr = `${String(cut.getFullYear()).slice(2)}.${String(cut.getMonth() + 1).padStart(2, '0')}.${String(cut.getDate()).padStart(2, '0')}`;
+  _catSel = new Set();
+  for (const it of _catUniverse) for (const c of it.colors) if (c.pending || (c.newestIn && c.newestIn >= cutStr)) _catSel.add(c.item + '|' + c.color);
+  document.getElementById('cat-search').value = '';
+  catSetMode(_catMode, true);
+  document.getElementById('catalogModal').classList.add('open');
+}
+let _catPrefDisplay = { stock: 'status', new: 'none' };
+function closeCatalogModal() { document.getElementById('catalogModal').classList.remove('open'); }
+function catSetMode(m, init) {
+  const prev = _catMode;
+  const sel = document.getElementById('cat-display');
+  if (!init && prev && sel.value) _catPrefDisplay[prev] = sel.value; // 모드를 바꾸기 전에 지금 고른 재고표시를 그 모드용으로 기억
+  _catMode = m;
+  const on = 'background:#1a5f8a;color:#fff;', off = 'background:#e8edf5;color:#3d4f6b;';
+  const base = 'flex:1;border:none;border-radius:8px;padding:9px 4px;font-size:13px;font-weight:700;';
+  document.getElementById('cat-mode-stock').style.cssText = base + (m === 'stock' ? on : off);
+  document.getElementById('cat-mode-new').style.cssText = base + (m === 'new' ? on : off);
+  document.getElementById('cat-title').value = CAT_DEFAULT_TITLE[m];
+  sel.value = _catPrefDisplay[m];
+  document.getElementById('cat-stock-scope').style.display = m === 'stock' ? '' : 'none';
+  document.getElementById('cat-new-scope').style.display = m === 'new' ? '' : 'none';
+  catOnDisplayChange();
+  renderCatalogScope();
+}
+function catOnDisplayChange() { document.getElementById('cat-low-wrap').style.display = document.getElementById('cat-display').value === 'status' ? '' : 'none'; }
+function renderCatalogScope() {
+  if (_catMode === 'stock') {
+    const keyOf = (it) => it.cat + '|' + it.item;
+    const selIdx = [];
+    _catUniverse.forEach((it, i) => { if (_catItems.has(keyOf(it))) selIdx.push(i); });
+    document.getElementById('cat-items-sel').innerHTML = selIdx.length === 0
+      ? ''
+      : selIdx.map(i => `<span onclick="catRemoveItem(${i})" style="display:inline-block; margin:0 4px 4px 0; padding:5px 10px; border-radius:14px; font-size:13px; cursor:pointer; background:#1a5f8a; color:#fff;">${esc(_catUniverse[i].item)} ✕</span>`).join('');
+    const q = document.getElementById('cat-item-search').value.trim();
+    let html = '';
+    if (q) {
+      let n = 0;
+      _catUniverse.forEach((it, i) => {
+        if (n >= 8 || _catItems.has(keyOf(it)) || !matchesSearchWords(q, it.item, it.cat)) return;
+        n++;
+        const tot = it.colors.reduce((s2, c) => s2 + c.stock, 0);
+        html += `<div onclick="catAddItem(${i})" style="padding:8px 6px; border-bottom:1px solid #eee; cursor:pointer; font-size:14px; display:flex; justify-content:space-between;"><span><b>${esc(it.item)}</b> <span style="font-size:11px; color:var(--muted);">${esc(it.cat || '미분류')}</span></span><span style="font-size:12px; color:${tot > 0 ? '#2f6b46' : '#999'};">${tot > 0 ? '재고 ' + Math.round(tot).toLocaleString() + 'y' : '재고 없음'}</span></div>`;
+      });
+      if (!html) html = '<div style="font-size:12px; color:var(--muted); padding:8px 6px;">검색 결과가 없어요</div>';
+    }
+    document.getElementById('cat-item-results').innerHTML = html;
+  } else {
+    const q = document.getElementById('cat-search').value.trim();
+    const matchQ = (it, c) => !q || matchesSearchWords(q, it.item, c ? c.color : '');
+    let html = '';
+    _catUniverse.forEach((it, ii) => {
+      const cols = it.colors.map((c, ci) => ({ c, ci })).filter(x => matchQ(it, x.c));
+      if (cols.length === 0) return;
+      const allOn = it.colors.every(c => _catSel.has(c.item + '|' + c.color));
+      html += `<div style="margin:6px 0 8px;"><div onclick="catToggleItem(${ii})" style="font-size:13px; font-weight:700; cursor:pointer; margin-bottom:3px;">${allOn ? '☑' : '☐'} ${esc(it.item)}</div><div>`
+        + cols.map(x => { const on = _catSel.has(x.c.item + '|' + x.c.color); return `<span onclick="catToggleColor(${ii},${x.ci})" style="display:inline-block; margin:0 4px 4px 0; padding:4px 9px; border-radius:13px; font-size:12px; cursor:pointer; ${on ? 'background:#1a5f8a;color:#fff;' : 'background:#eee;color:#555;'}">${esc(x.c.color)}</span>`; }).join('')
+        + `</div></div>`;
+    });
+    document.getElementById('cat-picker').innerHTML = html || '<div style="font-size:12px;color:var(--muted);padding:8px 0;">검색 결과가 없어요</div>';
+  }
+  catUpdateCount();
+}
+function catAddItem(i) { const it = _catUniverse[i]; _catItems.add(it.cat + '|' + it.item); document.getElementById('cat-item-search').value = ''; renderCatalogScope(); }
+function catRemoveItem(i) { const it = _catUniverse[i]; _catItems.delete(it.cat + '|' + it.item); renderCatalogScope(); }
+function catToggleColor(ii, ci) { const c = _catUniverse[ii].colors[ci]; const k = c.item + '|' + c.color; if (_catSel.has(k)) _catSel.delete(k); else _catSel.add(k); renderCatalogScope(); }
+function catToggleItem(ii) { const it = _catUniverse[ii]; const keys = it.colors.map(c => c.item + '|' + c.color); const allOn = keys.every(k => _catSel.has(k)); keys.forEach(k => allOn ? _catSel.delete(k) : _catSel.add(k)); renderCatalogScope(); }
+function catQuick(kind) {
+  _catSel = new Set();
+  if (kind !== 'clear') {
+    const cut = new Date(); cut.setDate(cut.getDate() - 7);
+    const cutStr = `${String(cut.getFullYear()).slice(2)}.${String(cut.getMonth() + 1).padStart(2, '0')}.${String(cut.getDate()).padStart(2, '0')}`;
+    for (const it of _catUniverse) for (const c of it.colors) {
+      if (kind === 'pending' && c.pending) _catSel.add(c.item + '|' + c.color);
+      if (kind === 'recent' && c.newestIn && c.newestIn >= cutStr) _catSel.add(c.item + '|' + c.color);
+    }
+  }
+  renderCatalogScope();
+}
+function readCatalogCfg() {
+  const display = document.getElementById('cat-display').value;
+  const low = parseFloat(document.getElementById('cat-low').value);
+  const cfg = {
+    mode: _catMode,
+    title: document.getElementById('cat-title').value.trim() || CAT_DEFAULT_TITLE[_catMode],
+    display, low: low > 0 ? low : 50,
+    bestColor: document.getElementById('cat-bestcolor').checked,
+    bestDays: parseInt(document.getElementById('cat-bestdays').value) || 90,
+    hideOut: true, // 재고표는 품절 컬러를 항상 숨김
+    msg: document.getElementById('cat-msg').value.trim() || CAT_DEFAULT_MSG,
+    sel: _catSel,
+    itemsSel: _catMode === 'stock' ? _catItems : null
+  };
+  cfg.stockDisplay = _catMode === 'stock' ? display : _catPrefDisplay.stock;
+  cfg.newDisplay = _catMode === 'new' ? display : _catPrefDisplay.new;
+  return cfg;
+}
+function catImageCount(items) { return items.reduce((n, it) => n + catSplitGroups(it).length + (_catPhotos[catPhotoKey(it)] ? 1 : 0), 0); }
+function catUpdateCount() {
+  const cfg = readCatalogCfg();
+  const items = selectCatalogItems(cfg, _catUniverse);
+  const colors = items.reduce((s, it) => s + it.colors.length, 0);
+  document.getElementById('cat-count').textContent = items.length === 0 ? (cfg.mode === 'new' ? '컬러를 선택하세요' : '표시할 재고가 없습니다') : `이미지 ${catImageCount(items)}장 · ${items.length}품목 · ${colors}컬러`;
+  catRenderPhotos();
+}
+async function generateCatalog(mode) {
+  const cfg = readCatalogCfg();
+  const items = selectCatalogItems(cfg, _catUniverse);
+  if (items.length === 0) { showToast(cfg.mode === 'new' ? '신상으로 보낼 컬러를 하나 이상 골라주세요' : '보여줄 재고가 없어요'); return; }
+  if (items.length > 30) { showToast(`품목이 ${items.length}개예요 - 카톡은 한 번에 사진 30장까지라서 품목을 골라주세요`); return; }
+  showToast('이미지를 만드는 중이에요...');
+  await catPhotoLoad(items.map(catPhotoKey));
+  const nImg = catImageCount(items);
+  if (nImg > 30) { showToast(`이미지가 ${nImg}장이에요 - 카톡은 한 번에 사진 30장까지라서 품목을 줄여주세요`); return; }
+  catSavePrefs(cfg);
+  const kind = cfg.mode === 'new' ? '신상입고' : '재고표';
+  let files;
+  try { files = await renderStatementImages(await buildCatalogPages(cfg, items), '', kind, CAT_IMG_W); }
+  catch (e) { showToast('이미지를 만들지 못했어요 (인터넷 연결을 확인해주세요)'); return; }
+  openShotModal(files, '', kind);
+  if (mode === 'share') await shareShotFiles();
+}
+
+async function printStatementForRange(customerName, startDate, endDate, mode) {
+  const html = await buildStatementHTML(customerName, startDate, endDate, undefined, undefined, undefined, mode ? { shareImage: true } : undefined);
+  if (html == null) { showToast('해당 기간에 보낼 내역이 없습니다'); return; }
+  await deliverStatementHtml(html, mode, customerName);
 }
 async function printStatementForEntries(customerName, entryIds, includePayments, taxOverrideIds) {
   const html = await buildStatementHTML(customerName, null, null, entryIds, includePayments === undefined ? true : includePayments, null, null, taxOverrideIds);
@@ -6940,6 +7677,7 @@ function renderCustomerLedgerView() {
       <button onclick="printCurrentLedgerStatement()" style="border:none;background:#eaf3ec;color:#2f6b46;border-radius:7px;padding:8px 12px;font-size:12px;font-weight:600;white-space:nowrap;">명세서 인쇄</button>
       <button class="btn-key" onclick="if(ledgerCustomer) payCustomerUnpaid(ledgerCustomer)" style="border:none;background:#eaf3ec;color:#2f6b46;border-radius:7px;padding:8px 12px;font-size:12px;font-weight:600;white-space:nowrap;">입금 처리</button>
       <button onclick="printLedgerPeriod()" style="border:none;background:#e8edf5;color:#3d4f6b;border-radius:7px;padding:8px 12px;font-size:12px;font-weight:600;white-space:nowrap;">기간별 인쇄</button>
+      <button onclick="printLedgerPeriod('share')" style="border:none;background:#fee500;color:#191919;border-radius:7px;padding:8px 12px;font-size:12px;font-weight:700;white-space:nowrap;">💬 카톡으로 보내기</button>
     </div>
     <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; padding-top:6px; border-top:1px dashed var(--border); font-size:11px; color:var(--muted);">
       <span onclick="if(ledgerCustomer) renameCustomer(ledgerCustomer)" style="text-decoration:underline; cursor:pointer;">이름 수정</span>
@@ -7228,7 +7966,9 @@ async function confirmReturnDefectEdit() {
       if (roll) {
         roll.item = newItem;
         roll.color = resolveInventoryColor(newItem, newColor);
-        roll.qty = Math.round(newYards * 100) / 100;
+        // 수량을 통째로 새 값으로 덮어쓰면, 반품으로 들어온 롤을 이미 일부 팔았을 때 팔린 만큼이 다시 생겨남 → 바뀐 만큼(차이)만 반영
+        const oldReturnYards = Math.abs(e.yardsShipped || e.amount || 0);
+        roll.qty = Math.round(Math.max(0, roll.qty + (newYards - oldReturnYards)) * 100) / 100;
       }
     } else {
       // 예전 기록이라 롤 정보가 없으면, 기존 방식대로 예전 수량만큼 재고에서 빼고 새 수량만큼 새 롤로 추가함
@@ -7286,7 +8026,137 @@ async function printCurrentLedgerStatement() {
   });
   await printStatementForEntries(customer, entryIds, paymentKeys, document.getElementById('ledger-print-add-tax').checked ? new Set(entryIds) : null);
 }
-async function printLedgerPeriod() {
+// 인쇄/이미지 공통: 거래명세서 줄의 "내용"(품목+색만) / 수량(전체 야드) / 단가 표시 - 개별 탕 야드수는 넣지 않음 (비고에 수기로 적으니)
+function ledgerDescText(ev) { return ev.desc; }
+function ledgerPriceText(ev) { return ev.unitPrice ? ev.unitPrice.toLocaleString() : (ev.priceMissing ? '미입력' : ''); }
+// 이미지로 보낼 때의 원장(거래명세서): 내용이 길면 같은 크기(A4 비율 794x1123)의 "장"으로 나눠서, 카톡에 여러 장이 가지런히 오게 함
+async function buildLedgerImagePages(c, opts) {
+  opts = opts || {};
+  const PAGE_W = 794, PAGE_H = 1123;
+  const rows = c.rows;
+  const fontFam = "-apple-system,'Malgun Gothic',sans-serif";
+  const cell = 'border-bottom:1px solid #eee; padding:5px 6px;';
+  const thead = `<thead><tr style="background:#f3f1ea;">
+    <th style="width:7%; border-bottom:1px solid #999; padding:5px 6px; text-align:left;">구분</th>
+    <th style="width:24%; border-bottom:1px solid #999; padding:5px 6px; text-align:left;">내용</th>
+    <th style="width:23%; border-bottom:1px solid #999; padding:5px 6px; text-align:left;">비고</th>
+    <th style="width:9%; border-bottom:1px solid #999; padding:5px 6px; text-align:right;">수량</th>
+    <th style="width:9%; border-bottom:1px solid #999; padding:5px 6px; text-align:right;">단가</th>
+    <th style="width:14%; border-bottom:1px solid #999; padding:5px 6px; text-align:right;">금액</th>
+    <th style="width:14%; border-bottom:1px solid #999; padding:5px 6px; text-align:right;">잔액</th>
+  </tr></thead>`;
+  const tableOpen = '<table style="width:100%; border-collapse:collapse; table-layout:fixed; border:1px solid #ccc;">';
+  const dateHdr = (d) => `<tr style="background:#f3f1ea;"><td class="dhdr" colspan="7" style="padding:2px 6px; font-weight:700; font-size:11px;">${esc(d)}</td></tr>`;
+  const trOf = (ev, idx) => {
+    const isLastOfDay = idx === rows.length - 1 || rows[idx + 1].date !== ev.date;
+    const color = ev.type === '입금' ? 'color:#1a56db;' : (ev.type === '불량' || ev.type === '반품' || ev.type === '공제') ? 'color:#c0392b;' : '';
+    return `<tr style="${color}">
+      <td style="${cell}">${esc(ev.type)}</td>
+      <td style="${cell}">${esc(ledgerDescText(ev))}</td>
+      <td style="${cell} font-size:0.85em; color:#666;">${esc(ev.note || '')}</td>
+      <td style="${cell} text-align:right; white-space:nowrap;">${esc(ev.qtyText || '')}</td>
+      <td style="${cell} text-align:right; white-space:nowrap;${ev.priceMissing ? ' font-size:0.85em; color:#999;' : ''}">${esc(ledgerPriceText(ev))}</td>
+      <td style="${cell} text-align:right;">${ev.amount < 0 ? '-' : ''}${Math.abs(ev.amount).toLocaleString()}</td>
+      <td style="${cell} text-align:right;${isLastOfDay ? ' background:#fff4bf;' : ''}">${ev._runningSnapshot.toLocaleString()}</td>
+    </tr>`;
+  };
+  const trs = rows.map(trOf);
+
+  // 실제 화면에서 줄 높이를 재서(글이 길어 두 줄이 되는 줄도 정확히) 한 장에 몇 줄 들어가는지 계산
+  let rowH = trs.map(() => 34), hdrH = 28;
+  const host = document.createElement('div');
+  host.id = 'shotRoot';
+  host.style.cssText = `position:fixed;left:-10000px;top:0;width:${PAGE_W}px;visibility:hidden;font-family:${fontFam};`;
+  host.innerHTML = `<style>${SHOT_CSS}</style><div class="ledger-print" style="width:${PAGE_W}px;box-sizing:border-box;">${tableOpen}${thead}<tbody>${dateHdr('x')}${trs.join('')}</tbody></table></div>`;
+  document.body.appendChild(host);
+  try {
+    const els = host.querySelectorAll('tbody tr');
+    const h0 = els[0] ? els[0].getBoundingClientRect().height : 0;
+    if (h0 > 0 && els.length === trs.length + 1) {
+      hdrH = h0;
+      rowH = Array.from(els).slice(1).map(e => e.getBoundingClientRect().height);
+    }
+  } finally { host.remove(); }
+
+  // 한 장의 본문(줄들) 높이 한도 - 머리글/바닥글/여백을 뺀 값 (여유 24px 포함)
+  const BUDGET_FIRST = 870, BUDGET_NEXT = 915, SUMMARY_H = 150, CARRY_H = 34;
+  const pages = [[]];
+  let used = CARRY_H, lastDate = null;
+  const budgetOf = (pi) => pi === 0 ? BUDGET_FIRST : BUDGET_NEXT;
+  rows.forEach((ev, i) => {
+    const pi = pages.length - 1;
+    const needHdr = (ev.date !== lastDate) || pages[pi].length === 0;
+    const need = rowH[i] + (needHdr ? hdrH : 0);
+    if (used + need > budgetOf(pi) && pages[pi].length > 0) {
+      pages.push([]); used = 0; lastDate = null;
+      const need2 = rowH[i] + hdrH;
+      pages[pages.length - 1].push(i); used += need2; lastDate = ev.date;
+      return;
+    }
+    pages[pi].push(i); used += need; lastDate = ev.date;
+  });
+  // 마지막 장에 합계표까지 안 들어가면: 마지막 몇 줄을 새 장으로 넘겨서, 합계표가 줄 몇 개와 함께 나오게 함
+  const lastIdx = () => pages.length - 1;
+  const usedOf = (pi) => {
+    let u = pi === 0 ? CARRY_H : 0, ld = null;
+    pages[pi].forEach(i => { if (rows[i].date !== ld) u += hdrH; u += rowH[i]; ld = rows[i].date; });
+    return u;
+  };
+  if (usedOf(lastIdx()) + SUMMARY_H > budgetOf(lastIdx())) {
+    const cur = pages[lastIdx()];
+    if (cur.length >= 2) {
+      const moveN = Math.min(3, cur.length - 0 > 3 ? 3 : Math.ceil(cur.length / 2));
+      const moved = cur.splice(cur.length - moveN, moveN);
+      pages.push(moved);
+    } else pages.push([]);
+  }
+
+  const N = pages.length;
+  const bizBlock = c.bizBlock;
+  const pageHtml = (idxs, pi) => {
+    const isFirst = pi === 0, isLast = pi === N - 1;
+    const head = isFirst ? `
+      <div style="display:flex; justify-content:space-between; align-items:flex-start; border-bottom:2px solid #222; padding-bottom:10px; margin-bottom:12px;">
+        <div>
+          <div style="font-size:22px; font-weight:700;">거래명세서</div>
+          <div style="font-size:12px; color:#666; margin-top:3px;">기간 ${esc(c.startDate || '')} ~ ${esc(c.endDate || '')} · 발행일 ${todayStr()}</div>
+        </div>
+        ${bizBlock}
+      </div>
+      <div style="font-size:14px; font-weight:600; margin-bottom:6px;">공급받는자: ${esc(c.customer)}</div>`
+      : `
+      <div style="display:flex; justify-content:space-between; align-items:baseline; border-bottom:2px solid #222; padding-bottom:6px; margin-bottom:10px;">
+        <div style="font-size:16px; font-weight:700;">거래명세서 <span style="font-size:12px; font-weight:400; color:#666;">(이어서)</span></div>
+        <div style="font-size:13px; font-weight:600;">${esc(c.customer)}</div>
+      </div>`;
+    let ld = null, body = '';
+    idxs.forEach(i => {
+      if (rows[i].date !== ld) body += dateHdr(rows[i].date);
+      body += trs[i]; ld = rows[i].date;
+    });
+    const carry = isFirst ? `<tr style="background:#fafafa;"><td colspan="6" style="${cell}"><b>이월 잔액</b></td><td style="${cell} text-align:right;"><b>${c.openingBalance.toLocaleString()}</b></td></tr>` : '';
+    const summary = isLast ? `
+      <div style="display:flex; justify-content:flex-end; margin-top:12px;">
+        <table style="width:auto; font-size:13px;">
+          <tr><td style="color:#666; padding:2px 14px 2px 0;">기간 중 매출 합계</td><td style="text-align:right; padding:2px 0;">${c.salesSum.toLocaleString()}원</td></tr>
+          ${c.deductSum > 0 ? `<tr><td style="color:#666; padding:2px 14px 2px 0;">반품·불량 차감</td><td style="text-align:right; padding:2px 0;">-${c.deductSum.toLocaleString()}원</td></tr>` : ''}
+          <tr><td style="color:#666; padding:2px 14px 2px 0;">기간 중 입금 합계</td><td style="text-align:right; padding:2px 0;">${c.paySum.toLocaleString()}원</td></tr>
+          <tr><td style="font-weight:700; padding:4px 14px 2px 0; border-top:1px solid #ccc;">최종 잔액</td><td style="text-align:right; font-weight:700; padding:4px 0 2px; border-top:1px solid #ccc;">${c.finalBalance.toLocaleString()}원</td></tr>
+        </table>
+      </div>` : '';
+    const foot = `<div style="margin-top:auto; padding-top:10px; text-align:center; font-size:12px; color:#999;">${isLast ? '항상 좋은 거래 감사드립니다.<br>' : ''}${N > 1 ? `${pi + 1} / ${N}` : ''}</div>`;
+    const printStyle = opts.forPrint ? ` zoom:0.94; ${pi < N - 1 ? 'page-break-after:always; break-after:page;' : ''}` : ''; // 종이: A4 인쇄 가능 영역에 맞춰 살짝 줄여서 한 장이 정확히 한 페이지가 되게
+    return `<div class="stm-img-page ledger-print" style="width:${PAGE_W}px; min-height:${PAGE_H}px;${printStyle} box-sizing:border-box; display:flex; flex-direction:column; background:#fff; font-family:${fontFam};">
+      ${head}
+      ${tableOpen}${thead}<tbody>${carry}${body}</tbody></table>
+      ${summary}
+      ${foot}
+    </div>`;
+  };
+  const out = pages.map(pageHtml).join('');
+  return opts.forPrint ? `<style>${PRINT_LEDGER_CSS}</style>${out}` : out;
+}
+async function printLedgerPeriod(mode) {
   const customer = (ledgerCustomer || document.getElementById('ledger-customer').value).trim();
   const startDate = fromDateInputValue(document.getElementById('ledger-start').value);
   const endDate = fromDateInputValue(document.getElementById('ledger-end').value);
@@ -7337,22 +8207,6 @@ async function printLedgerPeriod() {
   }
   if (rowsInRange.length === 0) { showToast('선택된 항목이 없어요 - 표에서 인쇄할 항목을 체크해주세요'); return; }
 
-  let lastDate = null;
-  const rowsHtml = rowsInRange.map(ev => {
-    const running = ev._runningSnapshot;
-    const dateHeader = (ev.date !== lastDate) ? `<tr style="background:#f3f1ea;"><td colspan="6" style="padding:4px 6px; font-weight:700; font-size:12px;">${esc(ev.date)}</td></tr>` : '';
-    lastDate = ev.date;
-    const color = ev.type === '입금' ? 'color:#1a56db;' : (ev.type === '불량' || ev.type === '반품' || ev.type === '공제') ? 'color:#c0392b;' : '';
-    return `${dateHeader}<tr style="${color}">
-      <td style="border-bottom:1px solid #eee; padding:5px 6px;">${esc(ev.date)}</td>
-      <td style="border-bottom:1px solid #eee; padding:5px 6px;">${esc(ev.type)}</td>
-      <td style="border-bottom:1px solid #eee; padding:5px 6px;">${esc(ev.desc)}${ev.detail ? ` (${esc(ev.detail)})` : ''}</td>
-      <td style="border-bottom:1px solid #eee; padding:5px 6px; font-size:0.85em; color:#666;">${esc(ev.note || '')}</td>
-      <td style="border-bottom:1px solid #eee; padding:5px 6px; text-align:right;">${ev.amount < 0 ? '-' : ''}${Math.abs(ev.amount).toLocaleString()}</td>
-      <td style="border-bottom:1px solid #eee; padding:5px 6px; text-align:right;">${running.toLocaleString()}</td>
-    </tr>`;
-  }).join('');
-
   // 기간 중 매출/입금/반품·불량 합계 (화면에 인쇄되는 줄 기준으로 계산 - 체크 해제해서 뺀 줄은 합계에도 안 들어감)
   let salesSum = 0, paySum = 0, deductSum = 0;
   for (const ev of rowsInRange) {
@@ -7370,45 +8224,9 @@ async function printLedgerPeriod() {
   if (bizLine3) bizLines.push(`<div>${esc(bizLine3)}</div>`);
   const bizBlock = bizLines.length > 0 ? `<div style="text-align:right; font-size:11px; line-height:1.5; color:#333;">${bizLines.join('')}</div>` : '';
 
-  const html = `
-    <div class="ledger-print" style="padding:14mm 12mm; font-family:-apple-system,'Malgun Gothic',sans-serif;">
-      <div style="display:flex; justify-content:space-between; align-items:flex-start; border-bottom:2px solid #222; padding-bottom:10px; margin-bottom:12px;">
-        <div>
-          <div style="font-size:18px; font-weight:700;">거래명세서</div>
-          <div style="font-size:11px; color:#666; margin-top:2px;">기간 ${esc(startDate || '')} ~ ${esc(endDate || '')} · 발행일 ${todayStr()}</div>
-        </div>
-        ${bizBlock}
-      </div>
-      <div style="font-size:13px; font-weight:600; margin-bottom:6px;">공급받는자: ${esc(customer)}</div>
-      <table style="width:100%; border-collapse:collapse; table-layout:fixed; border:1px solid #ccc;">
-        <thead>
-          <tr style="background:#f3f1ea;">
-            <th style="width:9%; border-bottom:1px solid #999; padding:5px 6px; text-align:left;">날짜</th>
-            <th style="width:8%; border-bottom:1px solid #999; padding:5px 6px; text-align:left;">구분</th>
-            <th style="width:28%; border-bottom:1px solid #999; padding:5px 6px; text-align:left;">내용</th>
-            <th style="width:25%; border-bottom:1px solid #999; padding:5px 6px; text-align:left;">비고</th>
-            <th style="width:15%; border-bottom:1px solid #999; padding:5px 6px; text-align:right;">금액</th>
-            <th style="width:15%; border-bottom:1px solid #999; padding:5px 6px; text-align:right;">잔액</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr style="background:#fafafa;"><td colspan="5" style="border-bottom:1px solid #eee; padding:5px 6px;"><b>이월 잔액</b></td><td style="border-bottom:1px solid #eee; padding:5px 6px; text-align:right;"><b>${openingBalance.toLocaleString()}</b></td></tr>
-          ${rowsHtml}
-        </tbody>
-      </table>
-      <div style="display:flex; justify-content:flex-end; margin-top:10px;">
-        <table style="font-size:12px;">
-          <tr><td style="color:#666; padding:2px 14px 2px 0;">기간 중 매출 합계</td><td style="text-align:right; padding:2px 0;">${salesSum.toLocaleString()}원</td></tr>
-          ${deductSum > 0 ? `<tr><td style="color:#666; padding:2px 14px 2px 0;">반품·불량 차감</td><td style="text-align:right; padding:2px 0;">-${deductSum.toLocaleString()}원</td></tr>` : ''}
-          <tr><td style="color:#666; padding:2px 14px 2px 0;">기간 중 입금 합계</td><td style="text-align:right; padding:2px 0;">${paySum.toLocaleString()}원</td></tr>
-          <tr><td style="font-weight:700; padding:4px 14px 2px 0; border-top:1px solid #ccc;">최종 잔액</td><td style="text-align:right; font-weight:700; padding:4px 0 2px; border-top:1px solid #ccc;">${running.toLocaleString()}원</td></tr>
-        </table>
-      </div>
-      <div style="text-align:center; font-size:11px; color:#999; margin-top:16px;">항상 좋은 거래 감사드립니다.</div>
-    </div>
-  `;
-  document.getElementById('printArea').innerHTML = html;
-  setTimeout(() => window.print(), 100);
+  // 인쇄 / 카톡 공유 모두 똑같은 모양(같은 크기의 장으로 나뉜 내역서)을 씀
+  const pagesHtml = await buildLedgerImagePages({ customer, startDate, endDate, openingBalance, rows: rowsInRange, salesSum, paySum, deductSum, finalBalance: running, bizBlock }, { forPrint: !mode });
+  await deliverStatementHtml(pagesHtml, mode, customer);
 }
 function buildCustomerLedgerEvents(t_c) {
   // 이 거래처의 모든 사건(매출/반품·불량/입금)을 날짜순으로 하나의 흐름으로 만듦 (화면표시/인쇄 둘 다 이 함수 하나만 씀)
@@ -7418,7 +8236,7 @@ function buildCustomerLedgerEvents(t_c) {
     if (e.isSample) continue; // 샘플로 준 건(매출 0원)은 명세서랑 똑같이 원장에도 안 보이게 함
     if (e.isReturn || e.isDefect) {
       if (e.deductAmount != null) {
-        events.push({ id: e.id, date: e.date, type: e.isDefect ? '불량' : '반품', desc: `${e.item} ${e.color || ''}`, detail: `${Math.abs(e.amount)}${e.unit || 'y'}${e.unitPrice ? ` × ${e.unitPrice.toLocaleString()}원` : ''}${e.deductTax > 0 ? ` (세액 ${e.deductTax.toLocaleString()}원 포함)` : ''}`, amount: -e.deductAmount, note: e.note || e.defectNote || '' });
+        events.push({ id: e.id, date: e.date, type: e.isDefect ? '불량' : '반품', desc: `${e.item} ${e.color || ''}`, detail: `${Math.abs(e.amount)}${e.unit || 'y'}${e.unitPrice ? ` × ${e.unitPrice.toLocaleString()}원` : ''}${e.deductTax > 0 ? ` (세액 ${e.deductTax.toLocaleString()}원 포함)` : ''}`, amount: -e.deductAmount, note: e.note || e.defectNote || '', qtyText: `${Math.abs(e.amount)}${e.unit || 'y'}`, unitPrice: e.unitPrice || null });
       }
       continue;
     }
@@ -7430,7 +8248,8 @@ function buildCustomerLedgerEvents(t_c) {
       const detail = (isCarry || e.isFee) ? '' : `${qtyLabel}${breakdownText}${e.unitPrice ? ` × ${e.unitPrice.toLocaleString()}원` : ' (단가 미입력)'}`;
       // 원래 매출액은 절대 줄이지 않고 그대로 한 줄로 보여주고, 공제가 있으면 "공제" 라는 별도의 마이너스 줄을 따로 추가함
       // (예전엔 매출액에서 공제를 미리 뺀 값 하나만 보여줘서, 마치 원래 매출액 자체가 줄어든 것처럼 헷갈리게 보였음)
-      events.push({ id: e.id, date: e.date, type: '매출', desc: isCarry ? '이월 미수금' : (e.isFee ? `추가금${e.note ? ` - ${e.note}` : ''}` : `${e.item} ${e.color || ''}`), detail, amount: e.saleAmount, isCarry, note: isCarry || e.isFee ? '' : (e.note || '') });
+      events.push({ id: e.id, date: e.date, type: '매출', desc: isCarry ? '이월 미수금' : (e.isFee ? `추가금${e.note ? ` - ${e.note}` : ''}` : `${e.item} ${e.color || ''}`), detail, amount: e.saleAmount, isCarry, note: isCarry || e.isFee ? '' : (e.note || ''),
+        qtyText: (isCarry || e.isFee) ? '' : `${isJeolUnit ? (e.yardsShipped || '') : (e.yardsShipped || e.amount)}${(isJeolUnit && !e.yardsShipped) ? '' : (isJeolUnit ? 'y' : (e.unit || 'y'))}`, jeolCount: (isJeolUnit && !isCarry && !e.isFee) ? e.amount : null, unitPrice: (isCarry || e.isFee) ? null : (e.unitPrice || null), priceMissing: !(isCarry || e.isFee) && !e.unitPrice });
       if (e.discount > 0) {
         events.push({ id: e.id, date: e.discountDate || e.date, type: '공제', desc: '공제처리', detail: '', amount: -e.discount, note: e.discountReason || '' });
       }
@@ -10624,7 +11443,7 @@ function renderCustomerBuckets(list2) {
         inner.appendChild(factoryHead);
         for (const o of fItems) {
           const card = renderOrderCard(o, true);
-          if (!o.done) {
+          if (!o.done && !o.isSample) { // 샘플은 선수금 명세서 대상이 아님
             const checkWrap = document.createElement('label');
             checkWrap.style.cssText = 'display:flex; align-items:center; gap:6px; padding:2px 4px 0;';
             checkWrap.innerHTML = `<input type="checkbox" class="preship-item-check" data-id="${o.id}" style="width:auto;"> <span style="font-size:11px; color:var(--muted);">선수금 명세서에 포함</span>`;
@@ -10756,6 +11575,7 @@ function openOrderAddModal(prefCustomer, prefFactory) { // 이월장부에서 �
   document.getElementById('orderModalTitle').textContent = pre ? `발주 추가 · ${prefCustomer}` : '새 발주 등록';
   document.getElementById('o-date').value = toDateInputValue(todayStr());
   document.getElementById('o-customer').value = pre ? prefCustomer : '';
+  document.getElementById('o-sample').checked = false;
   document.getElementById('o-multi-wrap').classList.remove('hidden');
   document.getElementById('o-single-wrap').classList.add('hidden');
   document.getElementById('o-multi-list').innerHTML = '';
@@ -10826,6 +11646,7 @@ function openOrderEditModal(id) {
   document.getElementById('orderModalTitle').textContent = '발주 수정';
   document.getElementById('o-date').value = toDateInputValue(o.date) || toDateInputValue(todayStr());
   document.getElementById('o-customer').value = o.customer || '';
+  document.getElementById('o-sample').checked = !!o.isSample;
   document.getElementById('o-multi-wrap').classList.add('hidden');
   document.getElementById('o-single-wrap').classList.remove('hidden');
   document.getElementById('o-factory').value = o.factory || '';
@@ -10898,6 +11719,7 @@ async function saveOrderAddInner() {
   let customer = document.getElementById('o-customer').value.trim();
   if (!customer) { showToast('거래처를 확인해주세요'); return; }
   customer = await confirmCustomerNameOrPick(customer);
+  const isSampleOrder = document.getElementById('o-sample').checked;
 
   if (editingOrderId === null) {
     const factoryGroups = document.querySelectorAll('.o-factory-group');
@@ -10915,7 +11737,7 @@ async function saveOrderAddInner() {
           const unit = cr.querySelector('.o-color-unit').value;
           const note = cr.querySelector('.o-color-note').value.trim();
           if (!color && orderQty <= 0 && !note) return; // 아무것도 안 채운 빈 줄은 건너뜀
-          newOrders.push({ id: genUniqueId(), date, customer, factory, item, color, orderQty, unit, received: 0, note, done: false });
+          newOrders.push({ id: genUniqueId(), date, customer, factory, item, color, orderQty, unit, received: 0, note, done: false, ...(document.getElementById('o-sample').checked ? { isSample: true } : {}) });
         });
       });
     });
@@ -10938,6 +11760,7 @@ async function saveOrderAddInner() {
     const received = Math.max(0, parseFloat(document.getElementById('o-received').value) || 0);
     if (o) {
       o.date = date; o.customer = customer; o.factory = factory; o.item = item; o.color = color; o.orderQty = orderQty; o.unit = unit; o.note = note; o.received = received;
+      if (isSampleOrder) o.isSample = true; else delete o.isSample;
       if (orderQty > 0 && received >= orderQty && !o.done) {
         o.done = true;
         o.doneDate = date;
@@ -10946,7 +11769,7 @@ async function saveOrderAddInner() {
       }
     }
   } else {
-    orders.push({ id: genUniqueId(), date, customer, factory, item, color, orderQty, unit, received: 0, note, done: false });
+    orders.push({ id: genUniqueId(), date, customer, factory, item, color, orderQty, unit, received: 0, note, done: false, ...(isSampleOrder ? { isSample: true } : {}) });
   }
   await persistOrders(); closeOrderAddModal(); render(); showToast('저장되었습니다');
 }
@@ -11098,7 +11921,10 @@ function findRememberedPrice(customer, item, color) {
   if (liveSameColor) return liveSameColor.unitPrice;
   // 같은 컬러로 입력한 적 없으면, 같은 거래처+품목 중 가장 최근 것으로 대신 사용
   const sameItem = priceBook.filter(p => String(p.customer).trim() === t_c && String(p.item).trim() === t_i);
-  if (sameItem.length > 0) return sameItem[sameItem.length - 1].unitPrice;
+  if (sameItem.length > 0) { // 다른 컬러 단가로 대신할 땐 "가장 먼저 만든 것"이 아니라 "가장 최근에 기억시킨 것" (옛 기록은 ts가 없어서 배열 순서대로 뒤쪽이 최근으로 취급됨)
+    const best = sameItem.reduce((b, pp) => (!b || (pp.ts || 0) >= (b.ts || 0)) ? pp : b, null);
+    return best.unitPrice;
+  }
   const liveSameItem = pickLatest(live);
   if (liveSameItem) return liveSameItem.unitPrice;
   return null;
@@ -11109,10 +11935,34 @@ async function rememberPrice(customer, item, color, unitPrice) {
   let entry = priceBook.find(p => String(p.customer).trim() === t_c && String(p.item).trim() === t_i && String(p.color).trim() === t_col);
   if (entry) {
     entry.unitPrice = unitPrice;
+    entry.ts = Date.now();
   } else {
-    priceBook.push({ id: nextPriceId++, customer: t_c, item: t_i, color: t_col, unitPrice });
+    priceBook.push({ id: nextPriceId++, customer: t_c, item: t_i, color: t_col, unitPrice, ts: Date.now() });
   }
   await persistPriceBook();
+}
+function isLatestPriceSource(entry) {
+  // 같은 거래처·품목·컬러의 매출 중 이 건이 가장 최근 것인지 (옛날 기록을 고쳤다고 "지금 단가"가 그 옛날 단가로 바뀌면 안 되니까)
+  const k = c => `${String(c.customer).trim()}|${String(c.item).trim()}|${String(c.color || '').trim()}`;
+  const key = k(entry);
+  return !shipmentLog.some(o => o !== entry && isPriceSourceEntry(o) && k(o) === key && (String(o.date) > String(entry.date) || (String(o.date) === String(entry.date) && (o.id || 0) > (entry.id || 0))));
+}
+async function revertPriceMemoryAfterRemoval(entry) {
+  // 출고/매출 기록을 취소했을 때, 그 건의 단가가 그대로 "기억된 단가"로 남아있으면 (예: 단가를 잘못 쳐서 취소한 경우) 남은 기록 중 가장 최근 단가로 되돌림. 남은 기록이 없으면 건드리지 않음 (직접 정해둔 단가일 수 있어서)
+  if (!isPriceSourceEntry(entry)) return null;
+  const t_c = String(entry.customer).trim(), t_i = String(entry.item).trim(), t_col = String(entry.color || '').trim();
+  const pb = priceBook.find(p => String(p.customer).trim() === t_c && String(p.item).trim() === t_i && String(p.color).trim() === t_col);
+  if (!pb || pb.unitPrice !== entry.unitPrice) return null;
+  let prev = null;
+  for (const o of shipmentLog) {
+    if (!isPriceSourceEntry(o) || String(o.customer).trim() !== t_c || String(o.item).trim() !== t_i || String(o.color || '').trim() !== t_col) continue;
+    if (!prev || String(o.date) > String(prev.date) || (String(o.date) === String(prev.date) && (o.id || 0) > (prev.id || 0))) prev = o;
+  }
+  if (!prev || prev.unitPrice === pb.unitPrice) return null;
+  const was = pb.unitPrice;
+  pb.unitPrice = prev.unitPrice; pb.ts = Date.now();
+  await persistPriceBook();
+  return { from: was, to: prev.unitPrice };
 }
 
 function unmatchedSwatchOrderInfo(item, colorText) {
@@ -11144,8 +11994,8 @@ function openOrderReceiveModal(id) {
   document.getElementById('or-label').textContent = `이번에 출고된 수량(${o.unit || 'y'})`;
   document.getElementById('or-desc').textContent = `${o.customer} · ${o.item} ${o.color || ''} (${remain > 0 ? '이월 ' + remain + (o.unit || 'y') + ' 남음' : '전량 처리완료'}, 발주 ${o.orderQty || 0}${o.unit || 'y'} 중 ${o.received}${o.unit || 'y'} 처리)`;
   document.getElementById('or-qty').value = '';
-  document.getElementById('or-sample-mode').checked = false;
-  document.getElementById('or-price-section').classList.remove('hidden');
+  document.getElementById('or-sample-mode').checked = !!o.isSample; // 샘플로 등록한 발주는 샘플 제공이 미리 체크돼서 열림
+  document.getElementById('or-price-section').classList.toggle('hidden', !!o.isSample);
   const remembered = findRememberedPrice(o.customer, o.item, o.color);
   document.getElementById('or-price').value = remembered != null ? remembered : '';
   document.getElementById('or-tax').checked = false;
@@ -11453,6 +12303,21 @@ function compactTangsForItemColor(item, color) {
   }
 }
 
+function rollSnapshot(r) { // 출고 기록에 같이 남겨둘 롤 정보 (나중에 반품되면 입고날짜·원가·탕 메모가 같이 돌아오게)
+  const o = {};
+  if (r && r.inDate) o.inDate = r.inDate;
+  if (r && r.costPerY != null) o.costPerY = r.costPerY;
+  if (r && r.note) o.note = r.note;
+  return o;
+}
+function enrichBreakdown(newArr, oldArr) { // 출고 수정으로 탕별 내역을 다시 만들 때도 날짜 등 정보가 사라지지 않게 (예전 기록 → 없으면 지금 롤에서)
+  for (const p of (newArr || [])) {
+    if (!p || p.rollId == null || p.inDate) continue;
+    const prior = (oldArr || []).find(b => b && b.rollId === p.rollId && b.inDate);
+    const src = prior || rolls.find(r => r.id === p.rollId);
+    if (src) Object.assign(p, rollSnapshot(src));
+  }
+}
 async function deductFromInventory(item, color, amount, tang) {
   const t_item = resolveInventoryItem(item);
   const t_color = String(resolveInventoryColor(item, color)).trim();
@@ -11469,7 +12334,7 @@ async function deductFromInventory(item, color, amount, tang) {
   for (const r of matches) {
     if (remain <= 0) break;
     const take = Math.min(r.qty, remain);
-    if (take > 0) breakdown.push({ tang: r.tang, qty: Math.round(take * 100) / 100, rollId: r.id });
+    if (take > 0) breakdown.push({ tang: r.tang, qty: Math.round(take * 100) / 100, rollId: r.id, ...rollSnapshot(r) });
     if (r.qty <= remain) {
       remain = Math.round((remain - r.qty) * 100) / 100;
       r.qty = 0;
@@ -11604,7 +12469,7 @@ async function confirmOrderReceiveInner(o) {
         roll.qty = Math.round(Math.max(0, roll.qty - take) * 100) / 100;
         yardsShipped += take;
         deductedFromStock += take;
-        if (take > 0) breakdown.push({ tang: roll.tang, qty: Math.round(take * 100) / 100, rollId: roll.id });
+        if (take > 0) breakdown.push({ tang: roll.tang, qty: Math.round(take * 100) / 100, rollId: roll.id, ...rollSnapshot(roll) });
       }
       breakdown.push(...newTangEntriesY);
       yardsShipped = Math.round((yardsShipped + newTangTotal) * 100) / 100; // 새 탕 물량은 기존 재고 차감 없이 그대로 출고량에 포함
@@ -11788,6 +12653,43 @@ let pendingExtraOrderCandidates = []; // 거래처 카드에서 추가금 열었
 let pendingExtraOrderAutoSelected = false; // 공장 그룹 버튼처럼 이미 대상이 확정된 경우, 체크박스 확인 없이 후보 전체를 그대로 씀
 let pendingReturnLinkGroupId = null; // 발주와 같이 등록되는 추가금을 서로 연결해두기 위한 값
 
+function resolveReturnPiece(customer, item, color, saleEntryId, qty, forceTang) {
+  // 반품되는 원단이 원래 어느 롤(탕·입고날짜)에서 나갔는지 찾아줌. 그 거래처에 나간 가장 최근 출고 기록 기준 (매출 건에서 반품을 열었으면 그 건 기준)
+  const t_c = String(customer || '').trim(), t_i = String(item || '').trim();
+  if (!t_i) return null;
+  const t_col = String(resolveInventoryColor(item, color)).trim();
+  let src = null;
+  if (saleEntryId != null) src = shipmentLog.find(x => x.id === saleEntryId) || null;
+  else if (t_c) {
+    for (const e of shipmentLog) {
+      if (e.isReturn || e.isDefect || e.isFee || e.manualClose) continue;
+      if (String(e.customer || '').trim() !== t_c || String(e.item || '').trim() !== t_i || String(resolveInventoryColor(e.item, e.color)).trim() !== t_col) continue;
+      if (!(e.deductBreakdown || []).some(b => b && b.rollId != null && b.qty > 0)) continue;
+      if (!src || String(e.date) > String(src.date) || (String(e.date) === String(src.date) && (e.id || 0) > (src.id || 0))) src = e;
+    }
+  }
+  if (!src) return null;
+  const pool = rolls.filter(r => String(r.item).trim() === t_i && String(r.color).trim() === t_col && !r.defective);
+  const pieces = (src.deductBreakdown || []).filter(b => b && b.rollId != null && b.qty > 0).map(b => {
+    const live = rolls.find(r => r.id === b.rollId);
+    const inDate = b.inDate || (live && live.inDate) || '';
+    const costPerY = b.costPerY != null ? b.costPerY : (live ? live.costPerY : undefined);
+    const note = b.note || (live && live.note) || '';
+    let tang;
+    if (live && !live.defective) tang = live.tang; // 1) 그 롤이 아직 있으면 지금 그 탕 번호 (탕 번호가 앞으로 당겨졌어도 정확함)
+    else {
+      const sameDate = inDate ? Array.from(new Set(pool.filter(r => r.inDate === inDate).map(r => r.tang))) : [];
+      if (sameDate.length === 1) tang = sameDate[0]; // 2) 롤은 없어졌어도 같은 입고날짜의 탕이 남아있으면 그 탕으로 편입
+      else if (sameDate.includes(b.tang)) tang = b.tang;
+      else if (!pool.some(r => r.tang === b.tang && r.qty > 0)) tang = b.tang; // 3) 그 탕 번호가 비어있으면 원래 번호로
+      else tang = pool.reduce((m, r) => Math.max(m, r.tang), 0) + 1; // 4) 다른 탕이 차지하고 있으면 새 탕 번호
+    }
+    return { tang, inDate, costPerY, note, qty: b.qty };
+  });
+  if (pieces.length === 0) return null;
+  if (forceTang != null) return pieces.find(pc => pc.tang === forceTang) || null;
+  return pieces.find(pc => pc.qty >= (qty || 0)) || pieces[0];
+}
 function addReturnRow(item, color, unit, note) {
   const listEl = document.getElementById('ret-multi-rows');
   const row = document.createElement('div');
@@ -11799,7 +12701,7 @@ function addReturnRow(item, color, unit, note) {
       <div><input type="text" class="ret-row-color" placeholder="칼라 (예: 2번진청)" value="${escAttr(color || '')}" autocomplete="off" oninput="showColorSuggestions(this, this.closest('.ret-row').querySelector('.ret-row-item')); updateReturnRowTangHint(this)" onfocus="showColorSuggestions(this, this.closest('.ret-row').querySelector('.ret-row-item'))" onblur="hideItemSuggestionsDelayed()"></div>
     </div>
     <div style="display:flex; gap:6px; align-items:center; margin-top:6px;">
-      <input type="number" step="0.1" class="ret-row-qty" placeholder="수량" style="flex:1;">
+      <input type="number" step="0.1" class="ret-row-qty" placeholder="수량" oninput="updateReturnRowTangHint(this)" style="flex:1;">
       <select class="ret-row-unit" style="flex:none; width:64px;">
         <option value="y" ${unit !== '절' ? 'selected' : ''}>y</option>
         <option value="절" ${unit === '절' ? 'selected' : ''}>절</option>
@@ -11820,6 +12722,18 @@ function addReturnRow(item, color, unit, note) {
   updateReturnRowTangHint(row.querySelector('.ret-row-item'));
 }
 function updateReturnRowTangHint(fromEl) {
+  _updateReturnRowTangHintBase(fromEl);
+  const row = fromEl.closest('.ret-row');
+  const tangInput = row.querySelector('.ret-row-tang');
+  if (tangInput.dataset.userEdited) return;
+  const cust = document.getElementById('ret-customer').value;
+  const piece = resolveReturnPiece(cust, row.querySelector('.ret-row-item').value, row.querySelector('.ret-row-color').value, pendingReturnSaleEntryId, parseFloat(row.querySelector('.ret-row-qty').value) || 0, null);
+  if (!piece) return;
+  tangInput.value = piece.tang;
+  row.querySelector('.ret-row-tang-hint').textContent = `원래 나갔던 탕${piece.tang}${piece.inDate ? ' (입고 ' + piece.inDate + ')' : ''}으로 들어가요`;
+}
+document.getElementById('ret-customer').addEventListener('input', () => document.querySelectorAll('#ret-multi-rows .ret-row-item').forEach(el => updateReturnRowTangHint(el))); // 거래처를 나중에 입력/수정해도 원래 탕이 따라 채워지게
+function _updateReturnRowTangHintBase(fromEl) {
   const row = fromEl.closest('.ret-row');
   const item = row.querySelector('.ret-row-item').value.trim();
   const color = row.querySelector('.ret-row-color').value.trim();
@@ -11963,7 +12877,7 @@ async function openReturnFromMultiOrderForm() {
           const unit = cr.querySelector('.o-color-unit').value;
           const note = cr.querySelector('.o-color-note').value.trim();
           if (!color && orderQty <= 0 && !note) return; // 아무것도 안 채운 빈 줄은 건너뜀
-          newOrders.push({ id: genUniqueId(), date, customer, factory, item, color, orderQty, unit, received: 0, note, done: false });
+          newOrders.push({ id: genUniqueId(), date, customer, factory, item, color, orderQty, unit, received: 0, note, done: false, ...(document.getElementById('o-sample').checked ? { isSample: true } : {}) });
         });
       });
     });
@@ -12013,10 +12927,11 @@ async function openReturnFromOrderForm() {
       targetOrder.date = date; targetOrder.customer = customer; targetOrder.factory = factory; targetOrder.item = item; targetOrder.color = color; targetOrder.orderQty = orderQty; targetOrder.unit = unit; targetOrder.note = note; targetOrder.received = received;
       if (orderQty > 0 && received >= orderQty && !targetOrder.done) { targetOrder.done = true; targetOrder.doneDate = date; }
       else if (orderQty > 0 && received < orderQty && targetOrder.done) { targetOrder.done = false; targetOrder.doneDate = null; }
+      if (document.getElementById('o-sample').checked) targetOrder.isSample = true; else delete targetOrder.isSample;
     }
   } else if (item) {
     // 발주 폼에 입력해둔 내용이 있으면 먼저 저장하고 넘어감 - 안 그러면 추가금만 등록되고 발주는 그냥 날아가버림
-    targetOrder = { id: genUniqueId(), date, customer, factory, item, color, orderQty, unit, received: 0, note, done: false };
+    targetOrder = { id: genUniqueId(), date, customer, factory, item, color, orderQty, unit, received: 0, note, done: false, ...(document.getElementById('o-sample').checked ? { isSample: true } : {}) };
     orders.push(targetOrder);
   }
   let linkGroupId = null;
@@ -12213,14 +13128,18 @@ async function confirmReturnInner() {
 
     let returnAddedToInventory = false;
     let returnRollId = null;
-    const chosenTang = parseInt(rowEl.querySelector('.ret-row-tang').value) || 1;
+    const tangElForRet = rowEl.querySelector('.ret-row-tang');
+    let chosenTang = parseInt(tangElForRet.value) || 1;
+    let retPiece = null;
     if (!isDefectType) {
+      retPiece = resolveReturnPiece(customer, item, color, pendingReturnSaleEntryId, yardsAmount, tangElForRet.dataset.userEdited ? chosenTang : null);
+      if (retPiece && !tangElForRet.dataset.userEdited) chosenTang = retPiece.tang;
       if (isKnownItemForReturn(item)) {
         const resolvedColor = resolveInventoryColor(item, color);
         const t_it = String(item).trim();
         const existingCat = (rolls.find(r => String(r.item).trim() === t_it) || {}).cat || (swatchInfo.find(s => String(s.item).trim() === t_it && s.cat) || {}).cat || (costs.find(c => !c.color && String(c.item).trim() === t_it && c.cat) || {}).cat || '';
         // 반품은 기존 재고에 합치지 않고, 항상 새 개별 항목으로 넣음 (같은 탕 번호여도 따로 구분되게)
-        const newRoll = { id: nextId++, cat: existingCat, item, color: resolvedColor, tang: chosenTang, qty: yardsAmount };
+        const newRoll = { id: nextId++, cat: existingCat, item, color: resolvedColor, tang: chosenTang, qty: yardsAmount, ...(retPiece ? rollSnapshot(retPiece) : {}) };
         rolls.push(newRoll);
         returnRollId = newRoll.id;
         returnAddedToInventory = true;
@@ -12372,6 +13291,281 @@ async function deleteOrder(id) {
     await persistShipmentLog();
   }
   await persistOrders(); render(); showToast('삭제되었습니다');
+}
+
+
+// ---------- 샘플 내역서 (이월장부에서 "🎁 샘플 발주"로 등록한 건을 모아 거래처에 주는 내역서 · A4 한 장을 4칸으로 잘라 쓰는 크기) ----------
+const SAMPLE_STMT_DEFAULTS = { bizNumber: '288-61-00649', bizName: '백야', bizOwner: '백민재', address: '종로구 종로6가 종합시장 A동 3059호', tel: '(02)2277-9330', fax: '2277-9382', bizType: '도/소매', bizItem: '화섬직', bank: '하나은행 155-910051-44504 (예금주: 백민재(백야))' };
+const SAMPLE_STMT_ROWS_PER_SLIP = 9;
+const SAMPLE_LOGO_SRC = 'data:image/png;base64,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';
+const SAMPLE_QR_SRC = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAASwAAAEsAQAAAABRBrPYAAACGUlEQVR42u1aMZLjMAwDvIXc5QnyT/I0y0/LT5QfXDq5WOEK0s7sVdtYd7dDFZnMLJqAS4IESeEb7zXhW+/vwHb6WwBsy06W5wzgyQmb/2nCP/0TfgKMkiQV7BOA1LEtEAsAIEuSWvA2ALaRHoC17hPWCor3BgC7J0nwNgpmjFN850LwNhyWOtaaOlY1So85eBsKW6UOYJ9Mk/EkWZA6gCSpBm/Xw2R9UMGhBtu9Uby/PB7kHLxdDIPez//5S27wNDjer+Dt2ig0AABVAGCtRwla1eAyUVNE4WpY6kBusqmB9xfJJUnWLVm7GrxdnwtU8TpElaxuqaGajiqVoyINqkhHMVLzYvR+qxojClercwdyA5DtG1UAHvEIdR5Ykb7SXsHjI9R52Lwg6ZPkTSI5mVjb1JYbsC17eKojdCGrY62HOJQsb1eRm2VF5MLVnapUnjPFJXWX4wdJb1JTtxgFb7h6y6NqHx/HvABKj5tU3FaKijRAnaXmGx2bF7L62R6ZqxEVaUCPlE/G85/zgnVQEYUBsOcsr0MVFDl/DUUKXRjnqb6zotEMDamZlxG5MMjBsGJU7RjAzaTDW4ooDFFn+ZRQzv2Cx8N974gCRt1g2PkFsD5uHQBka7bgbSxMLPlF8m66AL8DUExto2Gpn9t/2f5ti73zSF1op7F6+qzVLL3QBYy7wfAxjbx9UhUil+NqMni7FMb//+D5N+zQs4HlvEFcAAAAAElFTkSuQmCC';
+let spsTab = 'wait';
+const spsOff = new Set(); // 대기 목록에서 체크를 끈 건 (기본은 전부 체크)
+const spsOn = new Set(); // 완료 목록에서 체크한 건 (기본은 전부 해제)
+let spsPrices = {}; // 이 화면에서 고친 단가 (건 id -> 숫자 또는 null=비움)
+
+function openSampleStmt() {
+  spsTab = 'wait'; spsOff.clear(); spsOn.clear(); spsPrices = {};
+  document.getElementById('sps-customer').value = '';
+  document.getElementById('sps-slot').value = '1';
+  document.getElementById('sps-tax').checked = false;
+  renderSampleStmt();
+  document.getElementById('sampleStmtModal').classList.add('open');
+}
+let spsRenderedCust = null;
+function spsCustChanged() { if ((document.getElementById('sps-customer').value || '').trim() !== spsRenderedCust) renderSampleStmt(); }
+function closeSampleStmt() { document.getElementById('sampleStmtModal').classList.remove('open'); }
+function spsRows() {
+  const t = (document.getElementById('sps-customer').value || '').trim();
+  const rows = [];
+  for (const o of orders) {
+    if (!o || !o.isSample) continue;
+    if (t && String(o.customer || '').trim() !== t) continue;
+    const unit = o.unit === '절' ? '절' : 'y';
+    const orderQty = Number(o.orderQty) || 0, received = Number(o.received) || 0;
+    const qty = o.done ? (received > 0 ? received : orderQty) : Math.max(0, orderQty - received); // 대기=아직 안 나간 양, 완료=실제 나간 양
+    if (!(qty > 0)) continue;
+    const yards = unit === '절' ? Math.round(qty * 55 * 100) / 100 : qty; // 절은 선수금 명세서와 같이 1절=55y로 환산
+    rows.push({ o, qty, unit, yards, tab: o.done ? 'done' : 'wait', date: o.done ? (o.doneDate || o.date) : o.date });
+  }
+  rows.sort((a, b) => String(a.o.customer || '').localeCompare(String(b.o.customer || ''), 'ko') || String(a.date || '').localeCompare(String(b.date || '')) || (Number(a.o.id) - Number(b.o.id)));
+  return rows;
+}
+function spsPriceOf(o) { // 이 화면에서 고친 값 > 전에 인쇄한 단가 > 품목의 매장판가
+  if (Object.prototype.hasOwnProperty.call(spsPrices, o.id)) return spsPrices[o.id];
+  if (Number(o.samplePrice) > 0) return Number(o.samplePrice);
+  return getStorePrice(o.item);
+}
+function spsAmount(r) { const p = spsPriceOf(r.o); return p > 0 ? Math.round(r.yards * p) : null; }
+function spsIsOn(r) { return r.o.done ? spsOn.has(r.o.id) : !spsOff.has(r.o.id); }
+function spsMD(d) { const p = String(d || '').split('.').map(x => x.trim()); return p.length >= 3 ? `${p[1]}/${p[2]}` : String(d || ''); }
+function spsNum(v) { return String(Math.round(v * 100) / 100); }
+function spsSetTab(t) { spsTab = t; renderSampleStmt(); }
+function spsToggle(id, checked) {
+  const o = orders.find(x => x.id === id); if (!o) return;
+  if (o.done) { if (checked) spsOn.add(id); else spsOn.delete(id); }
+  else { if (checked) spsOff.delete(id); else spsOff.add(id); }
+  spsRefreshAmounts();
+}
+function spsSetPrice(id, raw, propagate) {
+  const v = parseFloat(String(raw).replace(/[,\s원]/g, ''));
+  const price = v > 0 ? v : null;
+  spsPrices[id] = price;
+  if (propagate && price != null) { // 같은 품목 중 단가가 비어있는 다른 줄에도 같이 채워줌 (품목마다 한 번만 입력하면 되게)
+    const me = orders.find(x => x.id === id);
+    if (me) for (const r of spsRows()) {
+      if (r.o.id !== id && String(r.o.item).trim() === String(me.item).trim() && !(spsPriceOf(r.o) > 0)) {
+        spsPrices[r.o.id] = price;
+        const el = document.getElementById('sps-price-' + r.o.id);
+        if (el) { el.value = price.toLocaleString(); el.style.borderColor = ''; el.style.background = ''; }
+      }
+    }
+  }
+  const el = document.getElementById('sps-price-' + id);
+  if (el) { el.style.borderColor = price == null ? '#e08a7a' : ''; el.style.background = price == null ? '#fff3f0' : ''; }
+  spsRefreshAmounts();
+}
+function renderSampleStmt() {
+  spsRenderedCust = (document.getElementById('sps-customer').value || '').trim();
+  const all = spsRows();
+  const waitN = all.filter(r => r.tab === 'wait').length, doneN = all.length - waitN;
+  const chip = (t, label, on) => `<span onclick="spsSetTab('${t}')" style="cursor:pointer;padding:6px 14px;border-radius:20px;font-size:12px;font-weight:600;background:${on ? 'var(--primary-dark)' : '#ede3d0'};color:${on ? '#fff' : '#5f5e5a'};">${label}</span>`;
+  document.getElementById('sps-tabs').innerHTML = chip('wait', `대기 ${waitN}`, spsTab === 'wait') + chip('done', `완료 ${doneN}`, spsTab === 'done');
+  const rows = all.filter(r => r.tab === spsTab);
+  const listEl = document.getElementById('sps-list');
+  if (rows.length === 0) {
+    listEl.innerHTML = `<div class="empty" style="padding:24px 10px;">${spsTab === 'wait' ? '출고 전인 샘플 발주가 없어요<br><span style="font-size:11px;">이월장부에서 발주 등록할 때 "🎁 샘플 발주"를 체크하면 여기 모여요</span>' : '출고 완료된 샘플이 없어요'}</div>`;
+  } else {
+    const multi = new Set(rows.map(r => String(r.o.customer || '').trim())).size > 1;
+    let lastCust = null, html = '';
+    for (const r of rows) {
+      const o = r.o, cust = String(o.customer || '').trim();
+      if (multi && cust !== lastCust) { html += `<div style="font-size:12px;font-weight:700;color:var(--primary-dark);margin:10px 0 2px;">${esc(cust || '(거래처 미입력)')}</div>`; }
+      lastCust = cust;
+      const p = spsPriceOf(o);
+      const qtyLabel = r.unit === '절' ? `${spsNum(r.qty)}절 ≈ ${spsNum(r.yards)}y` : `${spsNum(r.qty)}y`;
+      html += `<div style="display:flex;align-items:center;gap:8px;padding:9px 2px;border-bottom:1px solid var(--border);">
+        <input type="checkbox" ${spsIsOn(r) ? 'checked' : ''} onchange="spsToggle(${o.id}, this.checked)" style="width:18px;height:18px;flex:none;margin:0;padding:0;">
+        <div style="flex:1;min-width:0;"><div style="font-size:14px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(o.item)} <span style="font-weight:500;">${esc(o.color || '')}</span></div><div style="font-size:11px;color:var(--muted);">${qtyLabel} · ${esc(spsMD(r.date))}${spsTab === 'done' ? ' 출고' : ''}</div></div>
+        <input id="sps-price-${o.id}" type="text" inputmode="decimal" placeholder="단가" value="${p > 0 ? p.toLocaleString() : ''}" oninput="spsSetPrice(${o.id}, this.value, false)" onchange="spsSetPrice(${o.id}, this.value, true)" style="width:64px;text-align:right;padding:5px 6px;font-size:13px;${p > 0 ? '' : 'border-color:#e08a7a;background:#fff3f0;'}">
+        <div id="sps-amt-${o.id}" style="width:62px;text-align:right;font-size:13px;font-weight:700;"></div>
+      </div>`;
+    }
+    listEl.innerHTML = html;
+  }
+  spsRefreshAmounts();
+}
+function spsRefreshAmounts() {
+  const rows = spsRows().filter(r => r.tab === spsTab);
+  let n = 0, yards = 0, total = 0, missing = 0;
+  for (const r of rows) {
+    const amt = spsAmount(r);
+    const el = document.getElementById('sps-amt-' + r.o.id);
+    if (el) { el.textContent = amt != null ? amt.toLocaleString() : '미입력'; el.style.color = amt != null ? '' : '#c0392b'; }
+    if (!spsIsOn(r)) continue;
+    n++; yards += r.yards;
+    if (amt != null) total += amt; else missing++;
+  }
+  const withTax = document.getElementById('sps-tax').checked;
+  let tax = 0;
+  if (withTax) for (const sl of spsGroupSlips(spsGroupByCustomer(rows.filter(spsIsOn)))) tax += Math.round(spsSlipSupply(sl) * 0.1); // 칸(장)별로 세액을 계산하니까 인쇄물과 같은 값
+  const foot = document.getElementById('sps-foot');
+  foot.innerHTML = rows.length === 0 ? '' : `<div style="display:flex;justify-content:space-between;align-items:center;margin-top:10px;font-size:13px;"><span style="color:var(--muted);">선택 ${n}건 · ${spsNum(yards)}y</span><span style="font-weight:800;font-size:15px;">${withTax ? `${total.toLocaleString()} + 세액 ${tax.toLocaleString()} = ${(total + tax).toLocaleString()}원` : `샘플 가액 ${total.toLocaleString()}원`}</span></div>${missing > 0 ? `<div style="font-size:11px;color:#c0392b;margin-top:4px;">단가 미입력 ${missing}건 — 입력하면 재고 탭 품목의 매장판가로도 저장돼요</div>` : ''}`;
+  const btn = document.getElementById('sps-print-btn');
+  btn.textContent = `인쇄 (${n}건)`; btn.disabled = n === 0; btn.style.opacity = n === 0 ? '.5' : '';
+}
+function spsBankLines(bank) { // "하나은행 155-910051-44504 (예금주: 백민재(백야))" -> ["하나은행 155-910051-44504", "백민재(백야)"]
+  const t = String(bank || '').trim();
+  const m = t.match(/^(.*?)\s*[(\[]?\s*예금주\s*[:：]?\s*(.+?)[)\]]?\s*$/);
+  if (m && m[1].trim() && m[2].trim()) return [m[1].trim(), m[2].trim()];
+  return [t, ''];
+}
+function spsGroupSlips(rowsByCustomer) { // 거래처별로 줄을 나눠 칸(slip) 목록으로 - 인쇄와 화면 합계가 같은 기준을 쓰게 함
+  const slips = [];
+  for (const [cust, rows] of rowsByCustomer) {
+    const pages = Math.max(1, Math.ceil(rows.length / SAMPLE_STMT_ROWS_PER_SLIP));
+    for (let i = 0; i < pages; i++) slips.push({ cust, page: i + 1, pages, rows: rows.slice(i * SAMPLE_STMT_ROWS_PER_SLIP, (i + 1) * SAMPLE_STMT_ROWS_PER_SLIP) });
+  }
+  return slips;
+}
+function spsGroupByCustomer(rows) {
+  const byCust = new Map();
+  for (const r of rows) { const c = String(r.o.customer || '').trim() || '(거래처 미입력)'; if (!byCust.has(c)) byCust.set(c, []); byCust.get(c).push(r); }
+  return byCust;
+}
+function spsSlipSupply(slip) { let t = 0; for (const r of slip.rows) { const a = spsAmount(r); if (a != null) t += a; } return t; }
+function spsSlipHtml(slip, today, withTax) {
+  const b = settings, d = SAMPLE_STMT_DEFAULTS;
+  const biz = { number: b.bizNumber || d.bizNumber, name: b.bizName || d.bizName, owner: b.bizOwner || d.bizOwner, address: b.bizAddress || d.address, type: b.bizType || d.bizType, item: b.bizItem || d.bizItem };
+  const [bank1, bank2] = spsBankLines(b.bankInfo || d.bank);
+  const rows = slip.rows;
+  let yards = 0, total = 0;
+  const trs = [];
+  for (const r of rows) {
+    const p = spsPriceOf(r.o), amt = spsAmount(r);
+    yards += r.yards; if (amt != null) total += amt;
+    trs.push(`<tr><td class="c">${esc(spsMD(r.date))}</td><td><span class="ell">${esc(r.o.item)}</span></td><td><span class="ell">${esc(r.o.color || '')}</span></td><td class="r">${spsNum(r.yards)}y</td><td class="r">${p > 0 ? p.toLocaleString() : ''}</td><td class="r">${amt != null ? amt.toLocaleString() : ''}</td></tr>`);
+  }
+  while (trs.length < SAMPLE_STMT_ROWS_PER_SLIP) trs.push('<tr><td></td><td></td><td></td><td></td><td></td><td></td></tr>');
+  const dp = String(today).split('.');
+  const dateStr = dp.length >= 3 ? `20${dp[0]} . ${dp[1]} . ${dp[2]} .` : String(today);
+  const pageTag = slip.pages > 1 ? ` <span style="font-weight:400;font-size:8.6px;">(${slip.page}/${slip.pages})</span>` : '';
+  const tax = withTax ? Math.round(total * 0.1) : 0;
+  const grand = total + tax;
+  const totalText = grand > 0 ? `원정 (₩ ${grand.toLocaleString()})` : '-';
+  return `<div class="sp${withTax ? ' tx' : ''}"><div class="kind">샘플 내역서</div>
+    <div class="logo"><img src="${SAMPLE_LOGO_SRC}" alt="BAEKYA"></div>
+    <div class="head"><div class="sup"><span class="badge">공급자</span><br>
+      <span class="k">등록번호</span>${esc(biz.number)}<br>
+      <span class="k">상호·성명</span><b>${esc(biz.name)}&nbsp;&nbsp;${esc(biz.owner)}</b><br>
+      <span class="k">소재지</span>${esc(biz.address)}<br>
+      <span class="k">전화</span><b>${esc(d.tel)}</b> &nbsp;FAX ${esc(d.fax)}<br>
+      <span class="k">업태·종목</span>${esc(biz.type)} · ${esc(biz.item)}</div>
+      <div class="rt"><div class="date">${dateStr}</div><div class="to"><b>${esc(slip.cust)}</b><span class="hon">귀하</span>${pageTag}</div><div class="sub">아래와 같이 샘플을 제공합니다</div></div></div>
+    <div class="tot"><span>샘플 가액 합계${withTax ? ' <span style="font-weight:400;font-size:7.4px;">(세액 포함)</span>' : ''}</span><span class="v">${totalText}</span></div>
+    <table class="t"><thead><tr><th style="width:11%">월/일</th><th style="width:16%">품목</th><th style="width:22%">컬러</th><th style="width:14%">수량</th><th style="width:15%">단가</th><th>금액</th></tr></thead><tbody>${trs.join('')}</tbody></table>
+    <div class="sum">
+      <div class="row"><div class="cell"><span>수량 합계</span><b>${spsNum(yards)}y (${rows.length}건)</b></div><div class="cell"><span>${withTax ? '공급가액' : '샘플 가액'}</span><b>${total.toLocaleString()}</b></div></div>
+      ${withTax ? `<div class="row"><div class="cell"><span>세액(10%)</span><b>${tax.toLocaleString()}</b></div><div class="cell"><span>합계</span><b>${grand.toLocaleString()}</b></div></div>` : ''}
+      <div class="row"><div class="cell" style="flex:2;justify-content:flex-end;gap:8px"><span>인수자 :</span><span style="width:70px;border-bottom:1px solid #888"></span><span>(인)</span></div></div>
+    </div>
+    <div class="band"><div class="qr"><img src="${SAMPLE_QR_SRC}" alt="QR"><div>카카오톡 채널추가</div></div>
+      <div class="info"><div class="acct"><b>입금계좌</b> ${esc(bank1)}</div>${bank2 ? `<div>예금주 : ${esc(bank2)}</div>` : ''}
+        <div class="nt">상기 원단은 샘플로 제공된 것이며 별도의 대금은 청구되지 않습니다.<br>원단 커팅 시 반품은 불가능합니다.</div></div></div>
+  </div>`;
+}
+const SPS_CSS_RULES = [
+  ['', 'width:210mm;height:296.6mm;display:grid;grid-template-columns:105mm 105mm;grid-template-rows:148.3mm 148.3mm;position:relative;overflow:hidden;background:#fff;color:#1c1c1c;'],
+  ['+ .sps-sheet', 'page-break-before:always;'],
+  ['*', 'box-sizing:border-box;'],
+  ['.cv', 'position:absolute;left:105mm;top:0;bottom:0;border-left:.3mm dashed #bbb;'],
+  ['.ch', 'position:absolute;top:148.3mm;left:0;right:0;border-top:.3mm dashed #bbb;'],
+  ['.sp', 'width:105mm;height:148.3mm;padding:26px 17px 10px;position:relative;overflow:hidden;'],
+  ['.kind', 'position:absolute;top:20px;right:17px;font-size:8px;font-weight:700;letter-spacing:.5px;'],
+  ['.logo', 'text-align:center;margin:8px 0 8px;line-height:0;'],
+  ['.logo img', 'height:24px;'],
+  ['.head', 'display:flex;justify-content:space-between;align-items:flex-start;'],
+  ['.sup', 'font-size:8.6px;line-height:1.55;'],
+  ['.badge', 'display:inline-block;background:#222;color:#fff;font-size:7px;padding:0 5px;margin-bottom:2px;'],
+  ['.sup .k', 'display:inline-block;width:48px;color:#555;'],
+  ['.sup b', 'font-weight:800;'],
+  ['.rt', 'text-align:right;font-size:8.6px;line-height:1.4;'],
+  ['.rt .date', 'letter-spacing:.5px;margin-top:3px;'],
+  ['.rt .to', 'font-size:15px;font-weight:700;margin-top:6px;line-height:1.25;'],
+  ['.rt .to b', 'margin-right:4px;font-weight:800;'],
+  ['.rt .to .hon', 'font-size:9.5px;font-weight:500;'],
+  ['.rt .sub', 'font-weight:700;margin-top:7px;font-size:8.6px;'],
+  ['.tot', 'border:1px solid #222;margin:7px 0 5px;display:flex;justify-content:space-between;align-items:center;padding:6px 9px;font-size:9.5px;font-weight:700;'],
+  ['.tot .v', 'font-size:15px;font-weight:800;'],
+  ['table.t', 'width:100%;border-collapse:collapse;table-layout:fixed;border:1px solid #222;'],
+  ['table.t th', 'border:0;border-bottom:1px solid #222;border-right:1px solid #c4c4c4;background:#f1f1f1;font-size:10px;font-weight:700;padding:0;height:21px;line-height:1;vertical-align:middle;color:#1c1c1c;text-align:center;'],
+  ['table.t td', 'border:0;border-bottom:1px solid #dadada;border-right:1px solid #cfcfcf;font-size:11.5px;padding:0 4px;height:25px;line-height:1;vertical-align:middle;white-space:nowrap;'],
+  ['.tx table.t td', 'height:22.5px;'], // 세액 포함은 합계 줄이 하나 늘어나서 줄 높이를 조금 줄여 맞춤
+  ['table.t th:last-child, table.t td:last-child', 'border-right:0;'],
+  ['table.t tbody tr:last-child td', 'border-bottom:0;'],
+  ['table.t .ell', 'display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;'],
+  ['.c', 'text-align:center !important;'],
+  ['.r', 'text-align:right !important;'],
+  ['.sum', 'border:1px solid #222;border-top:0;font-size:9.5px;'],
+  ['.sum .row', 'display:flex;border-top:1px solid #c4c4c4;'],
+  ['.sum .row:first-child', 'border-top:0;'],
+  ['.sum .cell', 'flex:1;padding:4px 6px;display:flex;justify-content:space-between;align-items:center;border-left:1px solid #c4c4c4;'],
+  ['.sum .cell:first-child', 'border-left:0;'],
+  ['.sum .cell b', 'font-weight:800;'],
+  ['.band', 'position:absolute;left:17px;right:17px;bottom:10px;display:flex;gap:9px;align-items:stretch;'],
+  ['.qr', 'flex:none;width:46px;text-align:center;'],
+  ['.qr img', 'width:46px;height:46px;display:block;border:1px solid #bbb;padding:1.5px;background:#fff;image-rendering:pixelated;'],
+  ['.qr div', 'font-size:6.4px;color:#333;margin-top:2px;white-space:nowrap;'],
+  ['.info', 'flex:1;font-size:8px;line-height:1.45;display:flex;flex-direction:column;justify-content:center;padding-bottom:8px;'],
+  ['.info .acct', 'font-size:8.8px;'],
+  ['.info b', 'font-weight:800;'],
+  ['.info .nt', 'margin-top:3px;padding-top:3px;border-top:1px solid #ccc;font-size:6.8px;color:#444;line-height:1.4;'],
+];
+function spsCss() {
+  return '@page{size:A4 portrait;margin:0}' + SPS_CSS_RULES.map(([sel, decl]) => {
+    if (sel === '') return `#printArea .sps-sheet{${decl}}`;
+    if (sel.startsWith('+')) return `#printArea .sps-sheet ${sel}{${decl}}`;
+    return sel.split(',').map(x => `#printArea .sps-sheet ${x.trim()}`).join(',') + `{${decl}}`;
+  }).join('');
+}
+function spsBuildSheets(rowsByCustomer, startSlot, today, withTax) {
+  const slips = spsGroupSlips(rowsByCustomer);
+  const slots = Array(Math.max(0, startSlot - 1)).fill(null).concat(slips);
+  const sheets = [];
+  for (let i = 0; i < slots.length; i += 4) {
+    const four = slots.slice(i, i + 4);
+    while (four.length < 4) four.push(null);
+    sheets.push(`<div class="sps-sheet">${four.map(sl => sl ? spsSlipHtml(sl, today, withTax) : '<div class="sp"></div>').join('')}<i class="cv"></i><i class="ch"></i></div>`);
+  }
+  return `<style>${spsCss()}</style>${sheets.join('')}`;
+}
+async function printSampleStmt() {
+  const rows = spsRows().filter(r => r.tab === spsTab && spsIsOn(r));
+  if (rows.length === 0) { showToast('인쇄할 샘플을 체크해주세요'); return; }
+  const missing = rows.filter(r => !(spsPriceOf(r.o) > 0));
+  if (missing.length > 0 && !confirm(`단가가 없는 ${missing.length}건은 단가·금액 칸이 비어서 인쇄돼요.\n그래도 인쇄할까요?`)) return;
+  // 매장판가가 없던 품목에 이 화면에서 단가를 넣었으면 그 품목의 매장판가로 저장하고, 인쇄한 단가는 건별로 기억해둠 (나중에 다시 뽑아도 같은 단가)
+  const newStore = {};
+  for (const r of rows) {
+    const p = spsPriceOf(r.o);
+    if (!(p > 0)) continue;
+    r.o.samplePrice = p;
+    const key = String(r.o.item).trim();
+    if (getStorePrice(key) == null && newStore[key] == null && Object.prototype.hasOwnProperty.call(spsPrices, r.o.id)) newStore[key] = p;
+  }
+  if (Object.keys(newStore).length > 0) {
+    const before = settings;
+    settings = { ...settings, storePrices: { ...(settings.storePrices || {}), ...newStore } };
+    const ok = await persistSettings();
+    if (ok === false) settings = before;
+  }
+  await persistOrders();
+  const byCust = spsGroupByCustomer(rows);
+  const startSlot = Math.min(4, Math.max(1, parseInt(document.getElementById('sps-slot').value) || 1));
+  document.getElementById('printArea').innerHTML = spsBuildSheets(byCust, startSlot, todayStr(), document.getElementById('sps-tax').checked);
+  setTimeout(() => window.print(), 100);
+  renderSampleStmt();
+  render();
 }
 
 // ---------- 환율 수정 ----------
