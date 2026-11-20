@@ -81,6 +81,7 @@ const LOGO = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAArwAAABTCAYAAAB9N9Q9
 const cfg = { apiKey: "AIzaSyA4Qrz16VpQuBVxTzGMyoAD9BtzIgXV0cQ", projectId: "project-8895328122777928786", appId: "1:995742705102:web:7294216d6e4745dd1df79f" };
 const app = document.getElementById('app');
 let db = null, idx = null, loadErr = false;
+const stockOpen = () => !!(sIdx && sIdx.open === true);
 let sIdx = null, sErr = false;  // 재고 탭: 서버의 pubstock_idx (품목별 컬러 재고 상태)
 const sCache = {};             // 품목 id -> {item, mix, cols}
 let hideOut = false;           // 품절 컬러 숨기기
@@ -102,7 +103,7 @@ function season() { const m = new Date().getMonth() + 1; return (m >= 3 && m <= 
 function isRecent(d) { const m = /^(\d\d)\.(\d\d)\.(\d\d)$/.exec(d || ''); if (!m) return false; const t = new Date(2000 + +m[1], +m[2] - 1, +m[3]); return (Date.now() - t.getTime()) / 864e5 <= 7; }
 
 function head(p) {
-  const tabs = [['new', '신상'], ['best', 'Best'], ['stock', '재고']];
+  const tabs = [['new', '신상'], ['best', 'Best']]; if (stockOpen()) tabs.push(['stock', '재고']); // 재고 탭은 관리자가 공개해둔 때만
   return `<div class="top"><div class="brand"><img src="${LOGO}" alt="BAEK YA"><span class="loc">동대문종합시장 A동 3059호</span></div><div class="tabs">${tabs.map(([k, n]) => `<a href="${url({ p: k })}" data-go='${JSON.stringify({ p: k })}' class="${k === p ? 'on' : ''}">${n}</a>`).join('')}</div></div>`;
 }
 function cardHtml(e, p, s) {
@@ -173,6 +174,7 @@ function detailView(P) {
 }
 async function render() {
   const P = params();
+  if (P.p === 'stock' && (sErr || (sIdx && !stockOpen()))) { history.replaceState({}, '', url({ p: 'new' })); return render(); } // 잠긴 재고 탭 주소로 들어오면 신상으로
   if (P.i && P.p === 'stock') {
     const e0 = sIdx && sIdx.items.find(x => x.id === P.i);
     const back = { p: 'stock' };
@@ -210,6 +212,7 @@ async function render() {
     document.getElementById('stocklist').innerHTML = list.length ? list.map(stockCard).join('') : '<div class="empty">검색 결과가 없어요</div>';
   });
 }
+function o_open_ok(sd) { try { return sd.exists && JSON.parse(sd.data().data || '{}').open === true; } catch (e) { return false; } }
 async function boot() {
   loadErr = false; idx = null; sIdx = null; sErr = false; render();
   try {
@@ -222,7 +225,7 @@ async function boot() {
       const sd = await db.collection('inventory').doc('pubstock_idx').get();
       let items = [];
       if (sd.exists) { const o = JSON.parse(sd.data().data || '{}'); items = Array.isArray(o.items) ? o.items : []; }
-      sIdx = { items };
+      sIdx = { items: (o_open_ok(sd) ? items : []), open: o_open_ok(sd) };
     } catch (e) { sErr = true; }
   } catch (e) { loadErr = true; idx = null; }
   render();
