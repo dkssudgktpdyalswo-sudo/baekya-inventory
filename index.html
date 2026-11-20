@@ -786,25 +786,37 @@
     </div>
     <div id="cat-stock-scope">
       <label>품목</label>
-      <input id="cat-item-search" type="text" placeholder="품번 검색 (미선택 시 전체)" oninput="renderCatalogScope()" style="width:100%;">
+      <input id="cat-item-search" type="text" placeholder="품번 검색" oninput="renderCatalogScope()" style="width:100%;">
       <div id="cat-item-results"></div>
       <div id="cat-items-sel" style="margin-top:8px;"></div>
+      <div style="display:flex; gap:6px; margin-top:6px;">
+        <button type="button" onclick="catAddAllItems()" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:8px;padding:6px 10px;font-size:12px;font-weight:600;">+ 전체 품목</button>
+        <button type="button" id="cat-stock-clear" onclick="catClearItems()" style="display:none;border:none;background:#eee;color:#555;border-radius:8px;padding:6px 10px;font-size:12px;">전체 비우기</button>
+      </div>
     </div>
     <div id="cat-new-scope" style="display:none;">
       <label>컬러 선택</label>
-      <div style="display:flex; gap:6px; flex-wrap:wrap; margin-bottom:6px;">
-        <button type="button" onclick="catQuick('pending')" style="border:none;background:#eaf3ec;color:#2f6b46;border-radius:8px;padding:6px 10px;font-size:12px;font-weight:600;">발주중인 것 전부</button>
-        <button type="button" onclick="catQuick('recent')" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:8px;padding:6px 10px;font-size:12px;font-weight:600;">최근 7일 입고</button>
-        <button type="button" onclick="catQuick('clear')" style="border:none;background:#eee;color:#555;border-radius:8px;padding:6px 10px;font-size:12px;">해제</button>
-      </div>
       <input id="cat-search" type="text" placeholder="품번 · 컬러 검색" oninput="renderCatalogScope()" style="width:100%;">
-      <div id="cat-picker" style="max-height:220px; overflow-y:auto; margin-top:6px; border:1px solid var(--border); border-radius:8px; padding:6px 8px;"></div>
+      <div id="cat-picker"></div>
+      <div id="cat-sel-list" style="margin-top:8px;"></div>
+      <div style="display:flex; gap:6px; flex-wrap:wrap; margin-top:6px;">
+        <button type="button" onclick="catQuick('pending')" style="border:none;background:#eaf3ec;color:#2f6b46;border-radius:8px;padding:6px 10px;font-size:12px;font-weight:600;">+ 발주중인 것</button>
+        <button type="button" onclick="catQuick('recent')" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:8px;padding:6px 10px;font-size:12px;font-weight:600;">+ 최근 7일 입고</button>
+        <button type="button" id="cat-new-clear" onclick="catQuick('clear')" style="display:none;border:none;background:#eee;color:#555;border-radius:8px;padding:6px 10px;font-size:12px;">전체 비우기</button>
+      </div>
     </div>
+    <label>이미지 비율</label>
+    <select id="cat-format" onchange="catUpdateCount()" style="width:100%;">
+      <option value="chat">카톡 대화용 (세로로 긴 이미지)</option>
+      <option value="promo">채널 메시지용 (4:3)</option>
+    </select>
+    <button type="button" onclick="openColorPhotoModal()" style="width:100%; margin-top:10px; border:none; background:#e8edf5; color:#3d4f6b; border-radius:8px; padding:10px 4px; font-size:13px; font-weight:700;">📷 컬러 사진 등록</button>
     <div id="cat-photo-wrap"><label>소재 사진</label>
     <div id="cat-photo-list" style="max-height:200px; overflow-y:auto;"></div></div>
     <input type="file" id="cat-photo-input" accept="image/*" style="display:none;" onchange="catPhotoChosen(this)">
     <label>제목</label>
     <input id="cat-title" type="text" style="width:100%;">
+    <div id="cat-opts">
     <label>재고 표시</label>
     <select id="cat-display" onchange="catOnDisplayChange()" style="width:100%;">
       <option value="status">상태만 (재고있음 · 소량 · 재고없음)</option>
@@ -818,12 +830,48 @@
         <select id="cat-bestdays" style="padding:3px;"><option value="30">최근 30일</option><option value="90">최근 90일</option><option value="365">최근 1년</option></select>
       </div>
     </div>
+    </div>
     <div id="cat-count" style="font-size:12px; color:var(--primary-dark); font-weight:600; margin-top:10px;"></div>
     <div style="display:flex; gap:6px; margin-top:8px;">
       <button type="button" onclick="generateCatalog('preview')" style="flex:1;border:none;background:#e8edf5;color:#3d4f6b;border-radius:8px;padding:10px 4px;font-size:13px;font-weight:600;">미리보기</button>
       <button type="button" onclick="generateCatalog('share')" style="flex:1;border:none;background:#fee500;color:#191919;border-radius:8px;padding:10px 4px;font-size:13px;font-weight:700;">💬 <span class="kakao-lbl">카톡으로 보내기</span></button>
     </div>
+    <div style="margin-top:14px; padding-top:6px; border-top:1px solid var(--border);">
+      <label style="margin-top:6px;">고객 페이지에 올리기 (카톡 채널 메뉴 링크)</label>
+      <div style="display:flex; gap:6px;">
+        <select id="pub-sec" style="flex:1;">
+          <option value="new">신상 입고</option>
+          <option value="best_fw">Best Item - F/W</option>
+          <option value="best_ss">Best Item - S/S</option>
+          <option value="stock">원단 보러가기</option>
+        </select>
+        <button type="button" id="pub-btn" onclick="publishCatalog()" style="flex:none;border:none;background:#595959;color:#fff;border-radius:8px;padding:0 16px;font-size:13px;font-weight:700;">🌐 올리기</button>
+      </div>
+      <button type="button" onclick="openPubModal()" style="width:100%; margin-top:6px; border:none; background:#eee; color:#555; border-radius:8px; padding:9px 4px; font-size:12px; font-weight:600;">올라간 목록 · 링크 관리</button>
+    </div>
     <div class="modal-actions"><button class="btn-cancel" onclick="closeCatalogModal()">닫기</button></div>
+  </div>
+</div>
+<!-- 고객 페이지 관리 -->
+<div class="modal-overlay" id="pubModal">
+  <div class="modal">
+    <h3>🌐 고객 페이지</h3>
+    <div id="pub-links"></div>
+    <div id="pub-list" style="max-height:52vh; overflow-y:auto; margin-top:8px;"></div>
+    <div class="modal-actions"><button class="btn-cancel" onclick="closePubModal()">닫기</button></div>
+  </div>
+</div>
+<!-- 컬러별 사진 등록 -->
+<div class="modal-overlay" id="colorPhotoModal">
+  <div class="modal">
+    <h3>📷 컬러 사진</h3>
+    <div id="cp-quick" style="margin-bottom:6px;"></div>
+    <input id="cp-search" type="text" placeholder="품번 검색" oninput="cpRenderSearch()" style="width:100%;">
+    <div id="cp-results"></div>
+    <div id="cp-head" style="font-size:14px; font-weight:700; margin:10px 0 4px;"></div>
+    <div id="cp-list" style="max-height:52vh; overflow-y:auto;"></div>
+    <input type="file" id="cp-input" accept="image/*" style="display:none;" onchange="cpChosen(this)">
+    <div class="modal-actions"><button class="btn-cancel" onclick="closeColorPhotoModal()">닫기</button></div>
   </div>
 </div>
 <!-- 내역서 이미지 미리보기 / 카톡 보내기 모달 -->
@@ -1314,7 +1362,7 @@
 const PASSWORD = "3059";
 const ADMIN_PASSWORD = "9503"; // 매출/미수금 탭 전용 - 필요하면 이 값만 바꿔서 변경 가능
 const DATA_VERSION = "2026-08-03-v4"; // 재고/이월장부 씨앗 데이터를 바꿀 때마다 이 값을 새로 바꿔주세요
-const APP_CODE_VERSION = "2026-11-20-v"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
+const APP_CODE_VERSION = "2026-11-20-a2"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
 const SCHEMA_STAMP = 2; // 서버 저장규칙이 확인하는 "최신 앱 도장" - 절대 자주 바꾸지 않음(이 값을 아는 코드만 저장 가능하게 서버에서 막을 때 씀)
 const CONFIRMED_EMPTY = '__CONFIRMED_EMPTY__'; // "서버가 확실하게 문서가 없다고 확인해줬다"는 걸 표시하는 특수값
                                                  // (한번도 확인 안 한 null과 구분해서, 그 사이 다른 사람이 첫 데이터를 만들었으면 충돌로 감지하기 위함)
@@ -6565,7 +6613,7 @@ const PRINT_LEDGER_CSS = SHOT_CSS.replace(/#shotRoot/g, '#printArea')
   + '#printArea .stm-img-page.ledger-print td.dhdr{padding:1px 8px !important;font-size:11.5px !important}'
   + '#printArea .stm-img-page{-webkit-print-color-adjust:exact;print-color-adjust:exact}';
 let _shotFiles = [], _shotUrls = [], _shotCustomer = '', _shotKind = '내역서';
-async function renderStatementImages(html, customer, kind, width) {
+async function renderStatementImages(html, customer, kind, width, opts) {
   kind = kind || '내역서';
   width = width || 794;
   const h2c = await loadHtml2Canvas();
@@ -6583,11 +6631,12 @@ async function renderStatementImages(html, customer, kind, width) {
     for (let i = 0; i < targets.length; i++) {
       const el = targets[i];
       const h = Math.max(el.scrollHeight, 100);
-      const scale = Math.max(1, Math.min(width < 700 ? 3 : 2.5, Math.sqrt(12000000 / (width * h)))); // 아주 긴 내역서도 폰 브라우저의 그림 크기 한도를 안 넘게
+      const scale = opts && opts.scale ? opts.scale : Math.max(1, Math.min(width < 700 ? 3 : 2.5, Math.sqrt(12000000 / (width * h)))); // 아주 긴 내역서도 폰 브라우저의 그림 크기 한도를 안 넘게
       const canvas = await h2c(el, { scale, backgroundColor: '#ffffff', useCORS: true, logging: false, width, windowWidth: width });
-      const blob = await new Promise(res => canvas.toBlob(res, 'image/png'));
+      let blob = await new Promise(res => canvas.toBlob(res, 'image/png')), ext = 'png', mime = 'image/png';
+      if (blob && opts && opts.maxBytes && blob.size > opts.maxBytes) { blob = await new Promise(res => canvas.toBlob(res, 'image/jpeg', 0.9)); ext = 'jpg'; mime = 'image/jpeg'; } // 채널 메시지 이미지는 5MB 이하여야 해서 너무 크면 JPG로
       if (!blob) throw new Error('blob');
-      files.push(new File([blob], `${safeName ? safeName + '_' : ''}${kind}_${stamp}${targets.length > 1 ? '_' + (i + 1) : ''}.png`, { type: 'image/png' }));
+      files.push(new File([blob], `${safeName ? safeName + '_' : ''}${kind}_${stamp}${targets.length > 1 ? '_' + (i + 1) : ''}.${ext}`, { type: mime }));
     }
   } finally { root.remove(); }
   return files;
@@ -6742,7 +6791,7 @@ function selectCatalogItems(cfg, universe) { // 이번에 이미지에 넣을 �
       if (cfg.itemsSel && cfg.itemsSel.size > 0 && !cfg.itemsSel.has(it.cat + '|' + it.item)) continue;
       colors = cfg.hideOut ? it.colors.filter(c => c.stock > 0) : it.colors;
     }
-    if (colors.length > 0) out.push({ ...it, colors });
+    if (colors.length > 0) out.push({ ...it, colors, allColors: it.colors });
   }
   return out;
 }
@@ -6771,12 +6820,13 @@ function catGroupsOf(it) {
   }
   return groups;
 }
-const CAT_PER_PAGE = 10; // 폰에서 스크롤 없이 한눈에 보이도록 한 장에 최대 10타일 (5줄)
-function catSplitGroups(it) { // 타일이 많으면 비슷한 개수로 나눠서 여러 장으로 (줄이 맞도록 짝수 개씩)
+const CAT_PER_PAGE = 10, CAT_PER_PAGE_PHOTO = 6; // 폰에서 스크롤 없이 한눈에 보이도록 한 장에 최대 10타일 (5줄), 컬러 사진이 들어가면 타일이 커져서 6타일 (3줄)
+const CAT_PER_PAGE_WIDE = 9; // 4:3 한 장에 3x3 타일
+function catSplitGroups(it, wide) { // 타일이 많으면 비슷한 개수로 나눠서 여러 장으로 (줄이 맞도록 짝수 개씩, 4:3은 3열이라 그냥 균등)
   const groups = catGroupsOf(it);
-  const P = Math.max(1, Math.ceil(groups.length / CAT_PER_PAGE));
+  const P = Math.max(1, Math.ceil(groups.length / (wide ? CAT_PER_PAGE_WIDE : (catItemHasColorPhoto(it) ? CAT_PER_PAGE_PHOTO : CAT_PER_PAGE))));
   let per = Math.ceil(groups.length / P);
-  if (P > 1 && per % 2) per++;
+  if (!wide && P > 1 && per % 2) per++;
   const out = [];
   for (let i = 0; i < groups.length; i += per) out.push(groups.slice(i, i + per));
   return out.length ? out : [[]];
@@ -6797,15 +6847,17 @@ async function catPhotoLoad(keys) {
   }));
   return changed;
 }
-function catPhotoCompress(file) { // 폰 사진은 크니까 긴 변 1000px JPEG로 줄여서 저장 (보통 100~200KB)
+function catPhotoCompress(file, square) { // 폰 사진은 크니까 줄여서 저장. square(px)를 주면 가운데를 정사각으로 잘라 그 크기로 (컬러 사진), 안 주면 긴 변 1000px (소재 사진 - 세로로 긴 건 정사각으로 잘라 넣음)
   return new Promise((resolve, reject) => {
     const url = URL.createObjectURL(file); const img = new Image();
     img.onload = () => {
       try {
-        const r = Math.min(1, 1000 / Math.max(img.naturalWidth, img.naturalHeight));
-        const w = Math.max(1, Math.round(img.naturalWidth * r)), h = Math.max(1, Math.round(img.naturalHeight * r));
-        const cv = document.createElement('canvas'); cv.width = w; cv.height = h;
-        const ctx = cv.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, w, h); ctx.drawImage(img, 0, 0, w, h);
+        const nw = img.naturalWidth, nh = img.naturalHeight;
+        let sx = 0, sy = 0, sw = nw, sh = nh, ow, oh;
+        if (square) { const m = Math.min(nw, nh); sx = (nw - m) / 2; sy = (nh - m) / 2; sw = sh = m; ow = oh = Math.min(square, m); }
+        else { if (nh > nw) { sy = (nh - nw) / 2; sh = nw; } const r = Math.min(1, 1000 / Math.max(sw, sh)); ow = Math.max(1, Math.round(sw * r)); oh = Math.max(1, Math.round(sh * r)); }
+        const cv = document.createElement('canvas'); cv.width = ow; cv.height = oh;
+        const ctx = cv.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, ow, oh); ctx.drawImage(img, sx, sy, sw, sh, 0, 0, ow, oh);
         let q = 0.82, out = cv.toDataURL('image/jpeg', q);
         while (out.length > 700000 && q > 0.4) { q -= 0.1; out = cv.toDataURL('image/jpeg', q); }
         URL.revokeObjectURL(url); resolve(out);
@@ -6823,7 +6875,7 @@ async function catPhotoChosen(inp) {
   try {
     const data = await catPhotoCompress(file);
     if (typeof db === 'undefined' || !db) throw new Error('nodb');
-    await db.collection('inventory').doc(catPhotoDocId(row.key)).set({ kind: 'catPhoto', key: row.key, item: row.item, dataUrl: data, updatedAt: new Date().toISOString() });
+    await db.collection('inventory').doc(catPhotoDocId(row.key)).set({ kind: 'catPhoto', key: row.key, item: row.item, dataUrl: data, updatedAt: new Date().toISOString(), stamp: SCHEMA_STAMP });
     _catPhotos[row.key] = data;
     showToast(`${row.item} 사진을 저장했어요`);
   } catch (e) { showToast('사진을 저장하지 못했어요 (사진 파일이나 인터넷 연결을 확인해주세요)'); }
@@ -6839,7 +6891,7 @@ async function catPhotoRemove(i) {
 function catRenderPhotos() {
   const box = document.getElementById('cat-photo-list'); if (!box) return;
   const cfg = readCatalogCfg();
-  const items = selectCatalogItems(cfg, _catUniverse);
+  const items = catPicked(cfg);
   const wrap = document.getElementById('cat-photo-wrap');
   if (items.length === 0 || items.length > 15) { box.innerHTML = ''; _catPhotoRows = []; if (wrap) wrap.style.display = 'none'; return; } // 15개 넘게 고르면 등록칸은 숨김 (등록된 사진은 그대로 첫 장에 들어감)
   if (wrap) wrap.style.display = '';
@@ -6862,8 +6914,76 @@ const CAT_BRAND = {
   qrLabel: '카톡 채널추가',
   addr: '동대문종합시장 A동 3059호', tel: '2277-9330', fax: '2277-9382'
 };
+// ── 컬러별 사진: 컬러마다 정사각 400px로 줄여 저장 (inventory/catphoto_* 문서, 열 때만 읽음). 있으면 타일에 큰 사진으로 들어감 ──
+let _cpItem = null, _cpRows = [], _cpPickIdx = -1;
+function catItemHasColorPhoto(it) { return it.colors.some(c => _catPhotos[c.nk]); }
+function openColorPhotoModal() {
+  _cpItem = null; _cpRows = [];
+  document.getElementById('cp-search').value = '';
+  document.getElementById('colorPhotoModal').classList.add('open');
+  // 지금 카톡 이미지에 넣으려고 고른 품목이 있으면 바로 눌러 고를 수 있게
+  const cur = catPicked(readCatalogCfg()).slice(0, 12);
+  const idxOf = (it) => _catUniverse.findIndex(u => u.cat === it.cat && u.item === it.item);
+  document.getElementById('cp-quick').innerHTML = cur.map(it => `<span onclick="cpPickItem(${idxOf(it)})" style="display:inline-block; margin:0 4px 4px 0; padding:5px 10px; border-radius:14px; font-size:13px; cursor:pointer; background:#e8edf5; color:#3d4f6b;">${esc(it.item)}</span>`).join('');
+  if (cur.length === 1) cpPickItem(idxOf(cur[0])); else cpRender();
+}
+function closeColorPhotoModal() { document.getElementById('colorPhotoModal').classList.remove('open'); catUpdateCount(); }
+function cpRenderSearch() {
+  const q = document.getElementById('cp-search').value.trim();
+  let html = '', n = 0;
+  if (q) {
+    _catUniverse.forEach((it, i) => {
+      if (n >= 8 || !matchesSearchWords(q, it.item, it.cat)) return;
+      n++; html += `<div onclick="cpPickItem(${i})" style="padding:8px 6px; border-bottom:1px solid #eee; cursor:pointer; font-size:14px;"><b>${esc(it.item)}</b> <span style="font-size:11px; color:var(--muted);">${esc(it.cat || '미분류')} · ${it.colors.length}컬러</span></div>`;
+    });
+    if (!html) html = '<div style="font-size:12px; color:var(--muted); padding:8px 6px;">검색 결과가 없어요</div>';
+  }
+  document.getElementById('cp-results').innerHTML = html;
+}
+function cpPickItem(i) {
+  _cpItem = _catUniverse[i] || null;
+  document.getElementById('cp-search').value = ''; document.getElementById('cp-results').innerHTML = '';
+  cpRender();
+  if (_cpItem) { const miss = _cpItem.colors.map(c => c.nk).filter(k => !(k in _catPhotos)); if (miss.length) catPhotoLoad(miss).then(ch => { if (ch) cpRender(); }); }
+}
+function cpRender() {
+  const head = document.getElementById('cp-head'), list = document.getElementById('cp-list');
+  if (!_cpItem) { head.textContent = ''; list.innerHTML = ''; _cpRows = []; return; }
+  const it = _cpItem;
+  _cpRows = it.colors.map(c => ({ key: c.nk, color: c.color }));
+  const done = it.colors.filter(c => _catPhotos[c.nk]).length;
+  head.innerHTML = `${esc(it.item)} <span style="font-weight:400; color:var(--muted); font-size:12px;">사진 ${done} / ${it.colors.length}컬러</span>`;
+  list.innerHTML = it.colors.map((c, i) => {
+    const v = _catPhotos[c.nk]; const dot = catDotColor(c.color);
+    const thumb = v ? `<img src="${v}" style="width:52px; height:52px; object-fit:cover; border-radius:6px; flex:none;">` : `<div style="width:52px; height:52px; border-radius:6px; flex:none; background:${dot || '#eceae4'}; border:1px solid rgba(0,0,0,.12); box-sizing:border-box;"></div>`;
+    return `<div style="display:flex; align-items:center; gap:10px; padding:6px 0; border-bottom:1px solid #f0f0f0;">${thumb}<div style="flex:1; min-width:0; font-size:14px;"><b>${esc(c.color)}</b><div style="font-size:11px; color:${v ? '#1f7a3a' : 'var(--muted)'};">${v ? '등록됨' : '미등록'}</div></div><button type="button" onclick="cpPick(${i})" style="border:none; background:#e8edf5; color:#3d4f6b; border-radius:7px; padding:7px 10px; font-size:12px; font-weight:600;">${v ? '변경' : '등록'}</button>${v ? `<button type="button" onclick="cpRemove(${i})" style="border:none; background:#f6e3e3; color:#a33; border-radius:7px; padding:7px 8px; font-size:12px;">삭제</button>` : ''}</div>`;
+  }).join('');
+}
+function cpPick(i) { _cpPickIdx = i; const f = document.getElementById('cp-input'); f.value = ''; f.click(); }
+async function cpChosen(inp) {
+  const file = inp.files && inp.files[0]; const row = _cpRows[_cpPickIdx];
+  if (!file || !row || !_cpItem) return;
+  try {
+    const data = await catPhotoCompress(file, 400);
+    if (typeof db === 'undefined' || !db) throw new Error('nodb');
+    await db.collection('inventory').doc(catPhotoDocId(row.key)).set({ kind: 'catPhoto', key: row.key, item: _cpItem.item, color: row.color, dataUrl: data, updatedAt: new Date().toISOString(), stamp: SCHEMA_STAMP });
+    _catPhotos[row.key] = data;
+    showToast(`${row.color} 사진을 저장했어요`);
+  } catch (e) { showToast('사진을 저장하지 못했어요 (사진 파일이나 인터넷 연결을 확인해주세요)'); }
+  cpRender();
+}
+async function cpRemove(i) {
+  const row = _cpRows[i]; if (!row) return;
+  if (!confirm(`${row.color} 사진을 지울까요?`)) return;
+  try { await db.collection('inventory').doc(catPhotoDocId(row.key)).delete(); _catPhotos[row.key] = ''; showToast('사진을 지웠어요'); }
+  catch (e) { showToast('사진을 지우지 못했어요 (인터넷 연결을 확인해주세요)'); }
+  cpRender();
+}
+const CAT_WIDE_W = 800, CAT_WIDE_H = 600; // 채널 메시지(브랜드 메시지) 이미지 권장 비율 4:3 (800x600). 디자인은 카톡 대화용과 같고 비율만 다름
 const CAT_IMG_W = 600; // 폰 카톡 화면 폭에 맞춰 보면 약 0.6배로 보이니, 글씨를 크게(23px 안팎) 잡음
 async function buildCatalogPages(cfg, items) {
+  const wide = cfg.format === 'promo'; // 채널 메시지용 4:3 (같은 디자인, 비율만 다름)
+  const PW = wide ? CAT_WIDE_W : CAT_IMG_W;
   const fontFam = "-apple-system,'Malgun Gothic',sans-serif";
   const fmtY = (n) => Number(n.toFixed(1)).toLocaleString();
   const baseOfColor = catBaseOfColor, groupsOf = catGroupsOf;
@@ -6872,9 +6992,10 @@ async function buildCatalogPages(cfg, items) {
   const colorYardsMap = catalogBest(cfg.bestDays).colorYards;
   if (cfg.bestColor) {
     for (const it of items) {
-      const groups = groupsOf(it);
+      // 순위는 그 품목의 전체 컬러로 매김 (신상처럼 일부 컬러만 골라 보내도 그 품목에서 잘 나간 컬러에는 BEST). 무지가 안 나가도 기모가 많이 나가면 그 타일이 BEST
+      const groups = groupsOf({ colors: it.allColors || it.colors });
       if (groups.length <= 3) continue; // 컬러가 3개 이하인 품목은 전부 BEST가 돼버려서 의미가 없으니 표시 안 함
-      groups.map(g => ({ g, y: [g.main, ...g.variants.map(v => v.c)].reduce((s2, c) => s2 + (colorYardsMap.get(c.nk) || 0), 0) })).filter(x => x.y > 0).sort((a, b) => b.y - a.y).slice(0, 3).forEach(x => bestColor.add(x.g.main.item + '|' + x.g.main.color));
+      groups.map(g => ({ g, y: [g.main, ...g.variants.map(v => v.c)].reduce((s2, c) => s2 + (colorYardsMap.get(c.nk) || 0), 0) })).filter(x => x.y > 0).sort((a, b) => b.y - a.y).slice(0, 3).forEach(x => [x.g.main, ...x.g.variants.map(v => v.c)].forEach(c => bestColor.add(c.item + '|' + c.color)));
     }
   }
   // ── 디자인 토큰: 잉크(남색) + 웜그레이 + 절제된 골드 포인트 ──
@@ -6888,7 +7009,7 @@ async function buildCatalogPages(cfg, items) {
   // 스왓치 번호: 타일 맨 위 띠에 크게 (거래처가 스왓치북에서 바로 찾음). F/W 번호는 잉크색, S/S 번호는 딥그린
   const numStrip = (sw, itemSpring, isBest) => {
     const numCol = isBest ? '#fff' : INK, lblCol = isBest ? 'rgba(255,255,255,.65)' : MUTED;
-    const one = (lbl, n, col) => `<span style="display:inline-flex; align-items:baseline; gap:5px; color:${col};"><span style="font-size:13px; font-weight:700; letter-spacing:1px; color:${lblCol};">${lbl}</span><span style="font-size:26px; font-weight:800; line-height:1; font-variant-numeric:tabular-nums;">${n}</span></span>`;
+    const one = (lbl, n, col) => `<span style="display:inline-flex; align-items:baseline; gap:5px; color:${col};"><span style="font-size:${wide ? 12 : 13}px; font-weight:700; letter-spacing:1px; color:${lblCol};">${lbl}</span><span style="font-size:${wide ? 22 : 26}px; font-weight:800; line-height:1; font-variant-numeric:tabular-nums;">${n}</span></span>`;
     if (!sw) return '';
     if (!itemSpring) return sw.order != null ? one('NO.', sw.order, numCol) : '';
     return [sw.order != null ? one('F/W', sw.order, numCol) : '', sw.orderSpring != null ? one('S/S', sw.orderSpring, isBest ? '#9fe0c2' : '#2b6b57') : ''].filter(Boolean).join('<span style="width:1px; height:18px; background:currentColor; opacity:.25; margin:0 10px; align-self:center;"></span>');
@@ -6900,10 +7021,11 @@ async function buildCatalogPages(cfg, items) {
     if (cfg.display === 'status') return c.stock <= 0 ? st('재고없음', '#9aa0a6') : (c.stock < cfg.low ? st('소량', '#b36b00') : st('재고있음', '#2f7a52'));
     return '';
   };
-  const tileHtml = (g, itemSpring) => {
+  const photoOf = (g) => _catPhotos[g.main.nk] || g.variants.map(v => _catPhotos[v.c.nk]).find(Boolean) || '';
+  const tileHtml = (g, itemSpring, photoMode, wrows) => {
     const c = g.main;
     const dot = catDotColor(c.color);
-    const isBest = bestColor.has(c.item + '|' + c.color);
+    const isBest = [g.main, ...g.variants.map(v => v.c)].some(m => bestColor.has(m.item + '|' + m.color));
     const members = [{ c, label: g.variants.length ? '무지' : '' }, ...g.variants];
     // 무지/기모 중 한쪽이 확실히 더 많이 나갔으면(60% 이상) 그쪽 줄에 "인기" 표시
     let hotIdx = -1;
@@ -6917,7 +7039,34 @@ async function buildCatalogPages(cfg, items) {
       ? `<div style="margin-top:6px;">${stockHtml(c)}</div>`
       : members.map((m, i) => `<div style="margin-top:5px; display:flex; gap:6px; align-items:center; flex-wrap:wrap;"><span style="font-size:16px; font-weight:700; color:${MUTED}; min-width:32px;">${esc(m.label)}</span>${i === hotIdx ? hot : ''}${stockHtml(m.c, true)}</div>`).join('');
     const num = numStrip(swOf(g), itemSpring, isBest);
-    const strip = (num || isBest) ? `<div style="display:flex; justify-content:space-between; align-items:center; min-height:30px; padding:5px 12px; ${isBest ? `background:${BRAND};` : `background:${STRIP}; border-bottom:1px solid ${HAIR};`}"><div style="display:flex; align-items:center;">${num}</div>${isBest ? `<span style="font-size:14px; font-weight:800; letter-spacing:2px; color:#fff;">★ BEST</span>` : ''}</div>` : '';
+    const strip = (num || isBest) ? `<div style="display:flex; justify-content:space-between; align-items:center; min-height:${wide ? 27 : 30}px; padding:${wide ? '3px 10px' : '5px 12px'}; ${isBest ? `background:${BRAND};` : `background:${STRIP}; border-bottom:1px solid ${HAIR};`}"><div style="display:flex; align-items:center;">${num}</div>${isBest ? `<span style="font-size:14px; font-weight:800; letter-spacing:2px; color:#fff;">★ BEST</span>` : ''}</div>` : '';
+    if (wide) { // 4:3: 같은 타일 디자인을 가로로 눕힘 (스왓치 띠 / 색 또는 사진 / 컬러명 / 재고). 사진이 있는 품목은 사진 칸을 키움
+      const ph = photoOf(g), r3 = !wrows || wrows >= 3, sz = (photoMode ? 74 : 54) + (r3 ? 0 : wrows === 2 ? 26 : 46), nfs = r3 ? 21 : 24;
+      const wbody = g.variants.length === 0
+        ? `<div style="margin-top:4px;">${stockHtml(c)}</div>`
+        : members.map((m, i) => `<div style="margin-top:3px; display:flex; gap:6px; align-items:center; flex-wrap:wrap;"><span style="font-size:15px; font-weight:700; color:${MUTED}; min-width:30px;">${esc(m.label)}</span>${i === hotIdx ? hot : ''}${stockHtml(m.c, true)}</div>`).join('');
+      return `<div style="background:#fff; border:${isBest ? `2px solid ${BRAND}` : `1px solid ${HAIR}`}; border-radius:10px; overflow:hidden; min-width:0; min-height:0; display:flex; flex-direction:column;">
+        ${strip}
+        <div style="display:flex; gap:10px; align-items:center; padding:7px 10px; flex:1; min-height:0;">
+          <div style="width:${sz}px; height:${sz}px; flex:none; border-radius:8px; ${ph ? `background:url('${ph}') center/cover no-repeat;` : `background:${dot || '#eceae4'};`} border:1px solid rgba(0,0,0,.15); box-sizing:border-box; display:flex; align-items:center; justify-content:center; color:#b5b09f; font-size:24px; font-weight:700;">${ph || dot ? '' : esc(String(c.color).slice(0, 1))}</div>
+          <div style="flex:1; min-width:0;">
+            <div style="font-size:${nfs}px; font-weight:700; line-height:1.15; color:${INK}; word-break:keep-all; overflow-wrap:anywhere;">${esc(c.color)}</div>
+            ${wbody}
+          </div>
+        </div>
+      </div>`;
+    }
+    if (photoMode) { // 컬러 사진이 있는 품목: 사진을 타일 폭 가득 크게 (사진 없는 컬러는 같은 크기의 색 블록)
+      const ph = photoOf(g);
+      return `<div style="background:#fff; border:${isBest ? `2px solid ${BRAND}` : `1px solid ${HAIR}`}; border-radius:10px; overflow:hidden; min-width:0; display:flex; flex-direction:column;">
+        ${strip}
+        <div style="height:160px; ${ph ? `background:url('${ph}') center/cover no-repeat;` : `background:${dot || '#eceae4'};`} display:flex; align-items:center; justify-content:center; color:#b5b09f; font-size:44px; font-weight:700;">${ph || dot ? '' : esc(String(c.color).slice(0, 1))}</div>
+        <div style="padding:10px 12px 12px; border-top:1px solid ${HAIR};">
+          <div style="font-size:22px; font-weight:700; line-height:1.2; color:${INK}; word-break:keep-all; overflow-wrap:anywhere;">${esc(c.color)}</div>
+          ${body}
+        </div>
+      </div>`;
+    }
     return `<div style="background:#fff; border:${isBest ? `2px solid ${BRAND}` : `1px solid ${HAIR}`}; border-radius:10px; overflow:hidden; min-width:0; display:flex; flex-direction:column;">
         ${strip}
         <div style="display:flex; gap:12px; align-items:center; padding:12px; flex:1;">
@@ -6932,38 +7081,47 @@ async function buildCatalogPages(cfg, items) {
   const biz = esc(settings.bizName || '');
   const isNew = cfg.mode === 'new';
   const B = CAT_BRAND;
-  const footer = `<div style="padding:16px 24px 18px; border-top:1px solid ${HAIR}; background:${PAPER};">
+  const QS = wide ? 62 : 72; // QR 한 변 (4:3은 세로 공간이 모자라 조금 작게)
+  const footer = `<div style="padding:${wide ? '9px 24px 9px' : '16px 24px 18px'}; border-top:1px solid ${HAIR}; background:${PAPER}; flex:none;">
         <div style="display:flex; align-items:flex-start; gap:16px;">
-          <div style="flex:none; width:72px;"><img src="${B.qr}" style="display:block; width:72px; height:72px;"><div style="margin-top:5px; width:72px; box-sizing:border-box; background:${BRAND}; color:#fff; border-radius:3px; text-align:center; font-size:11px; font-weight:700; line-height:18px; white-space:nowrap;">${B.qrLabel}</div></div>
-          <div style="flex:none; height:72px; display:flex; flex-direction:column; justify-content:space-between; text-align:left; color:${BRAND}; font-size:17px; line-height:1;">
-            <div style="font-size:19px; font-weight:700;">${B.addr}</div>
+          <div style="flex:none; width:${QS}px;"><img src="${B.qr}" style="display:block; width:${QS}px; height:${QS}px;"><div style="margin-top:${wide ? 4 : 5}px; width:${QS}px; box-sizing:border-box; background:${BRAND}; color:#fff; border-radius:3px; text-align:center; font-size:${wide ? 10 : 11}px; font-weight:700; line-height:${wide ? 16 : 18}px; white-space:nowrap; letter-spacing:${wide ? '-.3px' : '0'};">${B.qrLabel}</div></div>
+          <div style="flex:none; height:${QS}px; display:flex; flex-direction:column; justify-content:space-between; text-align:left; color:${BRAND}; font-size:${wide ? 16 : 17}px; line-height:1;">
+            <div style="font-size:${wide ? 18 : 19}px; font-weight:700;">${B.addr}</div>
             <div>TEL ${B.tel}</div>
             <div>FAX ${B.fax}</div>
           </div>
         </div>
       </div>`;
-  const headOf = (it, pageNo, total) => `<div style="background:${PAPER}; color:${INK}; border-bottom:2px solid ${BRAND}; padding:22px 24px 18px;">
+  const headOf = (it, pageNo, total) => wide ? `<div style="background:${PAPER}; color:${INK}; border-bottom:2px solid ${BRAND}; padding:12px 24px 10px; flex:none;">
+        <div style="display:flex; justify-content:space-between; align-items:center;"><img src="${B.logo}" style="display:block; height:20px; width:auto;"><span style="display:flex; align-items:center; gap:8px; font-size:14px; letter-spacing:.5px; color:${MUTED};">${isNew ? `<span style="background:${BRAND}; color:#fff; font-weight:800; letter-spacing:2px; font-size:12px; padding:1px 8px; border-radius:4px;">NEW</span>` : ''}<span>${esc(cfg.title)} · ${todayStr()}${total > 1 ? ` · ${pageNo}/${total}` : ''}</span></span></div>
+        <div style="margin-top:8px; display:flex; align-items:baseline; gap:14px;"><div style="font-size:34px; font-weight:800; line-height:1.15; letter-spacing:-.5px; word-break:keep-all; overflow-wrap:anywhere;">${esc(it.item)}</div>${it.mix ? `<div style="font-size:15px; color:${MUTED}; flex:none;">혼용률 ${esc(it.mix)}</div>` : ''}</div>
+      </div>` : `<div style="background:${PAPER}; color:${INK}; border-bottom:2px solid ${BRAND}; padding:22px 24px 18px;">
         <div style="display:flex; justify-content:space-between; align-items:center;"><img src="${B.logo}" style="display:block; height:22px; width:auto;"><span style="font-size:15px; letter-spacing:.5px; color:${MUTED};">${todayStr()}${total > 1 ? ` · ${pageNo}/${total}` : ''}</span></div>
         <div style="margin-top:16px; display:flex; align-items:center; gap:8px; font-size:15px; letter-spacing:.5px; color:${MUTED};">${isNew ? `<span style="background:${BRAND}; color:#fff; font-weight:800; letter-spacing:2px; font-size:13px; padding:1px 8px; border-radius:4px;">NEW</span>` : ''}<span>${esc(cfg.title)}</span></div>
         <div style="margin-top:4px; font-size:38px; font-weight:800; line-height:1.15; letter-spacing:-.5px; word-break:keep-all; overflow-wrap:anywhere;">${esc(it.item)}</div>
         ${it.mix ? `<div style="font-size:16px; margin-top:6px; color:${MUTED};">혼용률 ${esc(it.mix)}</div>` : ''}
       </div>`;
-  const pageWrap = (inner) => `<div class="stm-img-page" style="width:${CAT_IMG_W}px; box-sizing:border-box; background:${PAPER}; color:${INK}; font-family:${fontFam};">${inner}${footer}</div>`;
+  const pageWrap = (inner) => `<div class="stm-img-page" style="width:${PW}px; ${wide ? `height:${CAT_WIDE_H}px; display:flex; flex-direction:column; overflow:hidden; ` : ''}box-sizing:border-box; background:${PAPER}; color:${INK}; font-family:${fontFam};">${inner}${footer}</div>`;
   // 한 품목 = 첫 장은 소재 확대샷(사진이 있으면 항상) + 다음 장부터 스왓치 순번 순서의 컬러 타일 (한 장에 최대 10타일이라 폰에서 스크롤 없이 보임)
   const pagesOfItem = (it) => {
     const itemSpring = itemHasSpring(it.item);
     const photo = _catPhotos[catPhotoKey(it)] || '';
-    const sp = catSplitGroups(it);
+    const sp = catSplitGroups(it, wide);
+    const photoMode = catItemHasColorPhoto(it);
     const total = (photo ? 1 : 0) + sp.length;
     const out = [];
     let no = 1;
     if (photo) {
-      out.push(pageWrap(`${headOf(it, no++, total)}
+      out.push(pageWrap(wide
+        ? `${headOf(it, no++, total)}<div style="flex:1; min-height:0; background:url('${photo}') center/cover no-repeat;"></div>`
+        : `${headOf(it, no++, total)}
         <img src="${photo}" style="display:block; width:100%; max-height:760px; object-fit:cover;">`));
     }
     for (const gs of sp) {
-      out.push(pageWrap(`${headOf(it, no++, total)}
-        <div style="display:grid; grid-template-columns:1fr 1fr; gap:14px; padding:20px 20px 22px; background:#efeaea;">${gs.map(g => tileHtml(g, itemSpring)).join('')}</div>`));
+      out.push(pageWrap(wide
+        ? `${headOf(it, no++, total)}<div style="flex:1; min-height:0; display:grid; grid-template-columns:repeat(3, 1fr); grid-template-rows:${gs.length <= 3 ? 'repeat(1, 190px)' : `repeat(${Math.ceil(gs.length / 3)}, 1fr)`}; align-content:${gs.length <= 3 ? 'center' : 'stretch'}; gap:8px; padding:10px 14px; background:#efeaea;">${gs.map(g => tileHtml(g, itemSpring, photoMode, Math.ceil(gs.length / 3))).join('')}</div>`
+        : `${headOf(it, no++, total)}
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:14px; padding:20px 20px 22px; background:#efeaea;">${gs.map(g => tileHtml(g, itemSpring, photoMode)).join('')}</div>`));
     }
     return out;
   };
@@ -6973,7 +7131,7 @@ async function buildCatalogPages(cfg, items) {
 let _catUniverse = [];
 let _catMode = 'stock';
 let _catSel = new Set(); // 신상 입고: 고른 컬러 "품목|컬러"
-let _catItems = new Set(); // 재고표: 고른 품목 "분류|품목" (비어 있으면 전체)
+let _catItems = new Set(); // 재고표: 고른 품목 "분류|품목" (비어 있으면 아무것도 안 만듦)
 const CAT_DEFAULT_TITLE = { stock: '재고 현황', new: '신상 입고' };
 function catLoadPrefs() { try { return JSON.parse(localStorage.getItem('catalogPrefs') || '{}') || {}; } catch (e) { return {}; } }
 function catSavePrefs(cfg) { try { localStorage.setItem('catalogPrefs', JSON.stringify({ display: { stock: cfg.stockDisplay, new: cfg.newDisplay }, low: cfg.low, bestColor: cfg.bestColor, bestDays: cfg.bestDays })); } catch (e) { /* 저장 못 해도 상관없음 */ } }
@@ -6987,11 +7145,7 @@ function openCatalogModal() {
   document.getElementById('cat-bestdays').value = String(pr.bestDays || 90);
   _catItems = new Set();
   document.getElementById('cat-item-search').value = '';
-  // 신상 기본 선택: 아직 안 들어온 중국발주 컬러 + 최근 7일 안에 입고된 컬러
-  const cut = new Date(); cut.setDate(cut.getDate() - 7);
-  const cutStr = `${String(cut.getFullYear()).slice(2)}.${String(cut.getMonth() + 1).padStart(2, '0')}.${String(cut.getDate()).padStart(2, '0')}`;
-  _catSel = new Set();
-  for (const it of _catUniverse) for (const c of it.colors) if (c.pending || (c.newestIn && c.newestIn >= cutStr)) _catSel.add(c.item + '|' + c.color);
+  _catSel = new Set(); // 신상도 처음엔 아무것도 안 골라진 상태 (검색해서 하나씩 더함)
   document.getElementById('cat-search').value = '';
   catSetMode(_catMode, true);
   document.getElementById('catalogModal').classList.add('open');
@@ -7008,6 +7162,7 @@ function catSetMode(m, init) {
   document.getElementById('cat-mode-stock').style.cssText = base + (m === 'stock' ? on : off);
   document.getElementById('cat-mode-new').style.cssText = base + (m === 'new' ? on : off);
   document.getElementById('cat-title').value = CAT_DEFAULT_TITLE[m];
+  { const ps = document.getElementById('pub-sec'); if (ps && !(init === 'keep')) ps.value = m === 'new' ? 'new' : 'stock'; }
   sel.value = _catPrefDisplay[m];
   document.getElementById('cat-stock-scope').style.display = m === 'stock' ? '' : 'none';
   document.getElementById('cat-new-scope').style.display = m === 'new' ? '' : 'none';
@@ -7038,27 +7193,47 @@ function renderCatalogScope() {
     document.getElementById('cat-item-results').innerHTML = html;
   } else {
     const q = document.getElementById('cat-search').value.trim();
-    const matchQ = (it, c) => !q || matchesSearchWords(q, it.item, c ? c.color : '');
+    // 검색 결과: 품목마다 컬러 칩 (누르면 더하고, 다시 누르면 뺌). 검색어가 없으면 아무것도 안 보임
     let html = '';
+    if (q) {
+      let n = 0;
+      _catUniverse.forEach((it, ii) => {
+        if (n >= 8) return;
+        const cols = it.colors.map((c, ci) => ({ c, ci })).filter(x => matchesSearchWords(q, it.item, x.c.color));
+        if (cols.length === 0) return;
+        n++;
+        const allOn = cols.every(x => _catSel.has(x.c.item + '|' + x.c.color));
+        html += `<div style="margin:6px 0 8px;"><div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:3px;"><span style="font-size:14px; font-weight:700;">${esc(it.item)}</span><span onclick="catAddColors(${ii}, ${JSON.stringify(cols.map(x => x.ci))})" style="font-size:12px; color:${allOn ? '#999' : '#1a5f8a'}; font-weight:600; cursor:pointer;">${allOn ? '모두 담김' : (cols.length === it.colors.length ? '+ 컬러 전체' : '+ 검색된 컬러 전체')}</span></div><div>`
+          + cols.map(x => { const on = _catSel.has(x.c.item + '|' + x.c.color); return `<span onclick="catToggleColor(${ii},${x.ci})" style="display:inline-block; margin:0 4px 4px 0; padding:4px 9px; border-radius:13px; font-size:12px; cursor:pointer; ${on ? 'background:#1a5f8a;color:#fff;' : 'background:#eee;color:#555;'}">${esc(x.c.color)}</span>`; }).join('')
+          + `</div></div>`;
+      });
+      if (!html) html = '<div style="font-size:12px;color:var(--muted);padding:8px 0;">검색 결과가 없어요</div>';
+    }
+    document.getElementById('cat-picker').innerHTML = html;
+    // 골라진 컬러: 품목별로 묶어서 보여주고 눌러서 뺌
+    let sel = '';
     _catUniverse.forEach((it, ii) => {
-      const cols = it.colors.map((c, ci) => ({ c, ci })).filter(x => matchQ(it, x.c));
+      const cols = it.colors.map((c, ci) => ({ c, ci })).filter(x => _catSel.has(x.c.item + '|' + x.c.color));
       if (cols.length === 0) return;
-      const allOn = it.colors.every(c => _catSel.has(c.item + '|' + c.color));
-      html += `<div style="margin:6px 0 8px;"><div onclick="catToggleItem(${ii})" style="font-size:13px; font-weight:700; cursor:pointer; margin-bottom:3px;">${allOn ? '☑' : '☐'} ${esc(it.item)}</div><div>`
-        + cols.map(x => { const on = _catSel.has(x.c.item + '|' + x.c.color); return `<span onclick="catToggleColor(${ii},${x.ci})" style="display:inline-block; margin:0 4px 4px 0; padding:4px 9px; border-radius:13px; font-size:12px; cursor:pointer; ${on ? 'background:#1a5f8a;color:#fff;' : 'background:#eee;color:#555;'}">${esc(x.c.color)}</span>`; }).join('')
-        + `</div></div>`;
+      sel += `<div style="margin:0 0 7px;"><div style="font-size:13px; font-weight:700; margin-bottom:3px;">${esc(it.item)} <span onclick="catRemoveItemColors(${ii})" style="margin-left:6px; font-size:11px; font-weight:400; color:#999; cursor:pointer;">삭제</span></div>`
+        + cols.map(x => `<span onclick="catToggleColor(${ii},${x.ci})" style="display:inline-block; margin:0 4px 4px 0; padding:5px 10px; border-radius:14px; font-size:13px; cursor:pointer; background:#1a5f8a; color:#fff;">${esc(x.c.color)} ✕</span>`).join('') + `</div>`;
     });
-    document.getElementById('cat-picker').innerHTML = html || '<div style="font-size:12px;color:var(--muted);padding:8px 0;">검색 결과가 없어요</div>';
+    document.getElementById('cat-sel-list').innerHTML = sel;
+    document.getElementById('cat-new-clear').style.display = _catSel.size ? '' : 'none';
   }
+  document.getElementById('cat-stock-clear').style.display = _catItems.size ? '' : 'none';
   catUpdateCount();
 }
 function catAddItem(i) { const it = _catUniverse[i]; _catItems.add(it.cat + '|' + it.item); document.getElementById('cat-item-search').value = ''; renderCatalogScope(); }
 function catRemoveItem(i) { const it = _catUniverse[i]; _catItems.delete(it.cat + '|' + it.item); renderCatalogScope(); }
 function catToggleColor(ii, ci) { const c = _catUniverse[ii].colors[ci]; const k = c.item + '|' + c.color; if (_catSel.has(k)) _catSel.delete(k); else _catSel.add(k); renderCatalogScope(); }
-function catToggleItem(ii) { const it = _catUniverse[ii]; const keys = it.colors.map(c => c.item + '|' + c.color); const allOn = keys.every(k => _catSel.has(k)); keys.forEach(k => allOn ? _catSel.delete(k) : _catSel.add(k)); renderCatalogScope(); }
-function catQuick(kind) {
-  _catSel = new Set();
-  if (kind !== 'clear') {
+function catAddColors(ii, cis) { const it = _catUniverse[ii]; cis.forEach(ci => { const c = it.colors[ci]; if (c) _catSel.add(c.item + '|' + c.color); }); renderCatalogScope(); }
+function catRemoveItemColors(ii) { _catUniverse[ii].colors.forEach(c => _catSel.delete(c.item + '|' + c.color)); renderCatalogScope(); }
+function catAddAllItems() { _catUniverse.forEach(it => _catItems.add(it.cat + '|' + it.item)); renderCatalogScope(); }
+function catClearItems() { _catItems = new Set(); renderCatalogScope(); }
+function catQuick(kind) { // 지금 골라 둔 것에 더함 (바꿔 끼우지 않음). 비우기만 전부 지움
+  if (kind === 'clear') _catSel = new Set();
+  else {
     const cut = new Date(); cut.setDate(cut.getDate() - 7);
     const cutStr = `${String(cut.getFullYear()).slice(2)}.${String(cut.getMonth() + 1).padStart(2, '0')}.${String(cut.getDate()).padStart(2, '0')}`;
     for (const it of _catUniverse) for (const c of it.colors) {
@@ -7079,36 +7254,179 @@ function readCatalogCfg() {
     bestDays: parseInt(document.getElementById('cat-bestdays').value) || 90,
     hideOut: false, // 재고 없는 컬러도 "재고없음"으로 같이 보여줌
     sel: _catSel,
-    itemsSel: _catMode === 'stock' ? _catItems : null
+    itemsSel: _catMode === 'stock' ? _catItems : null,
+    format: document.getElementById('cat-format').value === 'promo' ? 'promo' : 'chat'
   };
   cfg.stockDisplay = _catMode === 'stock' ? display : _catPrefDisplay.stock;
   cfg.newDisplay = _catMode === 'new' ? display : _catPrefDisplay.new;
   return cfg;
 }
-function catImageCount(items) { return items.reduce((n, it) => n + catSplitGroups(it).length + (_catPhotos[catPhotoKey(it)] ? 1 : 0), 0); }
+function catPicked(cfg) { return (cfg.mode === 'stock' && _catItems.size === 0) ? [] : selectCatalogItems(cfg, _catUniverse); } // 재고표는 품목을 하나라도 골라야 만들어짐
+function catImageCount(items, wide) { return items.reduce((n, it) => n + catSplitGroups(it, wide).length + (_catPhotos[catPhotoKey(it)] ? 1 : 0), 0); }
 function catUpdateCount() {
   const cfg = readCatalogCfg();
-  const items = selectCatalogItems(cfg, _catUniverse);
+  const items = catPicked(cfg);
   const colors = items.reduce((s, it) => s + it.colors.length, 0);
-  document.getElementById('cat-count').textContent = items.length === 0 ? (cfg.mode === 'new' ? '컬러를 선택하세요' : '표시할 재고가 없습니다') : `이미지 ${catImageCount(items)}장 · ${items.length}품목 · ${colors}컬러`;
+  const wide = cfg.format === 'promo', nImg = catImageCount(items, wide);
+  document.getElementById('cat-count').textContent = items.length === 0 ? (cfg.mode === 'new' ? '컬러를 검색해서 추가하세요' : '품목을 검색해서 추가하세요') : `이미지 ${nImg}장${wide ? ' (4:3)' : ''} · ${items.length}품목 · ${colors}컬러${wide && nImg > 6 ? ' · 채널 캐러셀은 6장까지' : ''}`;
   catRenderPhotos();
 }
 async function generateCatalog(mode) {
   const cfg = readCatalogCfg();
-  const items = selectCatalogItems(cfg, _catUniverse);
-  if (items.length === 0) { showToast(cfg.mode === 'new' ? '신상으로 보낼 컬러를 하나 이상 골라주세요' : '보여줄 재고가 없어요'); return; }
+  const items = catPicked(cfg);
+  if (items.length === 0) { showToast(cfg.mode === 'new' ? '신상으로 보낼 컬러를 검색해서 추가해주세요' : '재고표에 넣을 품목을 검색해서 추가해주세요'); return; }
   if (items.length > 30) { showToast(`품목이 ${items.length}개예요 - 카톡은 한 번에 사진 30장까지라서 품목을 골라주세요`); return; }
   showToast('이미지를 만드는 중이에요...');
-  await catPhotoLoad(items.map(catPhotoKey));
-  const nImg = catImageCount(items);
+  await catPhotoLoad([...items.map(catPhotoKey), ...items.flatMap(it => it.colors.map(c => c.nk))]);
+  const wide = cfg.format === 'promo';
+  const nImg = catImageCount(items, wide);
   if (nImg > 30) { showToast(`이미지가 ${nImg}장이에요 - 카톡은 한 번에 사진 30장까지라서 품목을 줄여주세요`); return; }
   catSavePrefs(cfg);
-  const kind = cfg.mode === 'new' ? '신상입고' : '재고표';
+  const kind = (wide ? '채널' : '') + (cfg.mode === 'new' ? '신상입고' : '재고표');
   let files;
-  try { files = await renderStatementImages(await buildCatalogPages(cfg, items), '', kind, CAT_IMG_W); }
+  try { files = wide ? await renderStatementImages(await buildCatalogPages(cfg, items), '', kind, CAT_WIDE_W, { scale: 1.5, maxBytes: 4500000 }) : await renderStatementImages(await buildCatalogPages(cfg, items), '', kind, CAT_IMG_W); }
   catch (e) { showToast('이미지를 만들지 못했어요 (인터넷 연결을 확인해주세요)'); return; }
   openShotModal(files, '', kind);
   if (mode === 'share' && isMobileDevice()) await shareShotFiles(); // PC는 창에서 이미지마다 "복사"로 카톡에 붙여넣음
+}
+
+// ── 고객 페이지 (customer.html): 카톡 채널 메뉴 버튼 → 링크 → 올려둔 이미지 ──
+// 저장: inventory/pubIndex (목록 메타 + 작은 썸네일) + inventory/pubpg_<id>_<n> (이미지 한 장씩, JPG).  모두 stamp 포함
+const PUB_SECS = { new: '신상 입고', best_fw: 'Best Item - F/W', best_ss: 'Best Item - S/S', stock: '원단 보러가기' };
+const PUB_ORDER = ['new', 'best_fw', 'best_ss', 'stock'];
+const PUB_LINKS = [['new', '신상 입고 (New Item)'], ['best', '시즌별 Best Item'], ['stock', '원단 보러가기']];
+function pubId(sec, item) { return sec + '_' + catPhotoDocId(normalizeNameForMatch(item)).replace('catphoto_', ''); }
+function pubPageDoc(id, i) { return 'pubpg_' + id + '_' + i; }
+function pubCol() { if (typeof db === 'undefined' || !db) throw new Error('nodb'); return db.collection('inventory'); }
+async function pubLoadIndex() {
+  const d = await pubCol().doc('pubIndex').get();
+  if (!d.exists) return { v: 1, entries: [] };
+  try { const o = JSON.parse(d.data().data || '{}'); return { v: 1, entries: Array.isArray(o.entries) ? o.entries : [] }; } catch (e) { throw new Error('badindex'); }
+}
+async function pubSaveIndex(idx) {
+  await pubCol().doc('pubIndex').set({ stamp: SCHEMA_STAMP, kind: 'pubIndex', data: JSON.stringify({ v: 1, updatedAt: new Date().toISOString(), entries: idx.entries }) });
+}
+function pubFileToJpeg(file, maxW) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file), img = new Image();
+    img.onload = () => {
+      try {
+        const r = Math.min(1, maxW / img.naturalWidth), w = Math.max(1, Math.round(img.naturalWidth * r)), h = Math.max(1, Math.round(img.naturalHeight * r));
+        const cv = document.createElement('canvas'); cv.width = w; cv.height = h;
+        const ctx = cv.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, w, h); ctx.drawImage(img, 0, 0, w, h);
+        let q = 0.85, out = cv.toDataURL('image/jpeg', q);
+        while (out.length > 900000 && q > 0.45) { q -= 0.1; out = cv.toDataURL('image/jpeg', q); }
+        URL.revokeObjectURL(url);
+        if (out.length > 1000000) reject(new Error('toobig')); else resolve(out);
+      } catch (e) { URL.revokeObjectURL(url); reject(e); }
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('img')); };
+    img.src = url;
+  });
+}
+function pubThumb(it) { // 목록 카드용 작은 정사각 사진: 소재 사진 > 컬러 사진. 없으면 ''
+  const src = _catPhotos[catPhotoKey(it)] || (it.colors.map(c => _catPhotos[c.nk]).find(Boolean)) || '';
+  if (!src) return Promise.resolve('');
+  return new Promise(resolve => {
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const m = Math.min(img.naturalWidth, img.naturalHeight), cv = document.createElement('canvas'); cv.width = cv.height = Math.min(140, m);
+        cv.getContext('2d').drawImage(img, (img.naturalWidth - m) / 2, (img.naturalHeight - m) / 2, m, m, 0, 0, cv.width, cv.height);
+        resolve(cv.toDataURL('image/jpeg', 0.72));
+      } catch (e) { resolve(''); }
+    };
+    img.onerror = () => resolve('');
+    img.src = src;
+  });
+}
+let _pubBusy = false;
+async function publishCatalog() {
+  if (_pubBusy) return;
+  const sec = document.getElementById('pub-sec').value;
+  const cfg = { ...readCatalogCfg(), format: 'chat' }; // 고객 페이지는 폰 세로 화면이라 세로로 긴 이미지
+  const items = catPicked(cfg);
+  if (items.length === 0) { showToast(cfg.mode === 'new' ? '올릴 컬러를 먼저 검색해서 추가해주세요' : '올릴 품목을 먼저 검색해서 추가해주세요'); return; }
+  if (items.length > 20) { showToast(`품목이 ${items.length}개예요 - 한 번에 20개까지 올릴 수 있어요`); return; }
+  if (typeof db === 'undefined' || !db) { showToast('서버에 연결돼 있어야 올릴 수 있어요'); return; }
+  _pubBusy = true;
+  const btn = document.getElementById('pub-btn'); const btnTxt = btn.textContent;
+  try {
+    await catPhotoLoad([...items.map(catPhotoKey), ...items.flatMap(it => it.colors.map(c => c.nk))]);
+    let idx;
+    try { idx = await pubLoadIndex(); } catch (e) { showToast('고객 페이지 목록을 불러오지 못했어요 (인터넷 연결을 확인해주세요)'); return; }
+    const today = todayStr();
+    let done = 0;
+    const newEntries = [];
+    for (const it of items) {
+      btn.textContent = `${done + 1}/${items.length} 올리는 중`;
+      const id = pubId(sec, it.item);
+      const files = await renderStatementImages(await buildCatalogPages(cfg, [it]), '', '고객페이지', CAT_IMG_W, { scale: 1.5 });
+      const pages = [];
+      for (const f of files) pages.push(await pubFileToJpeg(f, 900));
+      const thumb = await pubThumb(it);
+      for (let i = 0; i < pages.length; i++) await pubCol().doc(pubPageDoc(id, i)).set({ stamp: SCHEMA_STAMP, kind: 'pubPage', d: pages[i], at: new Date().toISOString() });
+      const old = idx.entries.find(e => e.id === id);
+      if (old && old.n > pages.length) for (let i = pages.length; i < old.n; i++) { try { await pubCol().doc(pubPageDoc(id, i)).delete(); } catch (e) { /* 남은 조각은 안 보임 */ } }
+      const ent = { id, sec, item: it.item, mix: it.mix || '', n: pages.length, colors: it.colors.length, date: today, thumb, tc: (catDotColor(it.colors[0].color) || '') };
+      if (old) idx.entries[idx.entries.indexOf(old)] = ent; else newEntries.push(ent);
+      done++;
+    }
+    if (sec === 'new') idx.entries = [...newEntries.reverse(), ...idx.entries]; else idx.entries = [...idx.entries, ...newEntries];
+    await pubSaveIndex(idx);
+    showToast(`고객 페이지(${PUB_SECS[sec]})에 ${done}개 품목을 올렸어요`);
+  } catch (e) {
+    showToast(e && e.message === 'toobig' ? '이미지가 너무 커서 올리지 못했어요 (컬러를 나눠서 올려주세요)' : '올리지 못했어요 (인터넷 연결을 확인해주세요)');
+  } finally { _pubBusy = false; btn.textContent = btnTxt; }
+}
+function pubLinkUrl(p) { try { return new URL('customer.html?p=' + p, location.href).href; } catch (e) { return 'customer.html?p=' + p; } }
+function pubCopyLink(p) {
+  const u = pubLinkUrl(p);
+  const ok = () => showToast('링크를 복사했어요');
+  if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(u).then(ok, () => prompt('링크를 복사하세요', u)); else prompt('링크를 복사하세요', u);
+}
+let _pubIdx = null;
+async function openPubModal() {
+  document.getElementById('pubModal').classList.add('open');
+  document.getElementById('pub-links').innerHTML = `<div style="font-size:12px; color:var(--muted); margin-bottom:4px;">카톡 채널 메뉴 버튼에 넣을 링크</div>` + PUB_LINKS.map(([p, nm]) => `<div style="display:flex; align-items:center; gap:8px; padding:6px 0; border-bottom:1px solid #f0f0f0;"><div style="flex:1; min-width:0;"><div style="font-size:13px; font-weight:700;">${esc(nm)}</div><div style="font-size:11px; color:var(--muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${esc(pubLinkUrl(p))}</div></div><button type="button" onclick="pubCopyLink('${p}')" style="border:none; background:#e8edf5; color:#3d4f6b; border-radius:7px; padding:7px 11px; font-size:12px; font-weight:600; flex:none;">복사</button></div>`).join('');
+  const box = document.getElementById('pub-list');
+  box.innerHTML = '<div style="font-size:12px; color:var(--muted); padding:10px 0;">불러오는 중...</div>';
+  try { _pubIdx = await pubLoadIndex(); } catch (e) { _pubIdx = null; box.innerHTML = '<div style="font-size:12px; color:#a33; padding:10px 0;">목록을 불러오지 못했어요 (인터넷 연결을 확인해주세요)</div>'; return; }
+  renderPubList();
+}
+function closePubModal() { document.getElementById('pubModal').classList.remove('open'); }
+function renderPubList() {
+  const box = document.getElementById('pub-list'); if (!_pubIdx) return;
+  let html = '';
+  for (const sec of PUB_ORDER) {
+    const list = _pubIdx.entries.filter(e => e.sec === sec);
+    html += `<div style="font-size:13px; font-weight:800; margin:12px 0 4px;">${esc(PUB_SECS[sec])} <span style="font-weight:400; color:var(--muted);">${list.length}개</span></div>`;
+    if (list.length === 0) { html += '<div style="font-size:12px; color:var(--muted); padding:4px 0;">아직 없어요</div>'; continue; }
+    html += list.map((e, k) => `<div style="display:flex; align-items:center; gap:8px; padding:6px 0; border-bottom:1px solid #f0f0f0;">${e.thumb ? `<img src="${e.thumb}" style="width:38px; height:38px; border-radius:6px; object-fit:cover; flex:none;">` : `<div style="width:38px; height:38px; border-radius:6px; background:${e.tc || '#eceae4'}; flex:none;"></div>`}<div style="flex:1; min-width:0;"><div style="font-size:14px; font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${esc(e.item)}</div><div style="font-size:11px; color:var(--muted);">${esc(e.date || '')} · 이미지 ${e.n}장</div></div>`
+      + `<button type="button" ${k === 0 ? 'disabled' : ''} onclick="pubMove('${e.id}', -1)" style="border:none; background:#eee; color:#555; border-radius:6px; padding:6px 9px; font-size:12px; ${k === 0 ? 'opacity:.35;' : ''}">▲</button><button type="button" ${k === list.length - 1 ? 'disabled' : ''} onclick="pubMove('${e.id}', 1)" style="border:none; background:#eee; color:#555; border-radius:6px; padding:6px 9px; font-size:12px; ${k === list.length - 1 ? 'opacity:.35;' : ''}">▼</button><button type="button" onclick="pubRemove('${e.id}')" style="border:none; background:#f6e3e3; color:#a33; border-radius:6px; padding:6px 9px; font-size:12px;">삭제</button></div>`).join('');
+  }
+  box.innerHTML = html;
+}
+async function pubMove(id, dir) {
+  if (!_pubIdx) return;
+  const e = _pubIdx.entries.find(x => x.id === id); if (!e) return;
+  const same = _pubIdx.entries.filter(x => x.sec === e.sec), k = same.indexOf(e), o = same[k + dir]; if (!o) return;
+  const a = _pubIdx.entries.indexOf(e), b = _pubIdx.entries.indexOf(o);
+  _pubIdx.entries[a] = o; _pubIdx.entries[b] = e;
+  renderPubList();
+  try { await pubSaveIndex(_pubIdx); } catch (err) { showToast('순서를 저장하지 못했어요 (인터넷 연결을 확인해주세요)'); }
+}
+async function pubRemove(id) {
+  if (!_pubIdx) return;
+  const e = _pubIdx.entries.find(x => x.id === id); if (!e) return;
+  if (!confirm(`${PUB_SECS[e.sec]}에서 "${e.item}"을(를) 내릴까요?`)) return;
+  try {
+    _pubIdx.entries = _pubIdx.entries.filter(x => x.id !== id);
+    await pubSaveIndex(_pubIdx); // 목록에서 먼저 빼서 고객 화면에서 바로 사라지게, 이미지 조각은 그 다음에 지움
+    for (let i = 0; i < e.n; i++) { try { await pubCol().doc(pubPageDoc(id, i)).delete(); } catch (err) { /* 안 보이는 조각 */ } }
+    showToast('내렸어요');
+  } catch (err) { showToast('내리지 못했어요 (인터넷 연결을 확인해주세요)'); }
+  renderPubList();
 }
 
 async function printStatementForRange(customerName, startDate, endDate, mode) {
