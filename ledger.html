@@ -132,7 +132,7 @@ function viewA() {
 function qty(n, u) { return `${r2(n).toLocaleString('ko-KR')}${u}`; }
 function viewC() {
   const r = ranges.c;
-  const act = (snap.active || []).filter(o => inRange(o.d || '', r)), dn = (snap.done || []).filter(o => inRange(o.d || '', r));
+  const act = (snap.active || []).filter(o => inRange(o.d || '', r));
   const st = o => ({ wait: ['대기', 'wait'], partial: ['부분출고', ''], received_full: ['입고완료', 'ok'] }[o.s] || ['대기', 'wait']);
   const shipTxt = o => {
     const s = (o.sh || []);
@@ -141,11 +141,13 @@ function viewC() {
   };
   const line = o => {
     const remain = o.q > o.r ? o.q - o.r : 0, [lb, cl] = st(o);
-    return `<div class="li"><div><div class="a">${esc(o.i)} ${esc(o.c)}</div><div class="b">발주 ${esc(mmdd(o.d || ''))}${o.q > 0 ? ` · ${qty(o.q, o.u)}` : ''}</div>${shipTxt(o)}</div><div class="r">${remain > 0 ? qty(remain, o.u) : (o.q > 0 ? '전량 처리' : '-')}<span class="chip ${cl}" style="display:block;margin:4px 0 0 auto;width:fit-content">${lb}</span></div></div>`;
+    return `<div class="li"><div><div class="a">${esc(o.i)} ${esc(o.c)}</div>${o.q > 0 ? `<div class="b">발주 ${qty(o.q, o.u)}</div>` : ''}${shipTxt(o)}</div><div class="r">${remain > 0 ? qty(remain, o.u) : (o.q > 0 ? '전량 처리' : '-')}<span class="chip ${cl}" style="display:block;margin:4px 0 0 auto;width:fit-content">${lb}</span></div></div>`;
   };
-  return `<div class="mon"><span class="m">${esc(rangeTitle(r))}</span><span class="t">진행 중 ${act.length}건</span></div>${pills('c')}<div class="sec">출고 대기 중</div>`
-    + (act.length ? `<div class="card">${act.map(line).join('')}</div>` : '<div class="empty" style="padding:30px 0">진행 중인 건이 없어요</div>')
-    + (dn.length ? `<div class="sec">완료</div><div class="card">${dn.map(o => `<div class="li"><div><div class="a">${esc(o.i)} ${esc(o.c)}</div><div class="b">발주 ${esc(mmdd(o.d || ''))}${o.q > 0 ? ` · ${qty(o.q, o.u)}` : ''}</div>${shipTxt(o)}</div><div class="r"><span class="chip ok" style="margin:0">완료</span></div></div>`).join('')}</div>` : '')
+  const byDay = new Map();
+  for (const o of act) { const k = o.d || ''; if (!byDay.has(k)) byDay.set(k, []); byDay.get(k).push(o); }
+  const days = Array.from(byDay.entries()).sort((x, y) => String(y[0]).localeCompare(String(x[0])));
+  return `<div class="mon"><span class="m">${esc(rangeTitle(r))}</span><span class="t">진행 중 ${act.length}건</span></div>${pills('c')}`
+    + (days.length ? days.map(([d, os]) => `<div class="day"><b>발주 ${esc(mmdd(d))}</b><span>${os.length}건</span></div><div class="card">${os.map(line).join('')}</div>`).join('') : '<div class="empty" style="padding:30px 0">진행 중인 건이 없어요</div>')
     + '<div class="ft">정확한 입고일은 <a href="https://pf.kakao.com/_cnMsn/chat">채널로 문의</a>해 주세요</div>';
 }
 function render() {

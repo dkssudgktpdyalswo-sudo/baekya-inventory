@@ -268,6 +268,7 @@
     <button id="orderGroupToggleBtn" onclick="toggleOrderGroupMode()" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;"></button>
     <button onclick="printOrderLedger()" style="border:none;background:#dbe9f0;color:var(--primary-dark);border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">이월장부 인쇄</button>
     <button onclick="printOrderLedger('image')" style="border:none;background:#fee500;color:#191919;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:700;">📤 이월장부 카톡 이미지</button>
+    <button onclick="arrivalOpenManual()" style="border:none;background:#eaf3ec;color:#2f6b46;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:700;">📩 입고 안내</button>
     <button onclick="archiveOldCompleted()" style="border:none;background:#fff3d6;color:#a15c1e;border-radius:8px;padding:7px 12px;font-size:12px;font-weight:600;">오래된 완료건 내보내기 및 정리</button>
     <div style="width:100%; display:flex; align-items:center; gap:6px; margin-top:4px;">
       <span style="font-size:12px; color:var(--muted); flex:none;">등록일</span>
@@ -420,6 +421,13 @@
   </div>
 </div>
 
+<div class="modal-overlay" id="arrivalModal">
+  <div class="modal">
+    <h3 id="ar-title">입고 안내</h3>
+    <div id="ar-body"></div>
+    <div class="modal-actions"><button class="btn-cancel" onclick="arrivalClose()">닫기</button></div>
+  </div>
+</div>
 <div class="modal-overlay" id="ledgerLinkModal">
   <div class="modal">
     <h3>📱 거래처 장부 링크</h3>
@@ -1377,7 +1385,7 @@
 const PASSWORD = "3059";
 const ADMIN_PASSWORD = "9503"; // 매출/미수금 탭 전용 - 필요하면 이 값만 바꿔서 변경 가능
 const DATA_VERSION = "2026-08-03-v4"; // 재고/이월장부 씨앗 데이터를 바꿀 때마다 이 값을 새로 바꿔주세요
-const APP_CODE_VERSION = "2026-11-20-zo"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
+const APP_CODE_VERSION = "2026-11-20-zr"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
 const SCHEMA_STAMP = 2; // 서버 저장규칙이 확인하는 "최신 앱 도장" - 절대 자주 바꾸지 않음(이 값을 아는 코드만 저장 가능하게 서버에서 막을 때 씀)
 const CONFIRMED_EMPTY = '__CONFIRMED_EMPTY__'; // "서버가 확실하게 문서가 없다고 확인해줬다"는 걸 표시하는 특수값
                                                  // (한번도 확인 안 한 null과 구분해서, 그 사이 다른 사람이 첫 데이터를 만들었으면 충돌로 감지하기 위함)
@@ -7522,6 +7530,131 @@ async function ledgerSyncAll(manual) {
     return true;
   } finally { _ledgerBusy = false; if (_ledgerAgain) { _ledgerAgain = false; ledgerSchedule(); } }
 }
+// ---------- 입고 안내 문구 (이월 걸어둔 거래처에게 카톡으로 보낼 문구를 만들어 복사 · 품목만 넣고 수량/날짜는 안 넣음) ----------
+const ARRIVAL_TPL_DEFAULT = '{거래처} 귀하, 안녕하세요. 백야입니다.\n주문하신 원단이 입고되었습니다.\n\n{품목}\n\n편하신 때에 말씀해 주세요. 감사합니다.';
+let _ar = null;
+function arrivalTpl() { const t = settings && settings.arrivalTpl; return (typeof t === 'string' && t.indexOf('{품목}') >= 0) ? t : ARRIVAL_TPL_DEFAULT; }
+function arrivalNotified() { return (settings && settings.arrivalNotified) || {}; }
+function arrivalKey(item, color) { return normalizeNameForMatch(resolveInventoryItem(item)) + '|' + normalizeNameForMatch(color); }
+function arrivalBuild(recv, label) { // recv: [{item,color,qty}] -> 입고 현황 줄 + 안내할 거래처 목록
+  const carry = buildCarryoverIndex(), rows = [], byCust = new Map(), seen = new Set();
+  for (const r of recv) {
+    const key = arrivalKey(r.item, r.color);
+    if (seen.has(key)) continue;
+    const c = carry.byColor.get(key);
+    if (!c) continue;
+    seen.add(key);
+    const recvQty = recv.filter(x => arrivalKey(x.item, x.color) === key).reduce((a, x) => a + x.qty, 0);
+    rows.push({ item: r.item, color: r.color, qty: Math.round(recvQty * 100) / 100, carry: c });
+    for (const who of c.list) {
+      if (who.customer === '거래처 미입력') continue;
+      if (!byCust.has(who.customer)) byCust.set(who.customer, []);
+      byCust.get(who.customer).push({ item: r.item, color: r.color, jeol: who.jeol, y: who.y });
+    }
+  }
+  const notified = arrivalNotified();
+  const custs = Array.from(byCust.entries()).map(([name, items]) => ({ name, items })).sort((a, b) => String(notified[a.name] || '').localeCompare(String(notified[b.name] || '')) || a.name.localeCompare(b.name, 'ko'));
+  return { rows, custs, label };
+}
+function arrivalOpenManual() { // 이월장부 상단 버튼 - 지금 재고가 있는데 이월 걸려 있는 품목들
+  const stock = new Map(), names = new Map();
+  for (const r of rolls) {
+    if (r.defective || !(r.qty > 0)) continue;
+    const k = arrivalKey(r.item, r.color);
+    stock.set(k, (stock.get(k) || 0) + r.qty);
+    if (!names.has(k)) names.set(k, { item: r.item, color: r.color });
+  }
+  const recv = Array.from(stock.entries()).map(([k, q]) => ({ ...names.get(k), qty: Math.round(q * 100) / 100 }));
+  const d = arrivalBuild(recv, '재고');
+  if (!d.custs.length) { showToast('지금 재고가 있고 이월이 걸려있는 거래처가 없어요'); return; }
+  arrivalOpen(d, '지금 재고 기준');
+}
+function arrivalOpen(d, sub) {
+  _ar = { rows: d.rows, custs: d.custs, label: d.label, sub, stage: 'pick', picks: new Set(), texts: {}, edited: {}, copied: {}, tplFrom: 'pick' };
+  arrivalRender();
+  document.getElementById('arrivalModal').classList.add('open');
+}
+function arrivalClose() { document.getElementById('arrivalModal').classList.remove('open'); _ar = null; }
+function arrivalText(i) {
+  const c = _ar.custs[i], lines = c.items.map(it => `· ${it.item} ${it.color}`).join('\n');
+  return arrivalTpl().replace(/\{거래처\}/g, () => c.name).replace(/\{품목\}/g, () => lines);
+}
+function arrivalToggle(i) { if (_ar.picks.has(i)) _ar.picks.delete(i); else _ar.picks.add(i); arrivalRender(); }
+function arrivalMake() {
+  if (!_ar.picks.size) return;
+  for (const i of _ar.picks) if (!_ar.edited[i]) _ar.texts[i] = arrivalText(i);
+  _ar.stage = 'msg'; arrivalRender();
+}
+function arrivalBack() { _ar.stage = 'pick'; arrivalRender(); }
+function arrivalReset(i) { _ar.texts[i] = arrivalText(i); _ar.edited[i] = false; _ar.copied[i] = false; arrivalRender(); }
+function arrivalInput(i, el) {
+  _ar.texts[i] = el.value; _ar.edited[i] = true; _ar.copied[i] = false;
+  el.style.height = 'auto'; el.style.height = (el.scrollHeight + 2) + 'px';
+  const b = document.getElementById('ar-copy-' + i); if (b) { b.textContent = '문구 복사'; b.style.background = '#595959'; }
+}
+function arrivalCopy(i) {
+  const txt = _ar.texts[i], name = _ar.custs[i].name;
+  const done = () => {
+    if (!_ar) return;
+    _ar.copied[i] = true;
+    const b = document.getElementById('ar-copy-' + i); if (b) { b.textContent = '복사됨 ✓'; b.style.background = '#2f7a52'; }
+    settings.arrivalNotified = { ...arrivalNotified(), [name]: todayStr() };
+    persistSettings().catch(() => {});
+    showToast('문구를 복사했어요');
+  };
+  if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(txt).then(done, () => { prompt('문구를 복사하세요', txt); done(); });
+  else { prompt('문구를 복사하세요', txt); done(); }
+}
+function arrivalOpenTpl() { _ar.tplFrom = _ar.stage; _ar.stage = 'tpl'; _ar.tplDraft = arrivalTpl(); arrivalRender(); }
+function arrivalTplReset() { document.getElementById('ar-tpl').value = ARRIVAL_TPL_DEFAULT; }
+function arrivalTplCancel() { _ar.stage = _ar.tplFrom; arrivalRender(); }
+async function arrivalTplSave() {
+  const v = document.getElementById('ar-tpl').value;
+  if (v.indexOf('{품목}') < 0) { showToast('{품목} 이 문구 안에 들어 있어야 해요 (품목 목록이 들어갈 자리예요)'); return; }
+  const prev = settings.arrivalTpl;
+  settings.arrivalTpl = v;
+  const ok = await persistSettings();
+  if (ok === false) { settings.arrivalTpl = prev; return; }
+  showToast('기본 문구를 저장했어요');
+  _ar.stage = _ar.tplFrom;
+  if (_ar.stage === 'msg') for (const i of _ar.picks) if (!_ar.edited[i]) _ar.texts[i] = arrivalText(i);
+  arrivalRender();
+}
+function arrivalRender() {
+  const box = document.getElementById('ar-body'), a = _ar;
+  const bs = 'border:none; border-radius:9px; padding:12px 0; font-size:14px; font-weight:800;';
+  const cardCss = 'background:#fff; border:1px solid var(--border); border-radius:12px; overflow:hidden;';
+  const sec = t => `<div style="font-size:12.5px; font-weight:800; color:var(--muted); margin:14px 2px 6px;">${t}</div>`;
+  const tplLink = `<div style="text-align:center; margin-top:14px;"><span onclick="arrivalOpenTpl()" style="font-size:12.5px; color:var(--muted); text-decoration:underline; cursor:pointer;">기본 문구 바꾸기 (인사말 · 끝맺음)</span></div>`;
+  document.getElementById('ar-title').textContent = a.stage === 'tpl' ? '기본 문구 바꾸기' : '입고 안내';
+  if (a.stage === 'tpl') {
+    box.innerHTML = `<div style="font-size:12.5px; color:var(--muted); line-height:1.6; margin-bottom:8px;"><b>{거래처}</b> 는 거래처 이름, <b>{품목}</b> 은 품목 목록으로 바뀌어요. 이 두 글자는 그대로 두고 나머지를 고쳐주세요.</div>
+      <textarea id="ar-tpl" style="width:100%; box-sizing:border-box; min-height:190px; font-size:14px; line-height:1.65; padding:10px 12px; border:1px solid var(--border); border-radius:10px; background:#fbf7e6; font-family:inherit;">${esc(a.tplDraft)}</textarea>
+      <div style="display:flex; gap:8px; margin-top:10px;"><button type="button" onclick="arrivalTplReset()" style="${bs} flex:none; padding:12px 14px; background:#e6e1e1; color:#3a3636;">처음 문구로</button><button type="button" onclick="arrivalTplCancel()" style="${bs} flex:none; padding:12px 14px; background:#e6e1e1; color:#3a3636;">취소</button><button type="button" onclick="arrivalTplSave()" style="${bs} flex:1; background:#595959; color:#fff;">저장</button></div>`;
+    return;
+  }
+  if (a.stage === 'pick') {
+    const notified = arrivalNotified();
+    box.innerHTML = `<div style="display:flex; justify-content:space-between; font-size:12px; color:var(--muted);"><span>이월로 걸어둔 거래처예요. 안내할 곳을 직접 골라주세요.</span></div>
+      ${sec('안내할 거래처')}
+      <div style="${cardCss}">${a.custs.map((c, i) => { const on = a.picks.has(i), n = notified[c.name];
+        return `<div onclick="arrivalToggle(${i})" style="display:flex; align-items:center; gap:10px; padding:11px 14px; cursor:pointer; ${i ? 'border-top:1px solid #f1ece8;' : ''}"><span style="flex:none; width:22px; height:22px; border-radius:6px; border:2px solid ${on ? '#595959' : '#b5adad'}; background:${on ? '#595959' : '#fff'}; color:#fff; display:inline-flex; align-items:center; justify-content:center; font-size:14px;">${on ? '✓' : ''}</span><div style="flex:1; min-width:0;"><div style="font-size:15px; font-weight:800;">${esc(c.name)}</div><div style="font-size:12.5px; color:var(--muted); margin-top:2px;">${c.items.map(it => esc(it.item + ' ' + it.color + ' ' + fmtCarry(it))).join(' · ')}</div></div><span style="flex:none; font-size:12px; color:var(--muted); white-space:nowrap;">${n ? esc(String(n).slice(3)) + ' 안내' : '안내 전'}</span></div>`; }).join('')}</div>
+      <button type="button" onclick="arrivalMake()" ${a.picks.size ? '' : 'disabled'} style="${bs} width:100%; margin-top:14px; background:${a.picks.size ? '#595959' : '#ddd5d5'}; color:${a.picks.size ? '#fff' : '#a39b9b'};">문구 만들기 (${a.picks.size}곳 선택)</button>
+      ${tplLink}`;
+    return;
+  }
+  const picks = Array.from(a.picks).sort((x, y) => x - y);
+  box.innerHTML = `<div onclick="arrivalBack()" style="font-size:13px; font-weight:700; color:var(--muted); cursor:pointer; margin-bottom:4px;">← 거래처 다시 고르기</div>
+    <div style="font-size:12px; color:var(--muted); margin-bottom:10px;">문구를 눌러서 바로 고칠 수 있어요. 고친 내용 그대로 복사돼요.</div>
+    ${picks.map(i => { const c = a.custs[i], done = a.copied[i];
+      return `<div style="${cardCss} margin-bottom:12px;"><div style="display:flex; justify-content:space-between; align-items:center; padding:10px 14px; border-bottom:1px solid #f1ece8;"><b style="font-size:15px;">${esc(c.name)}</b><span style="font-size:12px; color:var(--muted);">품목 ${c.items.length}개</span></div>
+        <textarea oninput="arrivalInput(${i}, this)" style="display:block; width:calc(100% - 28px); box-sizing:border-box; margin:12px 14px 0; min-height:150px; font-size:14px; line-height:1.65; padding:10px 12px; border:1px solid #efe5b8; border-radius:12px; background:#fbf7e6; font-family:inherit; resize:none;">${esc(a.texts[i])}</textarea>
+        <div style="display:flex; gap:8px; padding:12px 14px;"><button type="button" onclick="arrivalReset(${i})" style="${bs} flex:none; padding:12px 16px; background:#e6e1e1; color:#3a3636;">원래대로</button><button type="button" id="ar-copy-${i}" onclick="arrivalCopy(${i})" style="${bs} flex:1; color:#fff; background:${done ? '#2f7a52' : '#595959'};">${done ? '복사됨 ✓' : '문구 복사'}</button></div></div>`; }).join('')}
+    ${tplLink}
+    <div style="font-size:12px; color:var(--muted); text-align:center; margin-top:8px;">복사하면 그 거래처에 "${esc(todayStr().slice(3))} 안내"가 기록돼요</div>`;
+  box.querySelectorAll('textarea').forEach(t => { t.style.height = 'auto'; t.style.height = (t.scrollHeight + 2) + 'px'; });
+}
+
 let _ledgerModalCustomer = '';
 function openLedgerLinkModal(customer) {
   _ledgerModalCustomer = String(customer).trim();
