@@ -1369,7 +1369,7 @@
 const PASSWORD = "3059";
 const ADMIN_PASSWORD = "9503"; // 매출/미수금 탭 전용 - 필요하면 이 값만 바꿔서 변경 가능
 const DATA_VERSION = "2026-08-03-v4"; // 재고/이월장부 씨앗 데이터를 바꿀 때마다 이 값을 새로 바꿔주세요
-const APP_CODE_VERSION = "2026-11-20-zg"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
+const APP_CODE_VERSION = "2026-11-20-zh"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
 const SCHEMA_STAMP = 2; // 서버 저장규칙이 확인하는 "최신 앱 도장" - 절대 자주 바꾸지 않음(이 값을 아는 코드만 저장 가능하게 서버에서 막을 때 씀)
 const CONFIRMED_EMPTY = '__CONFIRMED_EMPTY__'; // "서버가 확실하게 문서가 없다고 확인해줬다"는 걸 표시하는 특수값
                                                  // (한번도 확인 안 한 null과 구분해서, 그 사이 다른 사람이 첫 데이터를 만들었으면 충돌로 감지하기 위함)
@@ -7495,16 +7495,24 @@ function pubStockHash(str) { let h = 5381; for (let i = 0; i < str.length; i++) 
 function pubStockBuild() {
   const out = [];
   const hidden = new Set(((settings && settings.pubHidden) || []).map(n => normalizeNameForMatch(n)));
+  const stOf = (c) => c.stock <= 0 ? 2 : (c.stock <= PUBSTOCK_SAMPLE_Y ? 1 : 0); // 0 정상 / 1 품절·샘플가능 / 2 품절
   for (const it of catalogUniverse()) {
     if (hidden.has(normalizeNameForMatch(it.item))) continue; // 공개하기 싫다고 골라둔 품목은 고객 페이지에 안 올림
-    const cols = it.colors.map(c => ({ c: c.color, s: c.stock <= 0 ? 2 : (c.stock <= PUBSTOCK_SAMPLE_Y ? 1 : 0), nk: c.nk })); // 0 정상 / 1 품절·샘플가능 / 2 품절
+    // 같은 컬러의 무지/기모는 한 칸으로 묶음 (카톡 이미지와 같은 묶음 규칙). 칸 상태는 "가장 좋은 쪽" 기준, 일부만 없으면 그 변형만 따로 표시
+    const cols = catGroupsOf(it).map(g => {
+      const members = [{ n: '무지', c: g.main }, ...g.variants.map(v => ({ n: v.label, c: v.c }))];
+      const ss = members.map(m => stOf(m.c));
+      const col = { c: g.main.color, s: Math.min(...ss), nks: members.map(m => m.c.nk) };
+      if (members.length > 1) col.v = members.map((m, i) => ({ n: m.n, s: ss[i] }));
+      return col;
+    });
     if (!cols.some(c => c.s < 2)) continue; // 재고가 하나도 없는 품목은 고객 페이지에 안 보여줌
     const date = it.colors.reduce((m, c) => (c.stock > 0 && c.newestIn > m) ? c.newestIn : m, '');
     out.push({ id: pubStockItemId(it), it, item: it.item, mix: it.mix || '', cols, date });
   }
   return out;
 }
-function pubStockSig(e) { return pubStockHash(JSON.stringify([e.item, e.mix, e.date, e.cols.map(c => [c.c, c.s])])); }
+function pubStockSig(e) { return pubStockHash(JSON.stringify([e.item, e.mix, e.date, e.cols.map(c => [c.c, c.s, c.v ? c.v.map(x => [x.n, x.s]) : 0])])); }
 function pubStockSquare(src, size) {
   if (!src) return Promise.resolve('');
   return new Promise(resolve => {
@@ -7536,12 +7544,12 @@ async function pubStockSync(manual) {
     const items = []; let wrote = 0;
     for (const e of list) {
       const sig = pubStockSig(e), prev = old[e.id];
-      const photoDirty = dirty.has(catPhotoKey(e.it)) || e.cols.some(c => dirty.has(c.nk));
+      const photoDirty = dirty.has(catPhotoKey(e.it)) || e.cols.some(c => c.nks.some(k => dirty.has(k)));
       if (prev && prev.h === sig && !photoDirty) { items.push(prev); continue; }
-      await catPhotoLoad([catPhotoKey(e.it), ...e.cols.map(c => c.nk)]);
-      const th = await pubStockSquare(_catPhotos[catPhotoKey(e.it)] || e.cols.map(c => _catPhotos[c.nk]).find(Boolean) || '', 140);
+      await catPhotoLoad([catPhotoKey(e.it), ...e.cols.flatMap(c => c.nks)]);
+      const th = await pubStockSquare(_catPhotos[catPhotoKey(e.it)] || e.cols.flatMap(c => c.nks).map(k => _catPhotos[k]).find(Boolean) || '', 140);
       const cols = [];
-      for (const c of e.cols) cols.push({ c: c.c, s: c.s, t: await pubStockSquare(_catPhotos[c.nk] || '', 120) });
+      for (const c of e.cols) { const ph = c.nks.map(k => _catPhotos[k]).find(Boolean) || ''; cols.push({ c: c.c, s: c.s, ...(c.v ? { v: c.v } : {}), t: await pubStockSquare(ph, 120) }); } // 사진은 무지 것, 없으면 기모 것
       await pubCol().doc('pubstock_' + e.id).set({ stamp: SCHEMA_STAMP, kind: 'pubStockItem', data: JSON.stringify({ item: e.item, mix: e.mix, date: e.date, cols }) });
       items.push({ id: e.id, item: e.item, mix: e.mix, n: cols.length, out: cols.filter(c => c.s > 0).length, th, date: e.date, h: sig });
       wrote++;
