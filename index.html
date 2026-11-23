@@ -1389,7 +1389,7 @@
 const PASSWORD = "3059";
 const ADMIN_PASSWORD = "9503"; // 매출/미수금 탭 전용 - 필요하면 이 값만 바꿔서 변경 가능
 const DATA_VERSION = "2026-08-03-v4"; // 재고/이월장부 씨앗 데이터를 바꿀 때마다 이 값을 새로 바꿔주세요
-const APP_CODE_VERSION = "2026-11-23-zza"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
+const APP_CODE_VERSION = "2026-11-23-zzb"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
 const SCHEMA_STAMP = 2; // 서버 저장규칙이 확인하는 "최신 앱 도장" - 절대 자주 바꾸지 않음(이 값을 아는 코드만 저장 가능하게 서버에서 막을 때 씀)
 const CONFIRMED_EMPTY = '__CONFIRMED_EMPTY__'; // "서버가 확실하게 문서가 없다고 확인해줬다"는 걸 표시하는 특수값
                                                  // (한번도 확인 안 한 null과 구분해서, 그 사이 다른 사람이 첫 데이터를 만들었으면 충돌로 감지하기 위함)
@@ -8613,7 +8613,6 @@ function renderCustomerLedgerView() {
     </div>
     <div style="display:flex; gap:6px; flex-wrap:wrap; margin-bottom:8px;">
       <button onclick="printCurrentLedgerStatement()" style="border:none;background:#eaf3ec;color:#2f6b46;border-radius:7px;padding:8px 12px;font-size:12px;font-weight:600;white-space:nowrap;">명세서 인쇄</button>
-      <button onclick="printCurrentLedgerStatement('share')" style="border:none;background:#fee500;color:#191919;border-radius:7px;padding:8px 12px;font-size:12px;font-weight:700;white-space:nowrap;">명세서 이미지</button>
       <button class="btn-key" onclick="if(ledgerCustomer) payCustomerUnpaid(ledgerCustomer)" style="border:none;background:#eaf3ec;color:#2f6b46;border-radius:7px;padding:8px 12px;font-size:12px;font-weight:600;white-space:nowrap;">입금 처리</button>
       <button onclick="printLedgerPeriod()" style="border:none;background:#e8edf5;color:#3d4f6b;border-radius:7px;padding:8px 12px;font-size:12px;font-weight:600;white-space:nowrap;">기간별 인쇄</button>
       <button onclick="printLedgerPeriod('share')" style="border:none;background:#fee500;color:#191919;border-radius:7px;padding:8px 12px;font-size:12px;font-weight:700;white-space:nowrap;">${kakaoLbl()}</button>
