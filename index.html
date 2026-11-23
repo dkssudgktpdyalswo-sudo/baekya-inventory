@@ -1389,7 +1389,7 @@
 const PASSWORD = "3059";
 const ADMIN_PASSWORD = "9503"; // 매출/미수금 탭 전용 - 필요하면 이 값만 바꿔서 변경 가능
 const DATA_VERSION = "2026-08-03-v4"; // 재고/이월장부 씨앗 데이터를 바꿀 때마다 이 값을 새로 바꿔주세요
-const APP_CODE_VERSION = "2026-11-23-zzb"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
+const APP_CODE_VERSION = "2026-11-23-zzd"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
 const SCHEMA_STAMP = 2; // 서버 저장규칙이 확인하는 "최신 앱 도장" - 절대 자주 바꾸지 않음(이 값을 아는 코드만 저장 가능하게 서버에서 막을 때 씀)
 const CONFIRMED_EMPTY = '__CONFIRMED_EMPTY__'; // "서버가 확실하게 문서가 없다고 확인해줬다"는 걸 표시하는 특수값
                                                  // (한번도 확인 안 한 null과 구분해서, 그 사이 다른 사람이 첫 데이터를 만들었으면 충돌로 감지하기 위함)
@@ -6551,10 +6551,14 @@ function buildStatementHTMLInner(customerName, startDate, endDate, entryIdFilter
 
   // "미수금액"은 이 명세서가 다루는 기간의 끝(endDate) 시점 기준으로 정확히 계산함 (인쇄물은 그 시점의 스냅샷이어야 하니까)
   // 화면(입금 처리, 원장 등)은 이 함수를 날짜 없이 그대로 불러서 항상 최신을 보여주고, 인쇄만 이렇게 날짜를 줘서 그 시점 기준으로 계산함
-  const customerTotalUnpaid = getCustomerTrueUnpaid(t_c, endDate);
-  const balance = Math.max(0, customerTotalUnpaid + extraTotal + taxOverrideExtra);
+  const customerNetBalance = getCustomerNetBalance(t_c, endDate); // 마이너스 = 미리 받아둔 선수금
+  const balanceRaw = customerNetBalance + extraTotal + taxOverrideExtra;
+  const balance = Math.max(0, balanceRaw);
+  const creditLeft = Math.max(0, Math.round(-balanceRaw * 100) / 100); // 이 명세서 기준으로 남는 선수금
   // "미수금"(이전) = 기존에 갖고 있던 미수금 중, 이 명세서에 실제로 적힌 항목들 말고 나머지 (새로 추가하는 선수금 항목은 안 섞음 - 그건 표에 이미 따로 나옴)
-  const carryoverAmt = Math.max(0, customerTotalUnpaid - listedUnpaid);
+  const carryoverRaw = Math.round((customerNetBalance - listedUnpaid) * 100) / 100;
+  const carryoverAmt = Math.max(0, carryoverRaw);
+  const prepaidApplied = Math.max(0, -carryoverRaw); // 이 명세서 금액에서 빠지는, 전에 받아둔 선수금
 
   const b = settings;
   const infoBox = `
@@ -6613,6 +6617,7 @@ function buildStatementHTMLInner(customerName, startDate, endDate, entryIdFilter
           if (totalDiscount > 0) items.push({ label: '공제액', value: `${totalDiscount.toLocaleString()}원`, color: '#1a5f8a' });
           if (totalPaid > 0) items.push({ label: '입금 합계', value: `${totalPaid.toLocaleString()}원`, color: '#1a56db' });
           if (carryoverAmt > 0) items.push({ label: '미수금', value: `${carryoverAmt.toLocaleString()}원`, color: '#a15c1e' });
+          if (prepaidApplied > 0) items.push({ label: '선수금(차감)', value: `-${prepaidApplied.toLocaleString()}원`, color: '#1a56db' });
           let rowsOut = '';
           for (let i = 0; i < items.length; i += 2) {
             const a = items[i], c = items[i + 1];
@@ -6623,7 +6628,7 @@ function buildStatementHTMLInner(customerName, startDate, endDate, entryIdFilter
           }
           return `<table style="font-size:${sizes.totalsFont}; margin-top:${sizes.totalsGap}; width:100%; border-collapse:collapse;">
             ${rowsOut}
-            <tr><td style="color:#1a5f8a;font-weight:800;padding:3px 4px;border:1px solid #ccc;">총 미수금액(전체)</td><td colspan="3" style="text-align:right;font-weight:800;padding:3px 4px;border:1px solid #ccc;">${balance.toLocaleString()}원</td></tr>
+            <tr><td style="color:#1a5f8a;font-weight:800;padding:3px 4px;border:1px solid #ccc;">${creditLeft > 0 ? '선수금 잔액' : '총 미수금액(전체)'}</td><td colspan="3" style="text-align:right;font-weight:800;padding:3px 4px;border:1px solid #ccc;">${creditLeft > 0 ? '-' + creditLeft.toLocaleString() : balance.toLocaleString()}원</td></tr>
           </table>`;
         })()}
         ${(() => {
@@ -11226,6 +11231,16 @@ function unpaidContributionOf(e, asOfDate) {
   // 예전 방식(입금 기록 배열 없이 paidAmount/paid만 있는) 데이터도 getRemaining/getPaidAmount와 똑같이 입금으로 인정함
   if (!(e.payments && e.payments.length)) total -= getPaidAmount(e);
   return total;
+}
+function getCustomerNetBalance(customer, asOfDate) {
+  // 0 밑으로 안 자르고 그대로 - 마이너스면 거래처가 미리 낸 선수금(받아둔 돈)이 더 많다는 뜻 (명세서에서 0원으로 보이지 않게 쓰임)
+  const t_c = String(customer).trim();
+  let total = 0;
+  for (const e of shipmentLog) {
+    if (String(e.customer || '').trim() !== t_c) continue;
+    total += unpaidContributionOf(e, asOfDate);
+  }
+  return Math.round(total * 100) / 100;
 }
 function getCustomerTrueUnpaid(customer, asOfDate) {
   // 이 거래처의 총 미수금 - 건별로 끊어서 0 밑으로 안 내려가게 막지 않고, 전체를 하나의 흐름으로 누적계산함
