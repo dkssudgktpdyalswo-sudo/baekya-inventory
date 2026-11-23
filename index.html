@@ -1385,7 +1385,7 @@
 const PASSWORD = "3059";
 const ADMIN_PASSWORD = "9503"; // 매출/미수금 탭 전용 - 필요하면 이 값만 바꿔서 변경 가능
 const DATA_VERSION = "2026-08-03-v4"; // 재고/이월장부 씨앗 데이터를 바꿀 때마다 이 값을 새로 바꿔주세요
-const APP_CODE_VERSION = "2026-11-20-zt"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
+const APP_CODE_VERSION = "2026-11-23-zw"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
 const SCHEMA_STAMP = 2; // 서버 저장규칙이 확인하는 "최신 앱 도장" - 절대 자주 바꾸지 않음(이 값을 아는 코드만 저장 가능하게 서버에서 막을 때 씀)
 const CONFIRMED_EMPTY = '__CONFIRMED_EMPTY__'; // "서버가 확실하게 문서가 없다고 확인해줬다"는 걸 표시하는 특수값
                                                  // (한번도 확인 안 한 null과 구분해서, 그 사이 다른 사람이 첫 데이터를 만들었으면 충돌로 감지하기 위함)
@@ -6583,7 +6583,7 @@ function buildStatementHTMLInner(customerName, startDate, endDate, entryIdFilter
   // QR + 안내문구: 글자 두 줄 높이가 QR 높이와 맞게 (qr px 기준으로 글자 크기/줄간격 계산)
   const qrGuideHtml = (q, fs) => `<div style="display:flex; align-items:center; gap:${Math.round(q * 0.18)}px;"><div style="height:${q}px; display:flex; flex-direction:column; justify-content:center; font-size:${fs}; line-height:1.55; color:#333; text-align:right; white-space:nowrap;"><span>채널 추가하시고 채팅방 메뉴에서</span><span><b>신상 및 베스트 품목</b>을 확인하실 수 있습니다</span></div><img src="${CAT_BRAND.qr}" style="width:${q}px;height:${q}px;display:block;flex:none;"></div>`;
   const renderCopy = (copyLabel, rowsHtmlForPage, fit, withQr) => `
-    <div class="${compact ? 'compact-statement' : ''}" style="padding:${sizes.pad}; font-family:-apple-system,'Malgun Gothic',sans-serif; box-sizing:border-box; ${fit ? 'min-height:1123px;' : 'height:50%; overflow:hidden;'} display:flex; flex-direction:column;">
+    <div class="${compact ? 'compact-statement' : ''}" style="padding:${sizes.pad}; font-family:-apple-system,'Malgun Gothic',sans-serif; box-sizing:border-box; ${fit ? (options.trim ? '' : 'min-height:1123px;') : 'height:50%; overflow:hidden;'} display:flex; flex-direction:column;">
       <div style="flex:none;">
         <div style="display:flex; justify-content:space-between; align-items:baseline; margin-bottom:${sizes.titleGap};">
           <h2 style="margin:0; font-size:${sizes.titleSize}; letter-spacing:2px; color:#1a5f8a;">거 래 명 세 표</h2>
@@ -6906,15 +6906,17 @@ function catSplitGroups(it, wide) { // 타일이 많으면 비슷한 개수로 �
 const _catPhotos = {}; // 품목키 -> dataURL ('' = 사진 없음 확인됨)
 function catPhotoKey(it) { return normalizeNameForMatch(it.item); }
 function catPhotoDocId(key) { let h = 5381; for (let i = 0; i < key.length; i++) h = ((h * 33) ^ key.charCodeAt(i)) >>> 0; return 'catphoto_' + h.toString(36); }
-async function catPhotoLoad(keys) {
-  let changed = false;
-  if (typeof db === 'undefined' || !db) return false;
-  await Promise.all(keys.filter(k => !(k in _catPhotos)).map(async k => {
+let _catPhotoErr = 0; // 마지막 불러오기에서 못 읽은 사진 수
+async function catPhotoLoad(keys, refreshEmpty) { // refreshEmpty: 예전에 "사진 없음"으로 기억해 둔 것도 서버에서 다시 확인 (다른 폰/PC에서 나중에 등록한 사진이 이미 열려 있던 화면에 안 나오는 것 방지)
+  let changed = false; _catPhotoErr = 0;
+  if (typeof db === 'undefined' || !db) { _catPhotoErr = keys.length; return false; }
+  await Promise.all(keys.filter(k => !(k in _catPhotos) || (refreshEmpty && !_catPhotos[k])).map(async k => {
     try {
       const d = await db.collection('inventory').doc(catPhotoDocId(k)).get();
       const v = d.exists && d.data() && d.data().key === k ? d.data().dataUrl : '';
-      _catPhotos[k] = v || ''; changed = true;
-    } catch (e) { /* 못 읽으면 이번엔 사진 없이 진행 (다음에 다시 시도) */ }
+      if ((_catPhotos[k] || '') !== (v || '') || !(k in _catPhotos)) changed = true;
+      _catPhotos[k] = v || '';
+    } catch (e) { _catPhotoErr++; /* 못 읽으면 이번엔 사진 없이 진행 (다음에 다시 시도) */ }
   }));
   return changed;
 }
@@ -6949,6 +6951,7 @@ async function catPhotoChosen(inp) {
     await db.collection('inventory').doc(catPhotoDocId(row.key)).set({ kind: 'catPhoto', key: row.key, item: row.item, dataUrl: data, updatedAt: new Date().toISOString(), stamp: SCHEMA_STAMP });
     _catPhotos[row.key] = data; pubStockDirtyKey(row.key);
     showToast(`${row.item} 사진을 저장했어요`);
+    pubLoadIndex().then(ix => { if (ix && Array.isArray(ix.entries) && ix.entries.some(e => normalizeNameForMatch(e.item) === row.key)) showToast(`${row.item} 사진을 저장했어요 - 고객 페이지(신상/Best)에 이미 올린 품목은 다시 올려야 사진이 보여요`); }).catch(() => {}); // 신상/Best는 올릴 때 이미지로 굳어서, 나중에 등록한 사진은 다시 올려야 들어감
   } catch (e) { showToast('사진을 저장하지 못했어요 (사진 파일이나 인터넷 연결을 확인해주세요)'); }
   catUpdateCount();
 }
@@ -7354,7 +7357,8 @@ async function generateCatalog(mode) {
   if (items.length === 0) { showToast(cfg.mode === 'new' ? '신상으로 보낼 컬러를 검색해서 추가해주세요' : '재고표에 넣을 품목을 검색해서 추가해주세요'); return; }
   if (items.length > 30) { showToast(`품목이 ${items.length}개예요 - 카톡은 한 번에 사진 30장까지라서 품목을 골라주세요`); return; }
   showToast('이미지를 만드는 중이에요...');
-  await catPhotoLoad([...items.map(catPhotoKey), ...items.flatMap(it => it.colors.map(c => c.nk))]);
+  await catPhotoLoad([...items.map(catPhotoKey), ...items.flatMap(it => it.colors.map(c => c.nk))], true);
+  if (_catPhotoErr > 0) showToast('사진을 일부 불러오지 못했어요 - 인터넷 연결을 확인하고 다시 눌러주세요 (사진 없이 만들면 사진이 빠져요)');
   const wide = cfg.format === 'promo';
   const nImg = catImageCount(items, wide);
   if (nImg > 30) { showToast(`이미지가 ${nImg}장이에요 - 카톡은 한 번에 사진 30장까지라서 품목을 줄여주세요`); return; }
@@ -7430,7 +7434,7 @@ async function publishCatalog() {
   _pubBusy = true;
   const btn = document.getElementById('pub-btn'); const btnTxt = btn.textContent;
   try {
-    await catPhotoLoad([...items.map(catPhotoKey), ...items.flatMap(it => it.colors.map(c => c.nk))]);
+    await catPhotoLoad([...items.map(catPhotoKey), ...items.flatMap(it => it.colors.map(c => c.nk))], true);
     let idx;
     try { idx = await pubLoadIndex(); } catch (e) { showToast('고객 페이지 목록을 불러오지 못했어요 (인터넷 연결을 확인해주세요)'); return; }
     const today = todayStr();
@@ -7850,12 +7854,26 @@ function pubStockBuild() {
   }
   return out;
 }
-function pubStockSig(e) { return pubStockHash(JSON.stringify([e.item, e.mix, e.date, e.cols.map(c => [c.c, c.s, c.v ? c.v.map(x => [x.n, x.s]) : 0])])); }
+function pubStockSig(e) { return pubStockHash(JSON.stringify(['p2', e.item, e.mix, e.date, e.cols.map(c => [c.c, c.s, c.v ? c.v.map(x => [x.n, x.s]) : 0])])); }
 function pubStockSquare(src, size) {
   if (!src) return Promise.resolve('');
   return new Promise(resolve => {
     const img = new Image();
     img.onload = () => { try { const m = Math.min(img.naturalWidth, img.naturalHeight), cv = document.createElement('canvas'); cv.width = cv.height = Math.min(size, m); cv.getContext('2d').drawImage(img, (img.naturalWidth - m) / 2, (img.naturalHeight - m) / 2, m, m, 0, 0, cv.width, cv.height); resolve(cv.toDataURL('image/jpeg', 0.72)); } catch (e) { resolve(''); } };
+    img.onerror = () => resolve('');
+    img.src = src;
+  });
+}
+function pubStockWide(src, w) { // 소재 사진: 가로 w px로 줄여서 (재고 상세 맨 위에 크게 보임). 서버 문서 1MB 한도 때문에 작게
+  if (!src) return Promise.resolve('');
+  return new Promise(resolve => {
+    const img = new Image();
+    img.onload = () => { try {
+      const r = Math.min(1, w / img.naturalWidth), cv = document.createElement('canvas'); cv.width = Math.max(1, Math.round(img.naturalWidth * r)); cv.height = Math.max(1, Math.round(img.naturalHeight * r));
+      cv.getContext('2d').drawImage(img, 0, 0, cv.width, cv.height);
+      let q = 0.72, out = cv.toDataURL('image/jpeg', q); while (out.length > 140000 && q > 0.4) { q -= 0.1; out = cv.toDataURL('image/jpeg', q); }
+      resolve(out);
+    } catch (e) { resolve(''); } };
     img.onerror = () => resolve('');
     img.src = src;
   });
@@ -7893,11 +7911,12 @@ async function pubStockSync(manual) {
       const sig = pubStockSig(e), prev = old[e.id];
       const photoDirty = dirty.has(catPhotoKey(e.it)) || e.cols.some(c => c.nks.some(k => dirty.has(k)));
       if (prev && prev.h === sig && !photoDirty) { items.push(prev); continue; }
-      await catPhotoLoad([catPhotoKey(e.it), ...e.cols.flatMap(c => c.nks)]);
+      await catPhotoLoad([catPhotoKey(e.it), ...e.cols.flatMap(c => c.nks)], true);
       const th = await pubStockSquare(_catPhotos[catPhotoKey(e.it)] || e.cols.flatMap(c => c.nks).map(k => _catPhotos[k]).find(Boolean) || '', 140);
       const cols = [];
       for (const c of e.cols) { const ph = c.nks.map(k => _catPhotos[k]).find(Boolean) || ''; cols.push({ c: c.c, s: c.s, ...(c.v ? { v: c.v } : {}), t: await pubStockSquare(ph, 120) }); } // 사진은 무지 것, 없으면 기모 것
-      await pubCol().doc('pubstock_' + e.id).set({ stamp: SCHEMA_STAMP, kind: 'pubStockItem', data: JSON.stringify({ item: e.item, mix: e.mix, date: e.date, cols }) });
+      const pw = await pubStockWide(_catPhotos[catPhotoKey(e.it)] || '', 720); // 소재 사진 (품목 사진). 없으면 안 넣음
+      await pubCol().doc('pubstock_' + e.id).set({ stamp: SCHEMA_STAMP, kind: 'pubStockItem', data: JSON.stringify({ item: e.item, mix: e.mix, date: e.date, ...(pw ? { p: pw } : {}), cols }) });
       items.push({ id: e.id, item: e.item, mix: e.mix, n: cols.length, out: cols.filter(c => c.s > 0).length, th, date: e.date, h: sig });
       wrote++;
     }
@@ -7991,11 +8010,10 @@ async function printStatementForRange(customerName, startDate, endDate, mode) {
   if (html == null) { showToast('해당 기간에 보낼 내역이 없습니다'); return; }
   await deliverStatementHtml(html, mode, customerName);
 }
-async function printStatementForEntries(customerName, entryIds, includePayments, taxOverrideIds) {
-  const html = await buildStatementHTML(customerName, null, null, entryIds, includePayments === undefined ? true : includePayments, null, null, taxOverrideIds);
+async function printStatementForEntries(customerName, entryIds, includePayments, taxOverrideIds, mode) {
+  const html = await buildStatementHTML(customerName, null, null, entryIds, includePayments === undefined ? true : includePayments, null, mode ? { shareImage: true, trim: true } : null, taxOverrideIds); // trim: 이미지 높이를 내용만큼 (A4 한 장 높이로 늘리지 않음)
   if (html == null) { showToast('선택한 내역이 없습니다'); return; }
-  document.getElementById('printArea').innerHTML = html;
-  setTimeout(() => window.print(), 100);
+  await deliverStatementHtml(html, mode, customerName); // mode 없으면 인쇄, 있으면 공급받는자용 이미지(카톡/저장)
 }
 
 async function printCustomersStatements(customers, startDate, endDate) {
@@ -8582,6 +8600,7 @@ function renderCustomerLedgerView() {
     </div>
     <div style="display:flex; gap:6px; flex-wrap:wrap; margin-bottom:8px;">
       <button onclick="printCurrentLedgerStatement()" style="border:none;background:#eaf3ec;color:#2f6b46;border-radius:7px;padding:8px 12px;font-size:12px;font-weight:600;white-space:nowrap;">명세서 인쇄</button>
+      <button onclick="printCurrentLedgerStatement('share')" style="border:none;background:#fee500;color:#191919;border-radius:7px;padding:8px 12px;font-size:12px;font-weight:700;white-space:nowrap;">💬 명세서 이미지</button>
       <button class="btn-key" onclick="if(ledgerCustomer) payCustomerUnpaid(ledgerCustomer)" style="border:none;background:#eaf3ec;color:#2f6b46;border-radius:7px;padding:8px 12px;font-size:12px;font-weight:600;white-space:nowrap;">입금 처리</button>
       <button onclick="printLedgerPeriod()" style="border:none;background:#e8edf5;color:#3d4f6b;border-radius:7px;padding:8px 12px;font-size:12px;font-weight:600;white-space:nowrap;">기간별 인쇄</button>
       <button onclick="printLedgerPeriod('share')" style="border:none;background:#fee500;color:#191919;border-radius:7px;padding:8px 12px;font-size:12px;font-weight:700;white-space:nowrap;">💬 ${kakaoLbl()}</button>
@@ -8917,7 +8936,7 @@ async function confirmReturnDefectEdit() {
   if (salesSpecialView === 'customerLedger') renderCustomerLedgerTable();
   showToast('수정했습니다');
 }
-async function printCurrentLedgerStatement() {
+async function printCurrentLedgerStatement(mode) {
   const customer = (ledgerCustomer || document.getElementById('ledger-customer').value).trim();
   if (!customer) { showToast('거래처를 입력해주세요'); return; }
   const checkedSales = document.querySelectorAll('.ledger-print-check[data-entry-id]:checked');
@@ -8931,7 +8950,7 @@ async function printCurrentLedgerStatement() {
       refs.forEach(r => paymentKeys.add(`${r.entryId}:${r.paymentIdx}`));
     } catch (e) {}
   });
-  await printStatementForEntries(customer, entryIds, paymentKeys, document.getElementById('ledger-print-add-tax').checked ? new Set(entryIds) : null);
+  await printStatementForEntries(customer, entryIds, paymentKeys, document.getElementById('ledger-print-add-tax').checked ? new Set(entryIds) : null, mode);
 }
 // 인쇄/이미지 공통: 거래명세서 줄의 "내용"(품목+색만) / 수량(전체 야드) / 단가 표시 - 개별 탕 야드수는 넣지 않음 (비고에 수기로 적으니)
 function ledgerDescText(ev) { return ev.desc; }
