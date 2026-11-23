@@ -61,6 +61,15 @@ button{font-family:inherit}
 .pin2 button:disabled{opacity:.45}
 .pin2 .er{color:#b5483a;font-size:13px;margin-top:10px;min-height:18px}
 .pin2 .ft2{font-size:12px;color:var(--muted);margin-top:26px}
+.seg{display:flex;margin:10px 14px 0;background:#e3dcdc;border-radius:10px;padding:3px}.seg button{flex:1;border:none;background:none;font-size:14px;font-weight:700;color:var(--muted);padding:7px 0;border-radius:8px}.seg button.on{background:#fff;color:var(--ink);box-shadow:0 1px 2px rgba(0,0,0,.08)}
+.cal{margin:10px 14px 0;background:#fff;border:1px solid var(--hair);border-radius:12px;padding:8px 6px 4px;user-select:none;-webkit-user-select:none}
+.cal .hd{display:flex;align-items:center;justify-content:space-between;padding:0 4px 4px}.cal .hd b{font-size:15px}.cal .hd span{font-size:22px;color:var(--muted);padding:0 14px;line-height:1}
+.cal .g{display:grid;grid-template-columns:repeat(7,1fr);text-align:center}
+.cal .w{font-size:11px;color:var(--muted);padding:0 0 3px}.cal .w.su{color:#b5483a}
+.cal .d{height:32px;font-size:13px;position:relative;padding-top:6px;border-radius:10px;margin:1px 2px}
+.cal .d.has{font-weight:800}.cal .d.has::after{content:'';position:absolute;left:50%;bottom:3px;width:5px;height:5px;margin-left:-2.5px;border-radius:50%;background:#2f7a52}
+.cal .d.today span{border-bottom:2px solid var(--brand)}
+.cal .d.sel{background:var(--brand);color:#fff}.cal .d.sel::after{background:#fff}
 .bar{position:fixed;left:0;right:0;bottom:0;z-index:20;background:var(--paper);border-top:1px solid var(--hair);padding:10px 14px calc(10px + env(safe-area-inset-bottom));display:flex;gap:8px;justify-content:center}
 .bar a{flex:1;display:flex;align-items:center;justify-content:center;gap:6px;max-width:342px;background:var(--brand);color:#fff;border-radius:12px;padding:14px 0;font-size:16px;font-weight:800;white-space:nowrap}
 .ft a{text-decoration:underline}
@@ -153,6 +162,55 @@ function viewA() {
   return `<div class="asof">${esc(asOfText())}</div><div class="hero">${hero}${formula}</div>${acct}<div class="mon" style="padding-top:18px"><span class="m">${esc(rangeTitle(ranges.a))}</span><span class="t">출고 ${won(sOut)} · 입금 ${won(sIn)}</span></div>${pl}${rows || '<div class="empty" style="padding:30px 0">내역이 없어요</div>'}<div class="ft">금액이 다르다면 <a href="https://pf.kakao.com/_cnMsn/chat">채널로 문의</a>해 주세요</div>`;
 }
 function qty(n, u) { return `${r2(n).toLocaleString('ko-KR')}${u}`; }
+// 이월 달력: 메모에 적힌 날짜를 읽어서 달력에 올림 (날짜를 못 읽으면 '날짜 없는 건')
+let calView = 'l', calY = 0, calM = 0, calSel = '';
+const pad2 = n => String(n).padStart(2, '0');
+const dkey = (y, m, d) => y + '-' + pad2(m) + '-' + pad2(d);
+const todayD = () => window.__TODAY || new Date();
+const validMD = (y, m, d) => m >= 1 && m <= 12 && d >= 1 && d <= new Date(y, m, 0).getDate();
+function memoDate(txt, now) {
+  const t = String(txt || ''); if (!t) return '';
+  const ty = now.getFullYear(), tm = now.getMonth() + 1, td = now.getDate(), cands = [];
+  let m, re;
+  const spans = [];
+  re = /(\d{1,2})\s*월\s*(\d{1,2})\s*일/g; while ((m = re.exec(t))) { cands.push({ i: m.index, mo: +m[1], d: +m[2], hasM: true }); spans.push([m.index, m.index + m[0].length]); }
+  re = /(^|[^\d./])(\d{1,2})\s*[./]\s*(\d{1,2})(?!\d|\s*[yYmM절롤장개%])/g; while ((m = re.exec(t))) cands.push({ i: m.index + m[1].length, mo: +m[2], d: +m[3], hasM: true });
+  re = /(^|[^\d])(\d{1,2})\s*일(?!\s*(후|뒤|이내|간|동안))/g; while ((m = re.exec(t))) { const ix = m.index + m[1].length; if (!spans.some(p => ix >= p[0] && ix < p[1])) cands.push({ i: ix, mo: 0, d: +m[2], hasM: false }); }
+  cands.sort((a, b) => a.i - b.i);
+  for (const c of cands) {
+    if (c.hasM) {
+      let y = ty; if (!validMD(y, c.mo, c.d)) continue;
+      if ((now - new Date(y, c.mo - 1, c.d)) / 86400000 > 180) { y++; if (!validMD(y, c.mo, c.d)) continue; }
+      return dkey(y, c.mo, c.d);
+    }
+    let y = ty, mo = tm; if (c.d < td) { mo++; if (mo > 12) { mo = 1; y++; } }
+    for (let n = 0; n < 3; n++) { if (validMD(y, mo, c.d)) return dkey(y, mo, c.d); mo++; if (mo > 12) { mo = 1; y++; } }
+  }
+  return '';
+}
+function segHtml() { return `<div class="seg"><button data-cv="l" class="${calView === 'l' ? 'on' : ''}">목록</button><button data-cv="c" class="${calView === 'c' ? 'on' : ''}">달력</button></div>`; }
+function calInit() {
+  const t = todayD(), tk = dkey(t.getFullYear(), t.getMonth() + 1, t.getDate()), ks = [];
+  for (const o of (snap.active || [])) { const k = memoDate(o.m, t); if (k) ks.push(k); }
+  const up = ks.filter(k => k >= tk).sort()[0] || '';
+  if (up) { calSel = up; calY = +up.slice(0, 4); calM = +up.slice(5, 7); } else { calSel = ''; calY = t.getFullYear(); calM = t.getMonth() + 1; }
+}
+function calHtml(line) {
+  const t = todayD(), tk = dkey(t.getFullYear(), t.getMonth() + 1, t.getDate()), act = snap.active || [];
+  const by = new Map(), none = [];
+  for (const o of act) { const k = memoDate(o.m, t); if (k) { if (!by.has(k)) by.set(k, []); by.get(k).push(o); } else none.push(o); }
+  const lead = new Date(calY, calM - 1, 1).getDay(), last = new Date(calY, calM, 0).getDate();
+  let cells = '<div class="w su">일</div>' + ['월', '화', '수', '목', '금', '토'].map(n => `<div class="w">${n}</div>`).join('') + '<div></div>'.repeat(lead);
+  for (let d = 1; d <= last; d++) { const k = dkey(calY, calM, d); cells += `<div class="d${by.has(k) ? ' has' : ''}${k === tk ? ' today' : ''}${k === calSel ? ' sel' : ''}" data-cd="${k}"><span>${d}</span></div>`; }
+  let out = `${segHtml()}<div class="cal"><div class="hd"><span data-cal="-1">‹</span><b>${calY}년 ${calM}월</b><span data-cal="1">›</span></div><div class="g">${cells}</div></div>`;
+  if (calSel) {
+    const os = by.get(calSel) || [];
+    out += `<div class="day"><b>${+calSel.slice(5, 7)}월 ${+calSel.slice(8, 10)}일</b><span>${os.length ? os.length + '건' : ''}</span></div>` + (os.length ? `<div class="card">${os.map(line).join('')}</div>` : '<div class="empty" style="padding:18px 0">이 날은 예정이 없어요</div>');
+  }
+  if (none.length) out += `<div class="day"><b>날짜 없는 건</b><span>${none.length}건</span></div><div class="card">${none.map(line).join('')}</div>`;
+  if (!act.length) out += '<div class="empty" style="padding:30px 0">진행 중인 건이 없어요</div>';
+  return out + '<div class="ft">정확한 입고일은 <a href="https://pf.kakao.com/_cnMsn/chat">채널로 문의</a>해 주세요</div>';
+}
 function viewC() {
   const r = ranges.c;
   const act = (snap.active || []).filter(o => inRange(o.d || '', r));
@@ -166,10 +224,11 @@ function viewC() {
     const remain = o.q > o.r ? o.q - o.r : 0, [lb, cl] = st(o);
     return `<div class="li"><div><div class="a">${esc(o.i)} ${esc(o.c)}</div>${o.q > 0 ? `<div class="b">발주 ${qty(o.q, o.u)}</div>` : ''}${shipTxt(o)}${o.m ? `<div class="mm">${esc(o.m)}</div>` : ''}</div><div class="r">${remain > 0 ? qty(remain, o.u) : (o.q > 0 ? '전량 처리' : '-')}<span class="chip ${cl}" style="display:block;margin:4px 0 0 auto;width:fit-content">${lb}</span></div></div>`;
   };
+  if (calView === 'c') return calHtml(line);
   const byDay = new Map();
   for (const o of act) { const k = o.d || ''; if (!byDay.has(k)) byDay.set(k, []); byDay.get(k).push(o); }
   const days = Array.from(byDay.entries()).sort((x, y) => String(y[0]).localeCompare(String(x[0])));
-  return `<div class="mon"><span class="m">${esc(rangeTitle(r))}</span><span class="t">진행 중 ${act.length}건</span></div>${pills('c')}`
+  return `${segHtml()}<div class="mon"><span class="m">${esc(rangeTitle(r))}</span><span class="t">진행 중 ${act.length}건</span></div>${pills('c')}`
     + (days.length ? days.map(([d, os]) => `<div class="day"><b>발주 ${esc(mmdd(d))}</b><span>${os.length}건</span></div><div class="card">${os.map(line).join('')}</div>`).join('') : '<div class="empty" style="padding:30px 0">진행 중인 건이 없어요</div>')
     + '<div class="ft">정확한 입고일은 <a href="https://pf.kakao.com/_cnMsn/chat">채널로 문의</a>해 주세요</div>';
 }
@@ -208,6 +267,9 @@ function render() {
   app.innerHTML = head() + (tab === 'a' ? viewA() : viewC());
 }
 document.addEventListener('click', e => {
+  const cv = e.target.closest('[data-cv]'); if (cv) { calView = cv.dataset.cv; if (calView === 'c') calInit(); render(); return; }
+  const cn = e.target.closest('[data-cal]'); if (cn) { calM += +cn.dataset.cal; if (calM < 1) { calM = 12; calY--; } if (calM > 12) { calM = 1; calY++; } render(); return; }
+  const cd = e.target.closest('[data-cd]'); if (cd) { calSel = cd.dataset.cd; render(); return; }
   const t = e.target.closest('[data-tab]'); if (t) { tab = t.dataset.tab; render(); window.scrollTo(0, 0); return; }
   const dy = e.target.closest('[data-day]'); if (dy) { const k = dy.dataset.day; if (openDays.has(k)) openDays.delete(k); else openDays.add(k); render(); return; }
   if (e.target.closest('[data-expall]')) { const ks = Array.from(document.querySelectorAll('.row.x')).map(x => x.dataset.day); if (ks.every(k => openDays.has(k))) ks.forEach(k => openDays.delete(k)); else ks.forEach(k => openDays.add(k)); render(); return; }
