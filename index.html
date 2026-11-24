@@ -1390,7 +1390,7 @@
 const PASSWORD = "3059";
 const ADMIN_PASSWORD = "9503"; // 매출/미수금 탭 전용 - 필요하면 이 값만 바꿔서 변경 가능
 const DATA_VERSION = "2026-08-03-v4"; // 재고/이월장부 씨앗 데이터를 바꿀 때마다 이 값을 새로 바꿔주세요
-const APP_CODE_VERSION = "2026-11-24-zzo"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
+const APP_CODE_VERSION = "2026-11-24-zzq"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
 const SCHEMA_STAMP = 2; // 서버 저장규칙이 확인하는 "최신 앱 도장" - 절대 자주 바꾸지 않음(이 값을 아는 코드만 저장 가능하게 서버에서 막을 때 씀)
 const CONFIRMED_EMPTY = '__CONFIRMED_EMPTY__'; // "서버가 확실하게 문서가 없다고 확인해줬다"는 걸 표시하는 특수값
                                                  // (한번도 확인 안 한 null과 구분해서, 그 사이 다른 사람이 첫 데이터를 만들었으면 충돌로 감지하기 위함)
@@ -6910,11 +6910,12 @@ const CAT_PER_PAGE = 10, CAT_PER_PAGE_PHOTO = 6; // 폰에서 스크롤 없이 �
 const CAT_PER_PAGE_WIDE = 9; // 4:3 한 장에 3x3 타일
 // 크기가 정해진 이미지 형식: 채널 메시지(4:3, 800x600 디자인 → 1200x900) / 인스타 4:5(디자인 800 폭 → 1.35배로 정확히 1080x1350)
 const CAT_FMT = { promo: { W: 800, H: 600, per: 9, scale: 1.5, label: '4:3', kind: '채널' }, ig45: { W: 800, H: 1000, per: 6, cols: 2, rows: 3, scale: 1.35, label: '인스타 4:5 1080x1350', kind: '인스타', insta: true, maxImg: 20 } };
-function catSplitGroups(it, wide) { // 타일이 많으면 비슷한 개수로 나눠서 여러 장으로 (줄이 맞도록 짝수 개씩, 4:3은 3열이라 그냥 균등)
+function catSplitGroups(it, wide, cols) { // cols: 한 줄 칸 수 (인스타/고객 페이지는 2) - 주면 앞 장은 줄이 꽉 차게(짝수) 나눔. 안 그러면 10컬러가 5+5로 나뉘어 1장이 5번에서 끊겨 보임 // 타일이 많으면 비슷한 개수로 나눠서 여러 장으로 (줄이 맞도록 짝수 개씩, 4:3은 3열이라 그냥 균등)
   const groups = catGroupsOf(it);
   const P = Math.max(1, Math.ceil(groups.length / (wide ? (typeof wide === 'number' ? wide : CAT_PER_PAGE_WIDE) : (catItemHasColorPhoto(it) ? CAT_PER_PAGE_PHOTO : CAT_PER_PAGE))));
   let per = Math.ceil(groups.length / P);
-  if (!wide && P > 1 && per % 2) per++;
+  if (P > 1 && cols > 1 && per % cols) per += cols - (per % cols);
+  else if (!wide && P > 1 && per % 2) per++;
   const out = [];
   for (let i = 0; i < groups.length; i += per) out.push(groups.slice(i, i + per));
   return out.length ? out : [[]];
@@ -7215,7 +7216,9 @@ async function buildCatalogPages(cfg, items) {
         ${igFoot}
       </div>`);
     }
-    for (const gs of catSplitGroups(it, per)) {
+    const colSplit = catSplitGroups(it, per, cols);
+    for (let si = 0; si < colSplit.length; si++) {
+      const gs = colSplit[si];
       const cells = gs.map(g => {
         const c = g.main, ph = photoOf(g), dot = catDotColor(c.color), sw = swOf(g);
         const isBest = [g.main, ...g.variants.map(v => v.c)].some(m => bestColor.has(m.item + '|' + m.color));
@@ -7232,7 +7235,10 @@ async function buildCatalogPages(cfg, items) {
       while (cells.length % cols) cells.push('<div></div>'); // 홀수 개여도 칸 크기는 똑같이
       const rows = fixed ? FM.rows : Math.ceil(cells.length / cols);
       if (fixed) while (cells.length < cols * rows) cells.push('<div></div>');
-      out.push(`<div class="stm-img-page" style="width:${PW}px; ${fixed ? `height:${PH}px;` : ''} box-sizing:border-box; background:#fff; font-family:${fontFam}; padding:8px; display:grid; gap:8px; grid-template-columns:repeat(${cols}, 1fr); grid-template-rows:repeat(${rows}, ${fixed ? '1fr' : '292px'}); overflow:hidden;">${cells.join('')}</div>`);
+      // 컬러가 여러 장이면 아래에 진한 안내 띠: 첫 장들엔 "다음 장에 컬러가 더 있어요 ▼", 마지막 장엔 "마지막 장이에요" (한 장이 5번에서 끊겨 끝난 줄 알고 넘기는 것 방지)
+      const stripH = Math.round(40 * K), multi = colSplit.length > 1;
+      const strip = multi ? `<div style="grid-column:1 / -1; height:${stripH}px; background:${BRAND}; color:#fff; display:flex; align-items:center; justify-content:center; font-size:${Math.round(17 * K)}px; font-weight:700; letter-spacing:.5px; white-space:nowrap;"><span style="opacity:.75; margin-right:10px;">COLOR ${si + 1}/${colSplit.length}</span>${si < colSplit.length - 1 ? '다음 장에 컬러가 더 있어요 ▼' : '마지막 장이에요'}</div>` : '';
+      out.push(`<div class="stm-img-page" style="width:${PW}px; ${fixed ? `height:${PH}px;` : ''} box-sizing:border-box; background:#fff; font-family:${fontFam}; padding:8px; display:grid; gap:8px; grid-template-columns:repeat(${cols}, 1fr); grid-template-rows:repeat(${rows}, ${fixed ? '1fr' : '292px'})${multi ? ` ${stripH}px` : ''}; overflow:hidden;">${cells.join('')}${strip}</div>`);
     }
     return out;
   };
@@ -7402,13 +7408,13 @@ function readCatalogCfg() {
   return cfg;
 }
 function catPicked(cfg) { return (cfg.mode === 'stock' && _catItems.size === 0) ? [] : selectCatalogItems(cfg, _catUniverse); } // 재고표는 품목을 하나라도 골라야 만들어짐
-function catImageCount(items, wide) { // wide: false / true / 한 장당 타일 수
-  return items.reduce((n, it) => n + catSplitGroups(it, wide).length + (_catPhotos[catPhotoKey(it)] ? 1 : 0), 0); }
+function catImageCount(items, wide, cols) { // wide: false / true / 한 장당 타일 수
+  return items.reduce((n, it) => n + catSplitGroups(it, wide, cols).length + (_catPhotos[catPhotoKey(it)] ? 1 : 0), 0); }
 function catUpdateCount() {
   const cfg = readCatalogCfg();
   const items = catPicked(cfg);
   const colors = items.reduce((s, it) => s + it.colors.length, 0);
-  const FM = CAT_FMT[cfg.format] || null, nImg = catImageCount(items, FM ? FM.per : false);
+  const FM = CAT_FMT[cfg.format] || null, nImg = catImageCount(items, FM ? FM.per : false, FM && FM.insta ? FM.cols : 0);
   document.getElementById('cat-count').textContent = items.length === 0 ? (cfg.mode === 'new' ? '컬러를 검색해서 추가하세요' : '품목을 검색해서 추가하세요') : `이미지 ${nImg}장${FM ? ` (${FM.label})` : ''} · ${items.length}품목 · ${colors}컬러${FM && !FM.insta && nImg > 6 ? ' · 채널 캐러셀은 6장까지' : ''}${FM && FM.insta && nImg > 20 ? ' · 인스타는 한 게시물에 20장까지' : ''}`;
   catRenderPhotos();
 }
@@ -7421,7 +7427,7 @@ async function generateCatalog(mode) {
   await catPhotoLoad([...items.map(catPhotoKey), ...items.flatMap(it => it.colors.map(c => c.nk))], true);
   if (_catPhotoErr > 0) showToast('사진을 일부 불러오지 못했어요 - 인터넷 연결을 확인하고 다시 눌러주세요 (사진 없이 만들면 사진이 빠져요)');
   const FM = CAT_FMT[cfg.format] || null, wide = !!FM;
-  const nImg = catImageCount(items, FM ? FM.per : false);
+  const nImg = catImageCount(items, FM ? FM.per : false, FM && FM.insta ? FM.cols : 0);
   if (FM && FM.maxImg && nImg > FM.maxImg) { showToast(`이미지가 ${nImg}장이에요 - 인스타는 한 게시물에 ${FM.maxImg}장까지라서 품목을 줄이거나 나눠서 만들어주세요`); return; }
   if (nImg > 30) { showToast(`이미지가 ${nImg}장이에요 - 카톡은 한 번에 사진 30장까지라서 품목을 줄여주세요`); return; }
   catSavePrefs(cfg);
