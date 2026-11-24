@@ -828,6 +828,8 @@
     <select id="cat-format" onchange="catUpdateCount()" style="width:100%;">
       <option value="chat">카톡 대화용 (세로로 긴 이미지)</option>
       <option value="promo">채널 메시지용 (4:3)</option>
+      <option value="ig45">인스타 게시물 (4:5 세로 · 1080×1350)</option>
+      <option value="ig11">인스타 게시물 (1:1 정사각 · 1080×1080)</option>
     </select>
     <button type="button" onclick="openColorPhotoModal()" style="width:100%; margin-top:10px; border:none; background:#e8edf5; color:#3d4f6b; border-radius:8px; padding:10px 4px; font-size:13px; font-weight:700;">컬러 사진 등록</button>
     <div id="cat-photo-wrap"><label>소재 사진</label>
@@ -1389,7 +1391,7 @@
 const PASSWORD = "3059";
 const ADMIN_PASSWORD = "9503"; // 매출/미수금 탭 전용 - 필요하면 이 값만 바꿔서 변경 가능
 const DATA_VERSION = "2026-08-03-v4"; // 재고/이월장부 씨앗 데이터를 바꿀 때마다 이 값을 새로 바꿔주세요
-const APP_CODE_VERSION = "2026-11-23-zzd"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
+const APP_CODE_VERSION = "2026-11-24-zzh"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
 const SCHEMA_STAMP = 2; // 서버 저장규칙이 확인하는 "최신 앱 도장" - 절대 자주 바꾸지 않음(이 값을 아는 코드만 저장 가능하게 서버에서 막을 때 씀)
 const CONFIRMED_EMPTY = '__CONFIRMED_EMPTY__'; // "서버가 확실하게 문서가 없다고 확인해줬다"는 걸 표시하는 특수값
                                                  // (한번도 확인 안 한 null과 구분해서, 그 사이 다른 사람이 첫 데이터를 만들었으면 충돌로 감지하기 위함)
@@ -5027,7 +5029,7 @@ async function printOrderLedger(mode) {
     const imgHtml = pages.map((pg, i) => `<div class="stm-img-page ledger-print" style="width:794px; background:#fff; box-sizing:border-box; font-family:-apple-system,'Malgun Gothic',sans-serif;"><div style="display:flex; justify-content:space-between; align-items:baseline; margin-bottom:8px;"><h2 style="margin:0; font-size:22px;">이월장부 (진행중 발주 목록)</h2><span style="color:#555; font-size:13px;">${i + 1}/${total}</span></div><div style="color:#555; font-size:13px; margin-bottom:10px;">발행일: ${tomorrowStr()} · 총 ${list2.length}건</div>${pg}</div>`).join('');
     try {
       showToast('이미지 만드는 중...');
-      const files = await renderStatementImages(imgHtml, '', '이월장부', 794);
+      const files = await renderStatementImages(imgHtml, '', '이월장부', 794, { fast: true });
       openShotModal(files, '', '이월장부');
     } catch (e) { console.error(e); showToast('이미지를 만들지 못했어요. 인쇄로 이용해주세요'); }
     return;
@@ -6710,9 +6712,14 @@ async function renderStatementImages(html, customer, kind, width, opts) {
     for (let i = 0; i < targets.length; i++) {
       const el = targets[i];
       const h = Math.max(el.scrollHeight, 100);
-      const scale = opts && opts.scale ? opts.scale : Math.max(1, Math.min(width < 700 ? 3 : 2.5, Math.sqrt(12000000 / (width * h)))); // 아주 긴 내역서도 폰 브라우저의 그림 크기 한도를 안 넘게
-      const canvas = await h2c(el, { scale, backgroundColor: '#ffffff', useCORS: true, logging: false, width, windowWidth: width });
-      let blob = await new Promise(res => canvas.toBlob(res, 'image/png')), ext = 'png', mime = 'image/png';
+      const mobAny = isMobileDevice();
+      const mob = mobAny && !!(opts && opts.fast);
+      // 글자만 있는 내역서(fast): 폰에서는 그림 크기를 2배까지만 + JPG로 저장 (큰 PNG를 만드는 게 폰에서 제일 오래 걸림). 원단 사진이 들어가는 카톡용 재고표/신상 이미지는 예전 그대로(이 줄임을 안 씀)
+      const scale = opts && opts.scale ? opts.scale : (mob ? Math.max(1, Math.min(2, Math.sqrt(5000000 / (width * h)))) : Math.max(1, Math.min(width < 700 ? 3 : 2.5, Math.sqrt(12000000 / (width * h))))); // 아주 긴 내역서도 폰 브라우저의 그림 크기 한도를 안 넘게
+      const canvas = await h2c(el, { scale, backgroundColor: '#ffffff', useCORS: true, logging: false, width, windowWidth: width, onclone: mobAny ? (d) => { try { Array.from(d.body.children).forEach(c => { if (c.id !== 'shotRoot') c.remove(); }); } catch (e) { /* 실패해도 그냥 진행 */ } } : undefined }); // 폰: 이미지에 안 쓰는 앱 화면은 복제에서 빼서 조금 더 빠르게
+      let blob, ext = 'png', mime = 'image/png';
+      if (mob || (mobAny && opts && opts.jpgOnPhone)) { blob = await new Promise(res => canvas.toBlob(res, 'image/jpeg', 0.95)); ext = 'jpg'; mime = 'image/jpeg'; }
+      if (!blob) { blob = await new Promise(res => canvas.toBlob(res, 'image/png')); ext = 'png'; mime = 'image/png'; }
       if (blob && opts && opts.maxBytes && blob.size > opts.maxBytes) { blob = await new Promise(res => canvas.toBlob(res, 'image/jpeg', 0.9)); ext = 'jpg'; mime = 'image/jpeg'; } // 채널 메시지 이미지는 5MB 이하여야 해서 너무 크면 JPG로
       if (!blob) throw new Error('blob');
       files.push(new File([blob], `${safeName ? safeName + '_' : ''}${kind}_${stamp}${targets.length > 1 ? '_' + (i + 1) : ''}.${ext}`, { type: mime }));
@@ -6734,6 +6741,7 @@ function openShotModal(files, customer, kind) {
   document.getElementById('shotModal').classList.add('open');
 }
 document.querySelectorAll('.kakao-lbl').forEach(e => { e.textContent = kakaoLbl(); });
+if (isMobileDevice()) setTimeout(() => { try { (window.requestIdleCallback || setTimeout)(() => { loadHtml2Canvas().catch(() => {}); }); } catch (e) {} }, 5000); // 폰: 이미지 만드는 부품을 미리 받아둠 (처음 누를 때 기다리지 않게)
 function closeShotModal() {
   document.getElementById('shotModal').classList.remove('open');
   document.getElementById('shot-imgs').innerHTML = '';
@@ -6780,7 +6788,7 @@ async function deliverStatementHtml(html, mode, customer) {
   }
   showToast('내역서 이미지를 만드는 중이에요...');
   let files;
-  try { files = await renderStatementImages(html, customer); }
+  try { files = await renderStatementImages(html, customer, undefined, undefined, { fast: true }); }
   catch (e) { showToast('이미지를 만들지 못했어요 (인터넷 연결을 확인해주세요)'); return; }
   openShotModal(files, customer);
   if (mode === 'share') { if (isMobileDevice()) await shareShotFiles(); } else saveShotFiles();
@@ -6901,9 +6909,11 @@ function catGroupsOf(it) {
 }
 const CAT_PER_PAGE = 10, CAT_PER_PAGE_PHOTO = 6; // 폰에서 스크롤 없이 한눈에 보이도록 한 장에 최대 10타일 (5줄), 컬러 사진이 들어가면 타일이 커져서 6타일 (3줄)
 const CAT_PER_PAGE_WIDE = 9; // 4:3 한 장에 3x3 타일
+// 크기가 정해진 이미지 형식: 채널 메시지(4:3, 800x600 디자인 → 1200x900) / 인스타(디자인 800 폭 → 1.35배로 정확히 1080 폭). 인스타는 4:5(3x4 타일), 1:1(3x3 타일)
+const CAT_FMT = { promo: { W: 800, H: 600, per: 9, scale: 1.5, label: '4:3', kind: '채널' }, ig45: { W: 800, H: 1000, per: 12, scale: 1.35, label: '인스타 4:5 1080x1350', kind: '인스타', insta: true, maxImg: 20 }, ig11: { W: 800, H: 800, per: 9, scale: 1.35, label: '인스타 1:1 1080x1080', kind: '인스타정사각', insta: true, maxImg: 20 } };
 function catSplitGroups(it, wide) { // 타일이 많으면 비슷한 개수로 나눠서 여러 장으로 (줄이 맞도록 짝수 개씩, 4:3은 3열이라 그냥 균등)
   const groups = catGroupsOf(it);
-  const P = Math.max(1, Math.ceil(groups.length / (wide ? CAT_PER_PAGE_WIDE : (catItemHasColorPhoto(it) ? CAT_PER_PAGE_PHOTO : CAT_PER_PAGE))));
+  const P = Math.max(1, Math.ceil(groups.length / (wide ? (typeof wide === 'number' ? wide : CAT_PER_PAGE_WIDE) : (catItemHasColorPhoto(it) ? CAT_PER_PAGE_PHOTO : CAT_PER_PAGE))));
   let per = Math.ceil(groups.length / P);
   if (!wide && P > 1 && per % 2) per++;
   const out = [];
@@ -7064,8 +7074,10 @@ async function cpRemove(i) {
 const CAT_WIDE_W = 800, CAT_WIDE_H = 600; // 채널 메시지(브랜드 메시지) 이미지 권장 비율 4:3 (800x600). 디자인은 카톡 대화용과 같고 비율만 다름
 const CAT_IMG_W = 600; // 폰 카톡 화면 폭에 맞춰 보면 약 0.6배로 보이니, 글씨를 크게(23px 안팎) 잡음
 async function buildCatalogPages(cfg, items) {
-  const wide = cfg.format === 'promo'; // 채널 메시지용 4:3 (같은 디자인, 비율만 다름)
-  const PW = wide ? CAT_WIDE_W : CAT_IMG_W;
+  const FM = CAT_FMT[cfg.format] || null; // 크기가 정해진 형식 (없으면 카톡 대화용)
+  const wide = !!FM; // 채널 메시지용 4:3 / 인스타 (같은 디자인, 비율만 다름)
+  const PW = FM ? FM.W : CAT_IMG_W, PH = FM ? FM.H : 0;
+  const IG = !!(FM && FM.insta), igRow = (n) => Math.min(230, Math.floor((PH - 235) / Math.max(1, Math.ceil(n / 3)))); // 인스타: 줄 수에 맞춰 타일 높이를 정함 (타일이 적어도 길게 늘어지지 않게, 위에서부터 채움)
   const fontFam = "-apple-system,'Malgun Gothic',sans-serif";
   const fmtY = (n) => Number(n.toFixed(1)).toLocaleString();
   const baseOfColor = catBaseOfColor, groupsOf = catGroupsOf;
@@ -7123,7 +7135,7 @@ async function buildCatalogPages(cfg, items) {
     const num = numStrip(swOf(g), itemSpring, isBest);
     const strip = (num || isBest) ? `<div style="display:flex; justify-content:space-between; align-items:center; min-height:${wide ? 27 : 30}px; padding:${wide ? '3px 10px' : '5px 12px'}; ${isBest ? `background:${BRAND};` : `background:${STRIP}; border-bottom:1px solid ${HAIR};`}"><div style="display:flex; align-items:center;">${num}</div>${isBest ? `<span style="font-size:14px; font-weight:800; letter-spacing:2px; color:#fff;">★ BEST</span>` : ''}</div>` : '';
     if (wide) { // 4:3: 같은 타일 디자인을 가로로 눕힘 (스왓치 띠 / 색 또는 사진 / 컬러명 / 재고). 사진이 있는 품목은 사진 칸을 키움
-      const ph = photoOf(g), r3 = !wrows || wrows >= 3, sz = (photoMode ? 74 : 54) + (r3 ? 0 : wrows === 2 ? 26 : 46), nfs = r3 ? 21 : 24;
+      const ph = photoOf(g), r3 = !wrows || wrows >= 3, sz = (photoMode ? 74 : 54) + (r3 ? 0 : wrows === 2 ? 26 : 46) + (IG ? 34 : 0), nfs = (r3 ? 21 : 24) + (IG ? 2 : 0);
       const wbody = g.variants.length === 0
         ? `<div style="margin-top:4px;">${stockHtml(c)}</div>`
         : members.map((m, i) => `<div style="margin-top:3px; display:flex; gap:6px; align-items:center; flex-wrap:wrap;"><span style="font-size:15px; font-weight:700; color:${MUTED}; min-width:30px;">${esc(m.label)}</span>${i === hotIdx ? hot : ''}${stockHtml(m.c, true)}</div>`).join('');
@@ -7183,12 +7195,12 @@ async function buildCatalogPages(cfg, items) {
         <div style="margin-top:4px; font-size:38px; font-weight:800; line-height:1.15; letter-spacing:-.5px; word-break:keep-all; overflow-wrap:anywhere;">${esc(it.item)}</div>
         ${it.mix ? `<div style="font-size:16px; margin-top:6px; color:${MUTED};">혼용률 ${esc(it.mix)}</div>` : ''}
       </div>`;
-  const pageWrap = (inner) => `<div class="stm-img-page" style="width:${PW}px; ${wide ? `height:${CAT_WIDE_H}px; display:flex; flex-direction:column; overflow:hidden; ` : ''}box-sizing:border-box; background:${PAPER}; color:${INK}; font-family:${fontFam};">${inner}${footer}</div>`;
+  const pageWrap = (inner) => `<div class="stm-img-page" style="width:${PW}px; ${wide ? `height:${PH}px; display:flex; flex-direction:column; overflow:hidden; ` : ''}box-sizing:border-box; background:${PAPER}; color:${INK}; font-family:${fontFam};">${inner}${footer}</div>`;
   // 한 품목 = 첫 장은 소재 확대샷(사진이 있으면 항상) + 다음 장부터 스왓치 순번 순서의 컬러 타일 (한 장에 최대 10타일이라 폰에서 스크롤 없이 보임)
   const pagesOfItem = (it) => {
     const itemSpring = itemHasSpring(it.item);
     const photo = _catPhotos[catPhotoKey(it)] || '';
-    const sp = catSplitGroups(it, wide);
+    const sp = catSplitGroups(it, FM ? FM.per : false);
     const photoMode = catItemHasColorPhoto(it);
     const total = (photo ? 1 : 0) + sp.length;
     const out = [];
@@ -7201,7 +7213,7 @@ async function buildCatalogPages(cfg, items) {
     }
     for (const gs of sp) {
       out.push(pageWrap(wide
-        ? `${headOf(it, no++, total)}<div style="flex:1; min-height:0; display:grid; grid-template-columns:repeat(3, 1fr); grid-template-rows:${gs.length <= 3 ? 'repeat(1, 190px)' : `repeat(${Math.ceil(gs.length / 3)}, 1fr)`}; align-content:${gs.length <= 3 ? 'center' : 'stretch'}; gap:8px; padding:10px 14px; background:#efeaea;">${gs.map(g => tileHtml(g, itemSpring, photoMode, Math.ceil(gs.length / 3))).join('')}</div>`
+        ? `${headOf(it, no++, total)}<div style="flex:1; min-height:0; display:grid; grid-template-columns:repeat(3, 1fr); grid-template-rows:${IG ? `repeat(${Math.ceil(gs.length / 3)}, ${igRow(gs.length)}px)` : (gs.length <= 3 ? 'repeat(1, 190px)' : `repeat(${Math.ceil(gs.length / 3)}, 1fr)`)}; align-content:${IG ? 'start' : (gs.length <= 3 ? 'center' : 'stretch')}; gap:8px; padding:10px 14px; background:#efeaea;">${gs.map(g => tileHtml(g, itemSpring, photoMode, Math.ceil(gs.length / 3))).join('')}</div>`
         : `${headOf(it, no++, total)}
         <div style="display:grid; grid-template-columns:1fr 1fr; gap:14px; padding:20px 20px 22px; background:#efeaea;">${gs.map(g => tileHtml(g, itemSpring, photoMode)).join('')}</div>`));
     }
@@ -7343,20 +7355,21 @@ function readCatalogCfg() {
     hideOut: false, // 재고 없는 컬러도 "재고없음"으로 같이 보여줌
     sel: _catSel,
     itemsSel: _catMode === 'stock' ? _catItems : null,
-    format: document.getElementById('cat-format').value === 'promo' ? 'promo' : 'chat'
+    format: (v => CAT_FMT[v] ? v : 'chat')(document.getElementById('cat-format').value)
   };
   cfg.stockDisplay = _catMode === 'stock' ? display : _catPrefDisplay.stock;
   cfg.newDisplay = _catMode === 'new' ? display : _catPrefDisplay.new;
   return cfg;
 }
 function catPicked(cfg) { return (cfg.mode === 'stock' && _catItems.size === 0) ? [] : selectCatalogItems(cfg, _catUniverse); } // 재고표는 품목을 하나라도 골라야 만들어짐
-function catImageCount(items, wide) { return items.reduce((n, it) => n + catSplitGroups(it, wide).length + (_catPhotos[catPhotoKey(it)] ? 1 : 0), 0); }
+function catImageCount(items, wide) { // wide: false / true / 한 장당 타일 수
+  return items.reduce((n, it) => n + catSplitGroups(it, wide).length + (_catPhotos[catPhotoKey(it)] ? 1 : 0), 0); }
 function catUpdateCount() {
   const cfg = readCatalogCfg();
   const items = catPicked(cfg);
   const colors = items.reduce((s, it) => s + it.colors.length, 0);
-  const wide = cfg.format === 'promo', nImg = catImageCount(items, wide);
-  document.getElementById('cat-count').textContent = items.length === 0 ? (cfg.mode === 'new' ? '컬러를 검색해서 추가하세요' : '품목을 검색해서 추가하세요') : `이미지 ${nImg}장${wide ? ' (4:3)' : ''} · ${items.length}품목 · ${colors}컬러${wide && nImg > 6 ? ' · 채널 캐러셀은 6장까지' : ''}`;
+  const FM = CAT_FMT[cfg.format] || null, nImg = catImageCount(items, FM ? FM.per : false);
+  document.getElementById('cat-count').textContent = items.length === 0 ? (cfg.mode === 'new' ? '컬러를 검색해서 추가하세요' : '품목을 검색해서 추가하세요') : `이미지 ${nImg}장${FM ? ` (${FM.label})` : ''} · ${items.length}품목 · ${colors}컬러${FM && !FM.insta && nImg > 6 ? ' · 채널 캐러셀은 6장까지' : ''}${FM && FM.insta && nImg > 20 ? ' · 인스타는 한 게시물에 20장까지' : ''}`;
   catRenderPhotos();
 }
 async function generateCatalog(mode) {
@@ -7367,13 +7380,14 @@ async function generateCatalog(mode) {
   showToast('이미지를 만드는 중이에요...');
   await catPhotoLoad([...items.map(catPhotoKey), ...items.flatMap(it => it.colors.map(c => c.nk))], true);
   if (_catPhotoErr > 0) showToast('사진을 일부 불러오지 못했어요 - 인터넷 연결을 확인하고 다시 눌러주세요 (사진 없이 만들면 사진이 빠져요)');
-  const wide = cfg.format === 'promo';
-  const nImg = catImageCount(items, wide);
+  const FM = CAT_FMT[cfg.format] || null, wide = !!FM;
+  const nImg = catImageCount(items, FM ? FM.per : false);
+  if (FM && FM.maxImg && nImg > FM.maxImg) { showToast(`이미지가 ${nImg}장이에요 - 인스타는 한 게시물에 ${FM.maxImg}장까지라서 품목을 줄이거나 나눠서 만들어주세요`); return; }
   if (nImg > 30) { showToast(`이미지가 ${nImg}장이에요 - 카톡은 한 번에 사진 30장까지라서 품목을 줄여주세요`); return; }
   catSavePrefs(cfg);
-  const kind = (wide ? '채널' : '') + (cfg.mode === 'new' ? '신상입고' : '재고표');
+  const kind = (FM ? FM.kind : '') + (cfg.mode === 'new' ? '신상입고' : '재고표');
   let files;
-  try { files = wide ? await renderStatementImages(await buildCatalogPages(cfg, items), '', kind, CAT_WIDE_W, { scale: 1.5, maxBytes: 4500000 }) : await renderStatementImages(await buildCatalogPages(cfg, items), '', kind, CAT_IMG_W); }
+  try { files = wide ? await renderStatementImages(await buildCatalogPages(cfg, items), '', kind, FM.W, { scale: FM.scale, maxBytes: 4500000, jpgOnPhone: true }) : await renderStatementImages(await buildCatalogPages(cfg, items), '', kind, CAT_IMG_W, { jpgOnPhone: true }); }
   catch (e) { showToast('이미지를 만들지 못했어요 (인터넷 연결을 확인해주세요)'); return; }
   openShotModal(files, '', kind);
   if (mode === 'share' && isMobileDevice()) await shareShotFiles(); // PC는 창에서 이미지마다 "복사"로 카톡에 붙여넣음
@@ -7451,7 +7465,7 @@ async function publishCatalog() {
     for (const it of items) {
       btn.textContent = `${done + 1}/${items.length} 올리는 중`;
       const id = pubId(sec, it.item);
-      const files = await renderStatementImages(await buildCatalogPages(cfg, [it]), '', '고객페이지', CAT_IMG_W, { scale: 1.5 });
+      const files = await renderStatementImages(await buildCatalogPages(cfg, [it]), '', '고객페이지', CAT_IMG_W, { scale: 1.5, jpgOnPhone: true });
       const pages = [];
       for (const f of files) pages.push(await pubFileToJpeg(f, 900));
       const thumb = await pubThumb(it);
