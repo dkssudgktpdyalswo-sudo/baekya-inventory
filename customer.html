@@ -167,7 +167,7 @@ async function getPages(e) {
   if (pageCache[e.id]) return pageCache[e.id];
   const out = new Array(e.n).fill(null);
   await Promise.all(out.map(async (_, i) => {
-    try { const d = await db.collection('inventory').doc('pubpg_' + e.id + '_' + i).get(); out[i] = d.exists ? d.data().d : ''; } catch (err) { out[i] = ''; }
+    try { const d = await db.collection('inventory').doc('pubpg_' + e.id + '_' + i).get(); if (!d.exists) { out[i] = ''; return; } const m = d.data(); let s = m.d || ''; for (let k = 1; k <= (m.c || 0); k++) { const x = await db.collection('inventory').doc('pubpg_' + e.id + '_' + i + 'x' + k).get(); if (!x.exists) { s = ''; break; } s += x.data().d; } out[i] = s; } catch (err) { out[i] = ''; }
   }));
   if (out.every(Boolean)) pageCache[e.id] = out;
   return out;

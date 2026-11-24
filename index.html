@@ -1390,7 +1390,7 @@
 const PASSWORD = "3059";
 const ADMIN_PASSWORD = "9503"; // 매출/미수금 탭 전용 - 필요하면 이 값만 바꿔서 변경 가능
 const DATA_VERSION = "2026-08-03-v4"; // 재고/이월장부 씨앗 데이터를 바꿀 때마다 이 값을 새로 바꿔주세요
-const APP_CODE_VERSION = "2026-11-24-zzm"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
+const APP_CODE_VERSION = "2026-11-24-zzo"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
 const SCHEMA_STAMP = 2; // 서버 저장규칙이 확인하는 "최신 앱 도장" - 절대 자주 바꾸지 않음(이 값을 아는 코드만 저장 가능하게 서버에서 막을 때 씀)
 const CONFIRMED_EMPTY = '__CONFIRMED_EMPTY__'; // "서버가 확실하게 문서가 없다고 확인해줬다"는 걸 표시하는 특수값
                                                  // (한번도 확인 안 한 null과 구분해서, 그 사이 다른 사람이 첫 데이터를 만들었으면 충돌로 감지하기 위함)
@@ -6937,7 +6937,7 @@ async function catPhotoLoad(keys, refreshEmpty) { // refreshEmpty: 예전에 "�
   }));
   return changed;
 }
-function catPhotoCompress(file, square) { // 폰 사진은 크니까 줄여서 저장. square(px)를 주면 가운데를 정사각으로 잘라 그 크기로 (컬러 사진), 안 주면 긴 변 1000px (소재 사진 - 세로로 긴 건 정사각으로 잘라 넣음)
+function catPhotoCompress(file, square) { // 폰 사진은 크니까 줄여서 저장. square(px)를 주면 가운데를 정사각으로 잘라 그 크기로 (컬러 사진), 안 주면 긴 변 1600px (소재 사진 - 세로로 긴 건 정사각으로 잘라 넣음)
   return new Promise((resolve, reject) => {
     const url = URL.createObjectURL(file); const img = new Image();
     img.onload = () => {
@@ -6945,11 +6945,11 @@ function catPhotoCompress(file, square) { // 폰 사진은 크니까 줄여서 �
         const nw = img.naturalWidth, nh = img.naturalHeight;
         let sx = 0, sy = 0, sw = nw, sh = nh, ow, oh;
         if (square) { const m = Math.min(nw, nh); sx = (nw - m) / 2; sy = (nh - m) / 2; sw = sh = m; ow = oh = Math.min(square, m); }
-        else { if (nh > nw) { sy = (nh - nw) / 2; sh = nw; } const r = Math.min(1, 1000 / Math.max(sw, sh)); ow = Math.max(1, Math.round(sw * r)); oh = Math.max(1, Math.round(sh * r)); }
+        else { if (nh > nw) { sy = (nh - nw) / 2; sh = nw; } const r = Math.min(1, 1600 / Math.max(sw, sh)); ow = Math.max(1, Math.round(sw * r)); oh = Math.max(1, Math.round(sh * r)); }
         const cv = document.createElement('canvas'); cv.width = ow; cv.height = oh;
         const ctx = cv.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, ow, oh); ctx.drawImage(img, sx, sy, sw, sh, 0, 0, ow, oh);
-        let q = 0.82, out = cv.toDataURL('image/jpeg', q);
-        while (out.length > 700000 && q > 0.4) { q -= 0.1; out = cv.toDataURL('image/jpeg', q); }
+        let q = square ? 0.85 : 0.88, out = cv.toDataURL('image/jpeg', q);
+        while (out.length > (square ? 300000 : 850000) && q > 0.45) { q -= 0.1; out = cv.toDataURL('image/jpeg', q); }
         URL.revokeObjectURL(url); resolve(out);
       } catch (e) { URL.revokeObjectURL(url); reject(e); }
     };
@@ -7055,7 +7055,7 @@ async function cpChosen(inp) {
   const file = inp.files && inp.files[0]; const row = _cpRows[_cpPickIdx];
   if (!file || !row || !_cpItem) return;
   try {
-    const data = await catPhotoCompress(file, 640); // 컬러 사진: 인스타/고객 페이지에서 한 칸이 크게 나와서 400 -> 640px로 (예전에 등록한 건 400px 그대로라 다시 등록해야 선명해짐)
+    const data = await catPhotoCompress(file, 720); // 컬러 사진: 인스타/고객 페이지에서 한 칸이 크게 나와서 400 -> 640px로 (예전에 등록한 건 400px 그대로라 다시 등록해야 선명해짐)
     if (typeof db === 'undefined' || !db) throw new Error('nodb');
     await db.collection('inventory').doc(catPhotoDocId(row.key)).set({ kind: 'catPhoto', key: row.key, item: _cpItem.item, color: row.color, dataUrl: data, updatedAt: new Date().toISOString(), stamp: SCHEMA_STAMP });
     _catPhotos[row.key] = data; pubStockDirtyKey(row.key);
@@ -7440,6 +7440,18 @@ const PUB_ORDER = ['new', 'best_fw', 'best_ss']; // 'stock'은 예전 방식(이
 const PUB_LINKS = [['new', '신상 입고 (New Item)'], ['best', '시즌별 Best Item'], ['stock', '원단 보러가기 (재고)']];
 function pubId(sec, item) { return sec + '_' + catPhotoDocId(normalizeNameForMatch(item)).replace('catphoto_', ''); }
 function pubPageDoc(id, i) { return 'pubpg_' + id + '_' + i; }
+const PUB_CHUNK = 900000; // 문서 하나(1MB 제한)에 넣는 최대 글자수 - 이미지가 더 크면 조각으로 나눠 pubpg_<id>_<i>x1, x2에 저장 (고객 페이지가 이어붙여 보여줌)
+async function pubSavePage(id, i, data) {
+  const parts = []; for (let o = 0; o < data.length; o += PUB_CHUNK) parts.push(data.slice(o, o + PUB_CHUNK));
+  const at = new Date().toISOString();
+  for (let k = parts.length - 1; k >= 1; k--) await pubCol().doc(pubPageDoc(id, i) + 'x' + k).set({ stamp: SCHEMA_STAMP, kind: 'pubPage', d: parts[k], at }); // 조각 먼저, 본문 나중 - 중간에 끊겨도 반쪽 이미지가 안 보임
+  await pubCol().doc(pubPageDoc(id, i)).set({ stamp: SCHEMA_STAMP, kind: 'pubPage', d: parts[0], c: parts.length - 1, at });
+  for (let k = parts.length; k <= 3; k++) { try { await pubCol().doc(pubPageDoc(id, i) + 'x' + k).delete(); } catch (e) { /* 없는 조각 */ } }
+}
+async function pubDeletePage(id, i) {
+  try { await pubCol().doc(pubPageDoc(id, i)).delete(); } catch (e) { /* 남은 조각은 안 보임 */ }
+  for (let k = 1; k <= 3; k++) { try { await pubCol().doc(pubPageDoc(id, i) + 'x' + k).delete(); } catch (e) { /* 없는 조각 */ } }
+}
 function pubCol() { if (typeof db === 'undefined' || !db) throw new Error('nodb'); return db.collection('inventory'); }
 async function pubLoadIndex() {
   const d = await pubCol().doc('pubIndex').get();
@@ -7449,7 +7461,8 @@ async function pubLoadIndex() {
 async function pubSaveIndex(idx) {
   await pubCol().doc('pubIndex').set({ stamp: SCHEMA_STAMP, kind: 'pubIndex', data: JSON.stringify({ v: 1, updatedAt: new Date().toISOString(), entries: idx.entries }) });
 }
-function pubFileToJpeg(file, maxW) {
+function pubFileToJpeg(file, maxW, maxLen) { // maxLen: 한 장이 이 글자수를 넘으면 화질을 낮춤 (기본 900000 = 문서 하나에 들어가는 크기)
+  maxLen = maxLen || 900000;
   return new Promise((resolve, reject) => {
     const url = URL.createObjectURL(file), img = new Image();
     img.onload = () => {
@@ -7457,10 +7470,10 @@ function pubFileToJpeg(file, maxW) {
         const r = Math.min(1, maxW / img.naturalWidth), w = Math.max(1, Math.round(img.naturalWidth * r)), h = Math.max(1, Math.round(img.naturalHeight * r));
         const cv = document.createElement('canvas'); cv.width = w; cv.height = h;
         const ctx = cv.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, w, h); ctx.drawImage(img, 0, 0, w, h);
-        let q = 0.9, out = cv.toDataURL('image/jpeg', q);
-        while (out.length > 900000 && q > 0.45) { q -= 0.1; out = cv.toDataURL('image/jpeg', q); }
+        let q = 0.92, out = cv.toDataURL('image/jpeg', q);
+        while (out.length > maxLen && q > 0.5) { q -= 0.06; out = cv.toDataURL('image/jpeg', q); }
         URL.revokeObjectURL(url);
-        if (out.length > 1000000) reject(new Error('toobig')); else resolve(out);
+        if (out.length > maxLen * 1.1) reject(new Error('toobig')); else resolve(out);
       } catch (e) { URL.revokeObjectURL(url); reject(e); }
     };
     img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('img')); };
@@ -7505,13 +7518,13 @@ async function publishCatalog() {
     for (const it of items) {
       btn.textContent = `${done + 1}/${items.length} 올리는 중`;
       const id = pubId(sec, it.item);
-      const files = await renderStatementImages(await buildCatalogPages(cfg, [it]), '', '고객페이지', CAT_IMG_W, { scale: 2, jpgOnPhone: true });
+      const files = await renderStatementImages(await buildCatalogPages(cfg, [it]), '', '고객페이지', CAT_IMG_W, { scale: 2.5, jpgOnPhone: true });
       const pages = [];
-      for (const f of files) pages.push(await pubFileToJpeg(f, 1200));
+      for (const f of files) pages.push(await pubFileToJpeg(f, 1500, 1750000)); // 고객 페이지는 폰/PC 화면에서 크게 보이는 이미지라 1500px - 문서 1MB를 넘으면 조각으로 나눠 저장
       const thumb = await pubThumb(it);
-      for (let i = 0; i < pages.length; i++) await pubCol().doc(pubPageDoc(id, i)).set({ stamp: SCHEMA_STAMP, kind: 'pubPage', d: pages[i], at: new Date().toISOString() });
+      for (let i = 0; i < pages.length; i++) await pubSavePage(id, i, pages[i]);
       const old = idx.entries.find(e => e.id === id);
-      if (old && old.n > pages.length) for (let i = pages.length; i < old.n; i++) { try { await pubCol().doc(pubPageDoc(id, i)).delete(); } catch (e) { /* 남은 조각은 안 보임 */ } }
+      if (old && old.n > pages.length) for (let i = pages.length; i < old.n; i++) await pubDeletePage(id, i);
       const ent = { id, sec, item: it.item, mix: it.mix || '', n: pages.length, colors: it.colors.length, date: today, thumb, tc: (catDotColor(it.colors[0].color) || '') };
       if (old) idx.entries[idx.entries.indexOf(old)] = ent; else newEntries.push(ent);
       done++;
@@ -7881,7 +7894,7 @@ async function pubRemove(id) {
   try {
     _pubIdx.entries = _pubIdx.entries.filter(x => x.id !== id);
     await pubSaveIndex(_pubIdx); // 목록에서 먼저 빼서 고객 화면에서 바로 사라지게, 이미지 조각은 그 다음에 지움
-    for (let i = 0; i < e.n; i++) { try { await pubCol().doc(pubPageDoc(id, i)).delete(); } catch (err) { /* 안 보이는 조각 */ } }
+    for (let i = 0; i < e.n; i++) await pubDeletePage(id, i);
     showToast('내렸어요');
   } catch (err) { showToast('내리지 못했어요 (인터넷 연결을 확인해주세요)'); }
   renderPubList();
@@ -7916,24 +7929,24 @@ function pubStockBuild() {
   }
   return out;
 }
-function pubStockSig(e) { return pubStockHash(JSON.stringify(['p2', e.item, e.mix, e.date, e.cols.map(c => [c.c, c.s, c.v ? c.v.map(x => [x.n, x.s]) : 0])])); }
-function pubStockSquare(src, size) {
+function pubStockSig(e) { return pubStockHash(JSON.stringify(['p3', e.item, e.mix, e.date, e.cols.map(c => [c.c, c.s, c.v ? c.v.map(x => [x.n, x.s]) : 0])])); }
+function pubStockSquare(src, size, q) {
   if (!src) return Promise.resolve('');
   return new Promise(resolve => {
     const img = new Image();
-    img.onload = () => { try { const m = Math.min(img.naturalWidth, img.naturalHeight), cv = document.createElement('canvas'); cv.width = cv.height = Math.min(size, m); cv.getContext('2d').drawImage(img, (img.naturalWidth - m) / 2, (img.naturalHeight - m) / 2, m, m, 0, 0, cv.width, cv.height); resolve(cv.toDataURL('image/jpeg', 0.72)); } catch (e) { resolve(''); } };
+    img.onload = () => { try { const m = Math.min(img.naturalWidth, img.naturalHeight), cv = document.createElement('canvas'); cv.width = cv.height = Math.min(size, m); cv.getContext('2d').drawImage(img, (img.naturalWidth - m) / 2, (img.naturalHeight - m) / 2, m, m, 0, 0, cv.width, cv.height); resolve(cv.toDataURL('image/jpeg', q || 0.72)); } catch (e) { resolve(''); } };
     img.onerror = () => resolve('');
     img.src = src;
   });
 }
-function pubStockWide(src, w) { // 소재 사진: 가로 w px로 줄여서 (재고 상세 맨 위에 크게 보임). 서버 문서 1MB 한도 때문에 작게
+function pubStockWide(src, w, maxLen) { // 소재 사진: 가로 w px로 줄여서 (재고 상세 맨 위에 크게 보임). 서버 문서 1MB 한도 때문에 작게
   if (!src) return Promise.resolve('');
   return new Promise(resolve => {
     const img = new Image();
     img.onload = () => { try {
       const r = Math.min(1, w / img.naturalWidth), cv = document.createElement('canvas'); cv.width = Math.max(1, Math.round(img.naturalWidth * r)); cv.height = Math.max(1, Math.round(img.naturalHeight * r));
       cv.getContext('2d').drawImage(img, 0, 0, cv.width, cv.height);
-      let q = 0.72, out = cv.toDataURL('image/jpeg', q); while (out.length > 140000 && q > 0.4) { q -= 0.1; out = cv.toDataURL('image/jpeg', q); }
+      let q = 0.72, out = cv.toDataURL('image/jpeg', q); while (out.length > (maxLen || 140000) && q > 0.4) { q -= 0.1; out = cv.toDataURL('image/jpeg', q); }
       resolve(out);
     } catch (e) { resolve(''); } };
     img.onerror = () => resolve('');
@@ -7974,11 +7987,16 @@ async function pubStockSync(manual) {
       const photoDirty = dirty.has(catPhotoKey(e.it)) || e.cols.some(c => c.nks.some(k => dirty.has(k)));
       if (prev && prev.h === sig && !photoDirty) { items.push(prev); continue; }
       await catPhotoLoad([catPhotoKey(e.it), ...e.cols.flatMap(c => c.nks)], true);
-      const th = await pubStockSquare(_catPhotos[catPhotoKey(e.it)] || e.cols.flatMap(c => c.nks).map(k => _catPhotos[k]).find(Boolean) || '', 140);
-      const cols = [];
-      for (const c of e.cols) { const ph = c.nks.map(k => _catPhotos[k]).find(Boolean) || ''; cols.push({ c: c.c, s: c.s, ...(c.v ? { v: c.v } : {}), t: await pubStockSquare(ph, 120) }); } // 사진은 무지 것, 없으면 기모 것
-      const pw = await pubStockWide(_catPhotos[catPhotoKey(e.it)] || '', 720); // 소재 사진 (품목 사진). 없으면 안 넣음
-      await pubCol().doc('pubstock_' + e.id).set({ stamp: SCHEMA_STAMP, kind: 'pubStockItem', data: JSON.stringify({ item: e.item, mix: e.mix, date: e.date, ...(pw ? { p: pw } : {}), cols }) });
+      const th = await pubStockSquare(_catPhotos[catPhotoKey(e.it)] || e.cols.flatMap(c => c.nks).map(k => _catPhotos[k]).find(Boolean) || '', 140); // 목록 작은 사진은 그대로 140px (목록 문서에 전부 들어가서 용량 한도 때문에 키우지 않음)
+      const pw = await pubStockWide(_catPhotos[catPhotoKey(e.it)] || '', 1080, 260000); // 소재 사진 (품목 사진). 없으면 안 넣음
+      let cols = [], dataStr = '';
+      for (const sz of [240, 200, 160, 120]) { // 컬러 칸 사진: 폰에서 크게 보이니 240px로, 서버 문서 1MB 한도에 걸리면 자동으로 조금씩 작게
+        cols = [];
+        for (const c of e.cols) { const ph = c.nks.map(k => _catPhotos[k]).find(Boolean) || ''; cols.push({ c: c.c, s: c.s, ...(c.v ? { v: c.v } : {}), t: await pubStockSquare(ph, sz, 0.8) }); } // 사진은 무지 것, 없으면 기모 것
+        dataStr = JSON.stringify({ item: e.item, mix: e.mix, date: e.date, ...(pw ? { p: pw } : {}), cols });
+        if (dataStr.length < 900000) break;
+      }
+      await pubCol().doc('pubstock_' + e.id).set({ stamp: SCHEMA_STAMP, kind: 'pubStockItem', data: dataStr });
       items.push({ id: e.id, item: e.item, mix: e.mix, n: cols.length, out: cols.filter(c => c.s > 0).length, th, date: e.date, h: sig });
       wrote++;
     }
