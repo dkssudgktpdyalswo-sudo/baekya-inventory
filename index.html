@@ -1390,7 +1390,7 @@
 const PASSWORD = "3059";
 const ADMIN_PASSWORD = "9503"; // 매출/미수금 탭 전용 - 필요하면 이 값만 바꿔서 변경 가능
 const DATA_VERSION = "2026-08-03-v4"; // 재고/이월장부 씨앗 데이터를 바꿀 때마다 이 값을 새로 바꿔주세요
-const APP_CODE_VERSION = "2026-11-24-zzq"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
+const APP_CODE_VERSION = "2026-11-24-zzw"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
 const SCHEMA_STAMP = 2; // 서버 저장규칙이 확인하는 "최신 앱 도장" - 절대 자주 바꾸지 않음(이 값을 아는 코드만 저장 가능하게 서버에서 막을 때 씀)
 const CONFIRMED_EMPTY = '__CONFIRMED_EMPTY__'; // "서버가 확실하게 문서가 없다고 확인해줬다"는 걸 표시하는 특수값
                                                  // (한번도 확인 안 한 null과 구분해서, 그 사이 다른 사람이 첫 데이터를 만들었으면 충돌로 감지하기 위함)
@@ -4242,42 +4242,76 @@ async function renameFieldInArchive(fieldName, oldValue, newValue) {
   return { changed: changedCount, failedMonths };
 }
 // ---------- 매장 판매단가 (샘플 내역서에 찍히는 품목별 기준 단가) ----------
-function getStorePrice(item) {
-  const m = settings.storePrices || {};
-  const v = Number(m[String(item).trim()]);
-  return v > 0 ? v : null;
+// 저장 모양: 숫자(기본 단가 하나) 또는 { b: 기본(무지) 단가, x: { '기모': 5500, '방전처리': 6000 } } (가공별로 단가가 다를 때)
+function storePriceTypes(extraKeys) { // 매장가를 따로 적을 수 있는 가공 종류: 기모 + (설정 > 가공 종류 관리)에 등록한 것 (+ 이미 적어둔 것)
+  const out = ['기모'];
+  for (const pt of (settings.processingTypes || [])) { const k = String(pt.keyword || '').trim(); if (k && !out.includes(k)) out.push(k); }
+  for (const k of (extraKeys || [])) if (!out.includes(k)) out.push(k);
+  return out;
+}
+function storePriceTypeFor(color) { // 컬러 이름에 들어 있는 가공 종류 (없으면 null = 무지)
+  if (color == null) return null;
+  const t = String(color);
+  return storePriceTypes().find(k => t.includes(k)) || null;
+}
+function storePriceEntry(item) { // { base: 기본 단가|null, extra: { 가공: 단가 } }
+  const v = (settings.storePrices || {})[String(item).trim()];
+  if (v && typeof v === 'object') {
+    const extra = {};
+    for (const k of Object.keys(v.x || {})) { const n = Number(v.x[k]); if (n > 0) extra[k] = n; }
+    const b = Number(v.b);
+    return { base: b > 0 ? b : null, extra };
+  }
+  const n = Number(v);
+  return { base: n > 0 ? n : null, extra: {} };
+}
+function storePriceSerialize(e) { return Object.keys(e.extra).length ? { b: e.base != null ? e.base : null, x: e.extra } : e.base; }
+function getStorePrice(item, color) { // color를 주면 그 컬러의 가공(기모 등)에 맞는 단가, 그 가공 단가가 없으면 기본 단가
+  const e = storePriceEntry(item);
+  if (color != null) { const k = Object.keys(e.extra).find(k => String(color).includes(k)); if (k) return e.extra[k]; }
+  return e.base;
 }
 function storePriceChipHtml(item) {
-  const p = getStorePrice(item);
+  const e = storePriceEntry(item);
   const base = `event.stopPropagation(); editStorePrice('${escAttr(item)}')`;
-  return p != null
-    ? ` <span onclick="${base}" style="margin-left:7px;font-size:10.5px;font-weight:600;color:#1a5f8a;background:#e3eef5;border-radius:5px;padding:1px 6px;vertical-align:2px;cursor:pointer;white-space:nowrap;">매장 ${p.toLocaleString()}</span>`
-    : ` <span onclick="${base}" style="margin-left:7px;font-size:10px;font-weight:500;color:#8a8780;border:1px dashed #b9b5aa;border-radius:5px;padding:0 6px;vertical-align:2px;cursor:pointer;white-space:nowrap;">+ 매장가</span>`;
+  const keys = Object.keys(e.extra);
+  if (e.base == null && keys.length === 0) return ` <span onclick="${base}" style="margin-left:7px;font-size:10px;font-weight:500;color:#8a8780;border:1px dashed #b9b5aa;border-radius:5px;padding:0 6px;vertical-align:2px;cursor:pointer;white-space:nowrap;">+ 매장가</span>`;
+  const chip = (t) => ` <span onclick="${base}" style="margin-left:7px;font-size:10.5px;font-weight:600;color:#1a5f8a;background:#e3eef5;border-radius:5px;padding:1px 6px;vertical-align:2px;cursor:pointer;white-space:nowrap;">${esc(t)}</span>`;
+  const out = [];
+  if (e.base != null) out.push(chip(`${keys.length ? '무지' : '매장'} ${e.base.toLocaleString()}`));
+  for (const k of keys) out.push(chip(`${k} ${e.extra[k].toLocaleString()}`));
+  return out.join('');
 }
-async function setStorePrice(item, price) { // price가 없거나 0 이하면 삭제. 저장 실패하면 원래대로 되돌리고 false
+async function setStorePrice(item, price, extra) { // price(기본)와 extra({가공:단가})가 다 비면 삭제. 저장 실패하면 원래대로 되돌리고 false
   const t = String(item).trim();
   const before = settings;
   const m = { ...(settings.storePrices || {}) };
-  if (price > 0) m[t] = price; else delete m[t];
+  const e = { base: price > 0 ? price : null, extra: {} };
+  for (const k of Object.keys(extra || {})) if (Number(extra[k]) > 0) e.extra[k] = Number(extra[k]);
+  if (e.base != null || Object.keys(e.extra).length) m[t] = storePriceSerialize(e); else delete m[t];
   settings = { ...settings, storePrices: m };
   const ok = await persistSettings();
   if (ok === false) { settings = before; return false; }
   return true;
 }
 async function editStorePrice(item) {
-  const cur = getStorePrice(item);
-  const res = await askForm(`${item} 매장 판매단가`, [{ label: '매장 판매단가 (원/y) — 비우면 삭제', value: cur != null ? String(cur) : '', numeric: true, placeholder: '예: 4500' }], { okText: '저장', desc: '샘플 내역서의 단가로 쓰여요' });
+  const e = storePriceEntry(item);
+  const types = storePriceTypes(Object.keys(e.extra));
+  const fields = [{ label: '기본 (무지) 매장 판매단가 (원/y)', value: e.base != null ? String(e.base) : '', numeric: true, placeholder: '예: 4500' },
+    ...types.map(k => ({ label: `${k} 단가 (원/y) - 비우면 기본 단가`, value: e.extra[k] != null ? String(e.extra[k]) : '', numeric: true, placeholder: '다르면 입력' }))];
+  const res = await askForm(`${item} 매장 판매단가`, fields, { okText: '저장', desc: '샘플 내역서의 단가로 쓰여요. 전부 비우면 삭제돼요 (가공 종류는 가공 종류 관리에서 늘릴 수 있어요)' });
   if (res === null) return;
-  const raw = String(res[0]).replace(/[,\s원]/g, '');
-  let price = 0;
-  if (raw !== '') {
-    price = parseFloat(raw);
-    if (isNaN(price) || price < 0) { showToast('단가를 숫자로 입력해주세요'); return; }
-  }
-  const ok = await setStorePrice(item, price);
+  const parse = (v) => { const raw = String(v).replace(/[,\s원]/g, ''); if (raw === '') return 0; const n = parseFloat(raw); return isNaN(n) || n < 0 ? NaN : n; };
+  const price = parse(res[0]);
+  const extra = {};
+  let bad = isNaN(price);
+  types.forEach((k, i) => { const n = parse(res[i + 1]); if (isNaN(n)) bad = true; else if (n > 0) extra[k] = n; });
+  if (bad) { showToast('단가를 숫자로 입력해주세요'); return; }
+  const ok = await setStorePrice(item, price, extra);
   if (!ok) return;
   render();
-  showToast(price > 0 ? `${item} 매장 판매단가 ${price.toLocaleString()}원 저장` : `${item} 매장 판매단가를 지웠습니다`);
+  const xs = Object.keys(extra);
+  showToast(price > 0 || xs.length ? `${item} 매장 판매단가 저장${price > 0 ? ` (기본 ${price.toLocaleString()}원)` : ''}${xs.map(k => ` · ${k} ${extra[k].toLocaleString()}원`).join('')}` : `${item} 매장 판매단가를 지웠습니다`);
 }
 async function renameInventoryItem(oldName) {
   const raw = await askText('품목 이름 수정', oldName, { desc: '재고·원가표·이월장부·매출장부의 이 품목이 모두 같이 바뀌어요', label: '품목명' });
@@ -4468,7 +4502,7 @@ function renderCost() {
     if (colorsForItem.length > 0) { div.style.cursor = 'pointer'; div.onclick = () => toggleGroup(gk); }
     div.innerHTML = `
       <div>
-        <div class="name">${esc(c.item)}${colorsForItem.length > 0 ? ` <span style="font-size:11px; color:var(--muted); font-weight:400;">${isOpen ? '(컬러별 접기 ▲)' : '(눌러서 컬러별 보기 ▼)'}</span>` : ''}</div>
+        <div class="name">${esc(c.item)}${storePriceChipHtml(c.item)}${colorsForItem.length > 0 ? ` <span style="font-size:11px; color:var(--muted); font-weight:400;">${isOpen ? '(컬러별 접기 ▲)' : '(눌러서 컬러별 보기 ▼)'}</span>` : ''}</div>
         ${c.mix ? `<div class="sub" style="font-size:11px; color:#8a8a8a; margin-top:1px;">혼용률 ${esc(c.mix)}</div>` : ''}
         <div class="sub">분류 ${esc(c.cat)} · ${c.type === 'domestic' ? '국내산 고정가' : ('중국단가 ' + c.price + '위안/m')}</div>
         ${c.type === 'domestic' ? '<div class="sub" style="color:#2f6b46;">환율 미적용 (적혀있는 금액 그대로)</div>' : ''}
@@ -7235,8 +7269,8 @@ async function buildCatalogPages(cfg, items) {
       while (cells.length % cols) cells.push('<div></div>'); // 홀수 개여도 칸 크기는 똑같이
       const rows = fixed ? FM.rows : Math.ceil(cells.length / cols);
       if (fixed) while (cells.length < cols * rows) cells.push('<div></div>');
-      // 컬러가 여러 장이면 아래에 진한 안내 띠: 첫 장들엔 "다음 장에 컬러가 더 있어요 ▼", 마지막 장엔 "마지막 장이에요" (한 장이 5번에서 끊겨 끝난 줄 알고 넘기는 것 방지)
-      const stripH = Math.round(40 * K), multi = colSplit.length > 1;
+      // 인스타에서 컬러가 여러 장이면 아래에 진한 안내 띠: 첫 장들엔 "다음 장에 컬러가 더 있어요 ▼", 마지막 장엔 "마지막 장이에요" (한 장이 5번에서 끊겨 끝난 줄 알고 넘기는 것 방지)
+      const stripH = Math.round(40 * K), multi = fixed && colSplit.length > 1; // 인스타(넘겨보는 게시물)만 - 고객 페이지는 장이 세로로 이어져 스크롤하면 바로 보여서 불필요
       const strip = multi ? `<div style="grid-column:1 / -1; height:${stripH}px; background:${BRAND}; color:#fff; display:flex; align-items:center; justify-content:center; font-size:${Math.round(17 * K)}px; font-weight:700; letter-spacing:.5px; white-space:nowrap;"><span style="opacity:.75; margin-right:10px;">COLOR ${si + 1}/${colSplit.length}</span>${si < colSplit.length - 1 ? '다음 장에 컬러가 더 있어요 ▼' : '마지막 장이에요'}</div>` : '';
       out.push(`<div class="stm-img-page" style="width:${PW}px; ${fixed ? `height:${PH}px;` : ''} box-sizing:border-box; background:#fff; font-family:${fontFam}; padding:8px; display:grid; gap:8px; grid-template-columns:repeat(${cols}, 1fr); grid-template-rows:repeat(${rows}, ${fixed ? '1fr' : '292px'})${multi ? ` ${stripH}px` : ''}; overflow:hidden;">${cells.join('')}${strip}</div>`);
     }
@@ -10327,6 +10361,7 @@ function renderReportMenuView() {
     ['월간 리포트', '이번달/지난달 매출·순이익 비교', showMonthlyReport],
     ['연간 리포트', '올해 전체 매출·순이익 흐름', showYearlyReport],
     ['회계장부 (고정비)', '직원 월급, 임대료 등 고정비 관리 (달마다 따로 저장)', () => openFixedCostModal(monthKeyFromOffset(0))],
+    ['영업사원 수당', '담당 거래처 출고량 기준 월별 수당 (입금분 기준, 신규 거래처 구분)', showRepCommission],
   ];
   for (const [title, desc, fn] of items) {
     const card = document.createElement('div');
@@ -10335,6 +10370,219 @@ function renderReportMenuView() {
     card.onclick = fn;
     list.appendChild(card);
   }
+}
+// ================= 영업사원 수당 (리포트 메뉴, 비밀번호 잠금 안) =================
+// 담당 거래처로 지정한 거래처 출고분 기준. 수당은 "입금된 만큼"만 계산 (아직 안 들어온 출고분은 입금되면 그 달 화면에 자동 반영).
+// 1단계: 기본급 + 기존 거래처 야드당 수당 + 신규 거래처(첫거래일부터 N개월) 야드당 수당 / 2단계: 기본급 + 순이익의 N% (3개월 연속 월 5,000마 이상이면 전환)
+// 설정은 settings.salesRep = { name, stage, base1, existingRate, newRate, newMonths, base2, profitPct, customers: [{name, isNew, since}] } (예전 급여정산 버전의 settings.payroll.sales[0]이 있으면 그 값을 이어받음)
+const REP_DEFAULT = { name: '영업사원', stage: 1, base1: 2820000, existingRate: 50, newRate: 100, newMonths: 12, base2: 2500000, profitPct: 15, taxPct: 0, customers: [] };
+let repCommOffset = 0, repCommEditing = false, repCommSearch = '';
+function repCfg() {
+  let r = settings.salesRep;
+  if (!r) { const ps = settings.payroll && Array.isArray(settings.payroll.sales) ? settings.payroll.sales[0] : null; r = ps || {}; }
+  const n = (v, d) => (v === 0 || (Number(v) > 0)) ? Number(v) : d;
+  return {
+    name: String(r.name || '').trim() || REP_DEFAULT.name, stage: Number(r.stage) === 2 ? 2 : 1,
+    base1: n(r.base1, REP_DEFAULT.base1), existingRate: n(r.existingRate, REP_DEFAULT.existingRate), newRate: n(r.newRate, REP_DEFAULT.newRate), newMonths: n(r.newMonths, REP_DEFAULT.newMonths) || 12,
+    base2: n(r.base2, REP_DEFAULT.base2), profitPct: n(r.profitPct, REP_DEFAULT.profitPct), taxPct: Math.min(100, n(r.taxPct, 0)),
+    customers: (Array.isArray(r.customers) ? r.customers : []).map(c => typeof c === 'string' ? { name: c.trim(), isNew: false } : { name: String(c.name || '').trim(), isNew: !!c.isNew, since: c.since || '' }).filter(c => c.name)
+  };
+}
+async function saveRepCfg(patch) {
+  const before = settings;
+  settings = { ...settings, salesRep: { ...repCfg(), ...patch } };
+  const ok = await persistSettings();
+  if (ok === false) { settings = before; showToast('저장하지 못했어요 (인터넷 연결을 확인해주세요)'); return false; }
+  return true;
+}
+function showRepCommission() { repCommOffset = 0; repCommEditing = false; repCommSearch = ''; salesSpecialView = 'repComm'; openGroups = new Set(); render(); }
+function repMonthsBetween(fromDate, toDate) { // 'YY.MM.DD' 두 날짜 사이 개월 수 (일까지 비교)
+  const [y1, m1, d1] = String(fromDate).split('.').map(Number);
+  const [y2, m2, d2] = String(toDate).split('.').map(Number);
+  let months = (y2 - y1) * 12 + (m2 - m1);
+  if (d2 < d1) months -= 1;
+  return months;
+}
+function repWon(n) { return Math.round(n).toLocaleString() + '원'; }
+function repCommCompute(entries, cfg) { // entries: 이 달 출고 기록(반품·불량·수수료·샘플 제외). 야드는 전체/입금분을 따로 셈
+  const custMap = new Map(cfg.customers.map(c => [c.name, c]));
+  const r = { exY: 0, newY: 0, exPaidY: 0, newPaidY: 0, profit: 0, paidProfit: 0, perCust: new Map() };
+  for (const e of entries) {
+    const c = custMap.get(String(e.customer || '').trim());
+    if (!c) continue;
+    const due = (e.saleAmount || 0) - (e.discount || 0);
+    const paidRatio = due > 0 ? Math.min(1, getPaidAmount(e) / due) : 0;
+    const isNew = !!c.isNew && !!c.since && String(e.date) >= String(c.since) && repMonthsBetween(c.since, e.date) < cfg.newMonths;
+    if (isNew) { r.newY += e.yardsShipped; r.newPaidY += e.yardsShipped * paidRatio; } else { r.exY += e.yardsShipped; r.exPaidY += e.yardsShipped * paidRatio; }
+    const pr = e._profit != null ? e._profit : 0;
+    r.profit += pr; r.paidProfit += pr * paidRatio;
+    const cur = r.perCust.get(c.name) || { y: 0, isNew };
+    cur.y += e.yardsShipped; if (isNew) cur.isNew = true; r.perCust.set(c.name, cur);
+  }
+  return r;
+}
+async function repCommEditSettings() {
+  const c = repCfg();
+  const res = await askForm('영업사원 수당 조건', [
+    { label: '이름 (표시용)', value: c.name === REP_DEFAULT.name ? '' : c.name, placeholder: '예: 홍길동' },
+    { label: '지금 단계 (1 또는 2)', value: String(c.stage), numeric: true },
+    { label: '1단계 기본급 (원/월, 세전)', value: String(c.base1), numeric: true },
+    { label: '1단계 기존 거래처 수당 (원/마)', value: String(c.existingRate), numeric: true },
+    { label: '1단계 신규 거래처 수당 (원/마)', value: String(c.newRate), numeric: true },
+    { label: '신규 거래처로 치는 기간 (개월)', value: String(c.newMonths), numeric: true },
+    { label: '2단계 기본급 (원/월, 세전)', value: String(c.base2), numeric: true },
+    { label: '2단계 순이익 비율 (%)', value: String(c.profitPct), numeric: true },
+    { label: '공제율 (%) - 세후 금액 계산용 (4대보험·세금 합계)', value: c.taxPct ? String(c.taxPct) : '', numeric: true, placeholder: '세무사가 알려준 비율 (예: 10)' },
+  ], { okText: '저장', desc: '수당은 입금된 출고분만 계산돼요. 기본급은 세전 금액이에요' });
+  if (res === null) return;
+  const num = v => { const raw = String(v).replace(/[,\s원%]/g, ''); if (raw === '') return NaN; const n = parseFloat(raw); return isNaN(n) || n < 0 ? NaN : n; };
+  const tax = String(res[8]).trim() === '' ? 0 : num(res[8]);
+  const v = res.slice(1, 8).map(num);
+  if (v.some(isNaN) || isNaN(tax) || tax > 100 || (v[0] !== 1 && v[0] !== 2)) { showToast('단계는 1 또는 2, 나머지는 숫자로 입력해주세요'); return; }
+  if (await saveRepCfg({ name: String(res[0]).trim(), stage: v[0], base1: v[1], existingRate: v[2], newRate: v[3], newMonths: v[4] || 12, base2: v[5], profitPct: v[6], taxPct: tax })) render();
+}
+async function renderRepCommView() {
+  const myToken = ++_reportRenderToken;
+  const list = document.getElementById('list');
+  list.innerHTML = '';
+  const cfg = repCfg();
+  const target = new Date(new Date().getFullYear(), new Date().getMonth() + repCommOffset, 1);
+  const mk = `${String(target.getFullYear()).slice(2)}.${String(target.getMonth() + 1).padStart(2, '0')}`;
+  const archiveKey = `${target.getFullYear()}-${String(target.getMonth() + 1).padStart(2, '0')}`;
+  const btnCss = 'border:none;background:#eee;color:#555;border-radius:8px;padding:7px 12px;font-size:12px;';
+  const topBar = document.createElement('div');
+  topBar.style.cssText = 'display:flex; gap:8px; align-items:center; margin-bottom:10px; flex-wrap:wrap;';
+  const mkBtn = (t, fn, css, dis) => { const b = document.createElement('button'); b.textContent = t; b.style.cssText = css || btnCss; if (dis) b.disabled = true; b.onclick = fn; topBar.appendChild(b); return b; };
+  mkBtn('← 돌아가기', () => { salesSpecialView = 'reportMenu'; openGroups = new Set(); render(); }, btnCss + 'font-weight:600;');
+  mkBtn('◀ 이전달', () => { repCommOffset--; render(); });
+  mkBtn('다음달 ▶', () => { repCommOffset++; render(); }, btnCss, repCommOffset >= 0);
+  list.appendChild(topBar);
+
+  const head = document.createElement('div');
+  head.style.cssText = 'background:#fff; border:1px solid var(--border); border-radius:12px; padding:14px 16px; margin-bottom:10px;';
+  const condTxt = cfg.stage === 2 ? `2단계 · 기본급 ${cfg.base2.toLocaleString()}원 + 순이익 ${cfg.profitPct}%` : `1단계 · 기본급 ${cfg.base1.toLocaleString()}원 · 기존 ${cfg.existingRate}원/마 · 신규 ${cfg.newRate}원/마(${cfg.newMonths}개월)`;
+  head.innerHTML = `<div style="font-size:17px; font-weight:800;">${esc(cfg.name)} 수당</div><div style="font-size:12px; color:var(--muted); margin-top:2px;">${monthKeyLabel(mk)} · ${condTxt} · 담당 거래처 ${cfg.customers.length}곳</div>`;
+  const editBtn = document.createElement('button');
+  editBtn.textContent = '조건 수정';
+  editBtn.style.cssText = 'margin-top:10px; border:none; background:#f1eee7; color:var(--muted); border-radius:8px; padding:6px 12px; font-size:12px; font-weight:600;';
+  editBtn.onclick = repCommEditSettings;
+  head.appendChild(editBtn);
+  list.appendChild(head);
+
+  // 라이브 기록 + 그 달 보관함을 id 기준으로 중복 없이 합침
+  const archived = await fetchArchivedEntriesForMonth(archiveKey);
+  if (myToken !== _reportRenderToken) return;
+  const byId = new Map();
+  for (const e of (archived || [])) byId.set(e.id, e);
+  for (const e of shipmentLog) byId.set(e.id, e);
+  const monthEntries = Array.from(byId.values()).filter(e => String(e.date).slice(0, 5) === mk);
+  const entries = monthEntries.filter(e => !e.isReturn && !e.isDefect && !e.manualClose && !e.isFee && !e.isSample && e.item !== '이월 미수금' && e.yardsShipped > 0);
+  computeProfitFieldsForEntries(entries); // 2단계(순이익 비율)용 순이익 계산
+
+  // 담당 거래처 지정 (체크박스) + 신규 표시
+  const names = [...new Set([...shipmentLog.map(e => String(e.customer || '').trim()), ...monthEntries.map(e => String(e.customer || '').trim()), ...customerList.map(c => String(c).trim()), ...cfg.customers.map(c => c.name)].filter(Boolean))].sort((a, b) => a.localeCompare(b, 'ko'));
+  const pickBox = document.createElement('div');
+  pickBox.style.cssText = 'background:#fff; border:1px solid var(--border); border-radius:12px; padding:12px 16px; margin-bottom:10px;';
+  const pickHead = document.createElement('div');
+  pickHead.style.cssText = 'display:flex; justify-content:space-between; align-items:center; cursor:pointer;';
+  pickHead.innerHTML = `<div style="font-weight:700; font-size:14px;">담당 거래처 지정 <span style="font-weight:400; font-size:12px; color:var(--muted);">(${cfg.customers.length}곳 · 신규 ${cfg.customers.filter(c => c.isNew).length}곳)</span></div><div style="font-size:12px; color:var(--muted);">${repCommEditing ? '접기 ▲' : '펼치기 ▼'}</div>`;
+  pickHead.onclick = () => { repCommEditing = !repCommEditing; render(); };
+  pickBox.appendChild(pickHead);
+  if (repCommEditing) {
+    const sInp = document.createElement('input');
+    sInp.type = 'search'; sInp.placeholder = '거래처 검색'; sInp.value = repCommSearch; sInp.autocomplete = 'off';
+    sInp.style.cssText = 'width:100%; box-sizing:border-box; margin:10px 0 6px; padding:8px 10px; border:1px solid var(--border); border-radius:8px; font-size:14px;';
+    pickBox.appendChild(sInp);
+    const hint = document.createElement('div');
+    hint.style.cssText = 'font-size:11px; color:var(--muted); margin-bottom:4px;';
+    hint.textContent = '체크하면 담당 거래처, 영업사원이 새로 뚫은 거래처는 "신규"도 체크하고 첫거래일(YY.MM.DD)을 확인해주세요.';
+    pickBox.appendChild(hint);
+    const boxList = document.createElement('div');
+    boxList.style.cssText = 'max-height:340px; overflow:auto;';
+    const firstDateOf = (n) => { const ds = shipmentLog.filter(e => String(e.customer || '').trim() === n && e.item !== '이월 미수금' && /^\d\d\.\d\d\.\d\d$/.test(String(e.date))).map(e => String(e.date)).sort(); return ds[0] || todayStr(); };
+    const setCust = async (name, fn) => { const cur = repCfg().customers; const next = fn(cur); if (await saveRepCfg({ customers: next })) renderRepCommView(); };
+    const paint = () => {
+      boxList.innerHTML = '';
+      const q = repCommSearch.trim();
+      const shown = names.filter(n => !q || matchesSearchWords(q, n));
+      if (q && !names.includes(q)) { // 거래 기록이 없는 이름도 직접 추가
+        const add = document.createElement('button');
+        add.textContent = `+ "${q}" 담당 거래처로 추가`;
+        add.style.cssText = 'border:none; background:#eaf3ec; color:#2f6b46; border-radius:6px; padding:6px 10px; font-size:12px; margin:4px 0;';
+        add.onclick = () => setCust(q, cur => [...cur, { name: q, isNew: false }]);
+        boxList.appendChild(add);
+      }
+      for (const n of shown) {
+        const mine = repCfg().customers.find(c => c.name === n);
+        const row = document.createElement('div');
+        row.style.cssText = 'display:flex; align-items:center; gap:8px; padding:7px 2px; border-bottom:1px dashed var(--border); font-size:14px; flex-wrap:wrap;';
+        const lab = document.createElement('label');
+        lab.style.cssText = 'display:flex; align-items:center; gap:8px; flex:1; min-width:120px;';
+        const cb = document.createElement('input');
+        cb.type = 'checkbox'; cb.style.width = 'auto'; cb.checked = !!mine;
+        cb.onchange = () => setCust(n, cur => cb.checked ? [...cur.filter(c => c.name !== n), { name: n, isNew: false }] : cur.filter(c => c.name !== n));
+        lab.appendChild(cb); lab.appendChild(document.createTextNode(n));
+        row.appendChild(lab);
+        if (mine) {
+          const nl = document.createElement('label');
+          nl.style.cssText = 'display:flex; align-items:center; gap:4px; font-size:12px; color:#1a7a4a;';
+          const nb = document.createElement('input');
+          nb.type = 'checkbox'; nb.style.width = 'auto'; nb.checked = mine.isNew;
+          nb.onchange = () => setCust(n, cur => cur.map(c => c.name === n ? { ...c, isNew: nb.checked, since: nb.checked ? (c.since || firstDateOf(n)) : c.since } : c));
+          nl.appendChild(nb); nl.appendChild(document.createTextNode('신규'));
+          row.appendChild(nl);
+          if (mine.isNew) {
+            const di = document.createElement('input');
+            di.value = mine.since || ''; di.placeholder = 'YY.MM.DD'; di.style.cssText = 'width:84px; padding:4px 6px; border:1px solid var(--border); border-radius:6px; font-size:12px;';
+            di.onchange = () => { const v = di.value.trim(); if (!/^\d\d\.\d\d\.\d\d$/.test(v)) { showToast('첫거래일을 YY.MM.DD로 적어주세요 (예: 26.11.05)'); di.value = mine.since || ''; return; } setCust(n, cur => cur.map(c => c.name === n ? { ...c, since: v } : c)); };
+            row.appendChild(di);
+          }
+        }
+        boxList.appendChild(row);
+      }
+      if (!boxList.children.length) boxList.innerHTML = '<div style="font-size:13px; color:var(--muted); padding:8px 0;">거래처가 없어요</div>';
+    };
+    sInp.oninput = () => { repCommSearch = sInp.value; paint(); };
+    paint();
+    pickBox.appendChild(boxList);
+  }
+  list.appendChild(pickBox);
+
+  if (archived === null) { const w = document.createElement('div'); w.style.cssText = 'font-size:12px; color:#8a5300; background:#fff4e5; border-radius:8px; padding:8px 12px; margin-bottom:10px;'; w.textContent = '⚠️ 보관함을 못 불러와서 이 달 출고량이 일부 빠졌을 수 있어요. 잠시 후 다시 열어주세요.'; list.appendChild(w); }
+  if (cfg.customers.length === 0) { const w = document.createElement('div'); w.style.cssText = 'font-size:12px; color:var(--danger); margin-bottom:10px;'; w.textContent = '담당 거래처가 아직 없어요. 위 "담당 거래처 지정"에서 체크해주세요.'; list.appendChild(w); }
+
+  const r = repCommCompute(entries, cfg);
+  const row = (l, v, strong) => `<div style="display:flex; justify-content:space-between; gap:10px; padding:5px 0; ${strong ? 'border-top:2px solid #222; margin-top:6px; padding-top:10px; font-size:17px; font-weight:800;' : 'font-size:14px;'}"><span>${l}</span><span style="white-space:nowrap;">${v}</span></div>`;
+  const ky = y => Math.round(y).toLocaleString();
+  let base, comm, commAll, detail;
+  if (cfg.stage === 2) {
+    base = cfg.base2; comm = r.paidProfit * cfg.profitPct / 100; commAll = r.profit * cfg.profitPct / 100;
+    detail = row(`순이익 ${repWon(r.profit)} 중 입금분 ${repWon(r.paidProfit)} × ${cfg.profitPct}%`, repWon(comm));
+  } else {
+    base = cfg.base1; comm = r.exPaidY * cfg.existingRate + r.newPaidY * cfg.newRate; commAll = r.exY * cfg.existingRate + r.newY * cfg.newRate;
+    detail = row(`기존 거래처 ${ky(r.exY)}마 (입금분 ${ky(r.exPaidY)}마) × ${cfg.existingRate}원`, repWon(r.exPaidY * cfg.existingRate))
+           + row(`신규 거래처 ${ky(r.newY)}마 (입금분 ${ky(r.newPaidY)}마) × ${cfg.newRate}원`, repWon(r.newPaidY * cfg.newRate));
+  }
+  const pending = commAll - comm, own = r.exY + r.newY;
+  const sum = document.createElement('div');
+  sum.style.cssText = 'background:#fff; border:1px solid var(--border); border-radius:12px; padding:14px 16px; margin-bottom:10px;';
+  sum.innerHTML = `<div style="font-weight:700; font-size:14px; margin-bottom:6px;">${monthKeyLabel(mk)} 정산 <span style="font-weight:400; font-size:12px; color:var(--muted);">본인 주문 ${ky(own)}마</span></div>
+    ${row('기본급', repWon(base))}
+    ${detail}
+    ${row('세전 합계 (입금분 기준)', repWon(base + comm))}
+    ${cfg.taxPct > 0 ? row(`공제 (${cfg.taxPct}%)`, `- ${repWon((base + comm) * cfg.taxPct / 100)}`) : ''}
+    ${row('최종 지급액 (세후)', repWon((base + comm) * (1 - cfg.taxPct / 100)), true)}
+    ${cfg.taxPct > 0 ? '' : '<div style="font-size:11px; color:#a15c1e; margin-top:6px;">공제율이 아직 없어서 세후 금액이 세전과 같게 나와요. "조건 수정"에서 공제율을 입력해주세요.</div>'}
+    ${pending > 0.5 ? `<div style="font-size:11px; color:#8a5300; margin-top:6px;">아직 입금 안 된 출고분 수당 ${repWon(pending)} - 입금되면 이 달 화면에 자동 반영돼요</div>` : ''}
+    ${cfg.stage !== 2 && own > 0 ? `<div style="font-size:11px; color:var(--muted); margin-top:4px;">2단계 전환 기준: 3개월 연속 월 5,000마 이상</div>` : ''}
+    <div style="font-size:11px; color:var(--muted); margin-top:4px;">반품·불량·샘플·수수료는 제외해요.</div>`;
+  list.appendChild(sum);
+
+  const detailBox = document.createElement('div');
+  detailBox.style.cssText = 'background:#fff; border:1px solid var(--border); border-radius:12px; padding:12px 16px; margin-bottom:10px;';
+  const rows = [...r.perCust.entries()].sort((a, b) => b[1].y - a[1].y);
+  detailBox.innerHTML = `<div style="font-weight:700; font-size:14px; margin-bottom:6px;">거래처별</div>` + (rows.length ? rows.map(([c, v]) => `<div style="display:flex; justify-content:space-between; font-size:14px; padding:6px 0; border-bottom:1px dashed var(--border);"><span>${esc(c)}${v.isNew ? ' <b style="color:#1a7a4a; font-size:12px;">신규</b>' : ''}</span><span>${ky(v.y)}마</span></div>`).join('') : `<div style="font-size:13px; color:var(--muted);">이 달에 담당 거래처 출고가 없어요</div>`);
+  list.appendChild(detailBox);
 }
 function showMonthlyReport() {
   monthlyReportOffset = 0;
@@ -11463,6 +11711,11 @@ function renderSales() {
   if (salesSpecialView === 'reportMenu') {
     document.getElementById('stats').innerHTML = '';
     renderReportMenuView();
+    return;
+  }
+  if (salesSpecialView === 'repComm') {
+    document.getElementById('stats').innerHTML = '';
+    renderRepCommView();
     return;
   }
   if (salesSpecialView === 'monthlyReport') {
@@ -14366,7 +14619,7 @@ function spsRows() {
 function spsPriceOf(o) { // 이 화면에서 고친 값 > 전에 인쇄한 단가 > 품목의 매장판가
   if (Object.prototype.hasOwnProperty.call(spsPrices, o.id)) return spsPrices[o.id];
   if (Number(o.samplePrice) > 0) return Number(o.samplePrice);
-  return getStorePrice(o.item);
+  return getStorePrice(o.item, o.color);
 }
 function spsAmount(r) { const p = spsPriceOf(r.o); return p > 0 ? Math.round(r.yards * p) : null; }
 function spsIsOn(r) { return r.o.done ? spsOn.has(r.o.id) : !spsOff.has(r.o.id); }
@@ -14386,7 +14639,7 @@ function spsSetPrice(id, raw, propagate) {
   if (propagate && price != null) { // 같은 품목 중 단가가 비어있는 다른 줄에도 같이 채워줌 (품목마다 한 번만 입력하면 되게)
     const me = orders.find(x => x.id === id);
     if (me) for (const r of spsRows()) {
-      if (r.o.id !== id && String(r.o.item).trim() === String(me.item).trim() && !(spsPriceOf(r.o) > 0)) {
+      if (r.o.id !== id && String(r.o.item).trim() === String(me.item).trim() && storePriceTypeFor(r.o.color) === storePriceTypeFor(me.color) && !(spsPriceOf(r.o) > 0)) { // 같은 품목, 같은 가공(무지끼리/기모끼리)만
         spsPrices[r.o.id] = price;
         const el = document.getElementById('sps-price-' + r.o.id);
         if (el) { el.value = price.toLocaleString(); el.style.borderColor = ''; el.style.background = ''; }
@@ -14583,11 +14836,14 @@ async function printSampleStmt() {
     if (!(p > 0)) continue;
     r.o.samplePrice = p;
     const key = String(r.o.item).trim();
-    if (getStorePrice(key) == null && newStore[key] == null && Object.prototype.hasOwnProperty.call(spsPrices, r.o.id)) newStore[key] = p;
+    const kw = storePriceTypeFor(r.o.color), nk = key + '|' + (kw || '');
+    if (getStorePrice(key, r.o.color) == null && newStore[nk] == null && Object.prototype.hasOwnProperty.call(spsPrices, r.o.id)) newStore[nk] = { key, kw, p }; // 기모면 기모 단가로, 무지면 기본 단가로 기억
   }
   if (Object.keys(newStore).length > 0) {
     const before = settings;
-    settings = { ...settings, storePrices: { ...(settings.storePrices || {}), ...newStore } };
+    const m = { ...(settings.storePrices || {}) };
+    for (const { key, kw, p } of Object.values(newStore)) { const e = storePriceEntry(key); if (kw) e.extra[kw] = p; else e.base = p; m[key] = storePriceSerialize(e); }
+    settings = { ...settings, storePrices: m };
     const ok = await persistSettings();
     if (ok === false) settings = before;
   }
