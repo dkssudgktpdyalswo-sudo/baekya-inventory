@@ -1390,7 +1390,7 @@
 const PASSWORD = "3059";
 const ADMIN_PASSWORD = "9503"; // 매출/미수금 탭 전용 - 필요하면 이 값만 바꿔서 변경 가능
 const DATA_VERSION = "2026-08-03-v4"; // 재고/이월장부 씨앗 데이터를 바꿀 때마다 이 값을 새로 바꿔주세요
-const APP_CODE_VERSION = "2026-11-24-zzl"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
+const APP_CODE_VERSION = "2026-11-24-zzm"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
 const SCHEMA_STAMP = 2; // 서버 저장규칙이 확인하는 "최신 앱 도장" - 절대 자주 바꾸지 않음(이 값을 아는 코드만 저장 가능하게 서버에서 막을 때 씀)
 const CONFIRMED_EMPTY = '__CONFIRMED_EMPTY__'; // "서버가 확실하게 문서가 없다고 확인해줬다"는 걸 표시하는 특수값
                                                  // (한번도 확인 안 한 null과 구분해서, 그 사이 다른 사람이 첫 데이터를 만들었으면 충돌로 감지하기 위함)
@@ -7055,7 +7055,7 @@ async function cpChosen(inp) {
   const file = inp.files && inp.files[0]; const row = _cpRows[_cpPickIdx];
   if (!file || !row || !_cpItem) return;
   try {
-    const data = await catPhotoCompress(file, 400);
+    const data = await catPhotoCompress(file, 640); // 컬러 사진: 인스타/고객 페이지에서 한 칸이 크게 나와서 400 -> 640px로 (예전에 등록한 건 400px 그대로라 다시 등록해야 선명해짐)
     if (typeof db === 'undefined' || !db) throw new Error('nodb');
     await db.collection('inventory').doc(catPhotoDocId(row.key)).set({ kind: 'catPhoto', key: row.key, item: _cpItem.item, color: row.color, dataUrl: data, updatedAt: new Date().toISOString(), stamp: SCHEMA_STAMP });
     _catPhotos[row.key] = data; pubStockDirtyKey(row.key);
@@ -7457,7 +7457,7 @@ function pubFileToJpeg(file, maxW) {
         const r = Math.min(1, maxW / img.naturalWidth), w = Math.max(1, Math.round(img.naturalWidth * r)), h = Math.max(1, Math.round(img.naturalHeight * r));
         const cv = document.createElement('canvas'); cv.width = w; cv.height = h;
         const ctx = cv.getContext('2d'); ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, w, h); ctx.drawImage(img, 0, 0, w, h);
-        let q = 0.85, out = cv.toDataURL('image/jpeg', q);
+        let q = 0.9, out = cv.toDataURL('image/jpeg', q);
         while (out.length > 900000 && q > 0.45) { q -= 0.1; out = cv.toDataURL('image/jpeg', q); }
         URL.revokeObjectURL(url);
         if (out.length > 1000000) reject(new Error('toobig')); else resolve(out);
@@ -7505,9 +7505,9 @@ async function publishCatalog() {
     for (const it of items) {
       btn.textContent = `${done + 1}/${items.length} 올리는 중`;
       const id = pubId(sec, it.item);
-      const files = await renderStatementImages(await buildCatalogPages(cfg, [it]), '', '고객페이지', CAT_IMG_W, { scale: 1.5, jpgOnPhone: true });
+      const files = await renderStatementImages(await buildCatalogPages(cfg, [it]), '', '고객페이지', CAT_IMG_W, { scale: 2, jpgOnPhone: true });
       const pages = [];
-      for (const f of files) pages.push(await pubFileToJpeg(f, 900));
+      for (const f of files) pages.push(await pubFileToJpeg(f, 1200));
       const thumb = await pubThumb(it);
       for (let i = 0; i < pages.length; i++) await pubCol().doc(pubPageDoc(id, i)).set({ stamp: SCHEMA_STAMP, kind: 'pubPage', d: pages[i], at: new Date().toISOString() });
       const old = idx.entries.find(e => e.id === id);
