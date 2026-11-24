@@ -829,7 +829,6 @@
       <option value="chat">카톡 대화용 (세로로 긴 이미지)</option>
       <option value="promo">채널 메시지용 (4:3)</option>
       <option value="ig45">인스타 게시물 (4:5 세로 · 1080×1350)</option>
-      <option value="ig11">인스타 게시물 (1:1 정사각 · 1080×1080)</option>
     </select>
     <button type="button" onclick="openColorPhotoModal()" style="width:100%; margin-top:10px; border:none; background:#e8edf5; color:#3d4f6b; border-radius:8px; padding:10px 4px; font-size:13px; font-weight:700;">컬러 사진 등록</button>
     <div id="cat-photo-wrap"><label>소재 사진</label>
@@ -1391,7 +1390,7 @@
 const PASSWORD = "3059";
 const ADMIN_PASSWORD = "9503"; // 매출/미수금 탭 전용 - 필요하면 이 값만 바꿔서 변경 가능
 const DATA_VERSION = "2026-08-03-v4"; // 재고/이월장부 씨앗 데이터를 바꿀 때마다 이 값을 새로 바꿔주세요
-const APP_CODE_VERSION = "2026-11-24-zzh"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
+const APP_CODE_VERSION = "2026-11-24-zzl"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
 const SCHEMA_STAMP = 2; // 서버 저장규칙이 확인하는 "최신 앱 도장" - 절대 자주 바꾸지 않음(이 값을 아는 코드만 저장 가능하게 서버에서 막을 때 씀)
 const CONFIRMED_EMPTY = '__CONFIRMED_EMPTY__'; // "서버가 확실하게 문서가 없다고 확인해줬다"는 걸 표시하는 특수값
                                                  // (한번도 확인 안 한 null과 구분해서, 그 사이 다른 사람이 첫 데이터를 만들었으면 충돌로 감지하기 위함)
@@ -6909,8 +6908,8 @@ function catGroupsOf(it) {
 }
 const CAT_PER_PAGE = 10, CAT_PER_PAGE_PHOTO = 6; // 폰에서 스크롤 없이 한눈에 보이도록 한 장에 최대 10타일 (5줄), 컬러 사진이 들어가면 타일이 커져서 6타일 (3줄)
 const CAT_PER_PAGE_WIDE = 9; // 4:3 한 장에 3x3 타일
-// 크기가 정해진 이미지 형식: 채널 메시지(4:3, 800x600 디자인 → 1200x900) / 인스타(디자인 800 폭 → 1.35배로 정확히 1080 폭). 인스타는 4:5(3x4 타일), 1:1(3x3 타일)
-const CAT_FMT = { promo: { W: 800, H: 600, per: 9, scale: 1.5, label: '4:3', kind: '채널' }, ig45: { W: 800, H: 1000, per: 12, scale: 1.35, label: '인스타 4:5 1080x1350', kind: '인스타', insta: true, maxImg: 20 }, ig11: { W: 800, H: 800, per: 9, scale: 1.35, label: '인스타 1:1 1080x1080', kind: '인스타정사각', insta: true, maxImg: 20 } };
+// 크기가 정해진 이미지 형식: 채널 메시지(4:3, 800x600 디자인 → 1200x900) / 인스타 4:5(디자인 800 폭 → 1.35배로 정확히 1080x1350)
+const CAT_FMT = { promo: { W: 800, H: 600, per: 9, scale: 1.5, label: '4:3', kind: '채널' }, ig45: { W: 800, H: 1000, per: 6, cols: 2, rows: 3, scale: 1.35, label: '인스타 4:5 1080x1350', kind: '인스타', insta: true, maxImg: 20 } };
 function catSplitGroups(it, wide) { // 타일이 많으면 비슷한 개수로 나눠서 여러 장으로 (줄이 맞도록 짝수 개씩, 4:3은 3열이라 그냥 균등)
   const groups = catGroupsOf(it);
   const P = Math.max(1, Math.ceil(groups.length / (wide ? (typeof wide === 'number' ? wide : CAT_PER_PAGE_WIDE) : (catItemHasColorPhoto(it) ? CAT_PER_PAGE_PHOTO : CAT_PER_PAGE))));
@@ -7077,7 +7076,7 @@ async function buildCatalogPages(cfg, items) {
   const FM = CAT_FMT[cfg.format] || null; // 크기가 정해진 형식 (없으면 카톡 대화용)
   const wide = !!FM; // 채널 메시지용 4:3 / 인스타 (같은 디자인, 비율만 다름)
   const PW = FM ? FM.W : CAT_IMG_W, PH = FM ? FM.H : 0;
-  const IG = !!(FM && FM.insta), igRow = (n) => Math.min(230, Math.floor((PH - 235) / Math.max(1, Math.ceil(n / 3)))); // 인스타: 줄 수에 맞춰 타일 높이를 정함 (타일이 적어도 길게 늘어지지 않게, 위에서부터 채움)
+  
   const fontFam = "-apple-system,'Malgun Gothic',sans-serif";
   const fmtY = (n) => Number(n.toFixed(1)).toLocaleString();
   const baseOfColor = catBaseOfColor, groupsOf = catGroupsOf;
@@ -7135,7 +7134,7 @@ async function buildCatalogPages(cfg, items) {
     const num = numStrip(swOf(g), itemSpring, isBest);
     const strip = (num || isBest) ? `<div style="display:flex; justify-content:space-between; align-items:center; min-height:${wide ? 27 : 30}px; padding:${wide ? '3px 10px' : '5px 12px'}; ${isBest ? `background:${BRAND};` : `background:${STRIP}; border-bottom:1px solid ${HAIR};`}"><div style="display:flex; align-items:center;">${num}</div>${isBest ? `<span style="font-size:14px; font-weight:800; letter-spacing:2px; color:#fff;">★ BEST</span>` : ''}</div>` : '';
     if (wide) { // 4:3: 같은 타일 디자인을 가로로 눕힘 (스왓치 띠 / 색 또는 사진 / 컬러명 / 재고). 사진이 있는 품목은 사진 칸을 키움
-      const ph = photoOf(g), r3 = !wrows || wrows >= 3, sz = (photoMode ? 74 : 54) + (r3 ? 0 : wrows === 2 ? 26 : 46) + (IG ? 34 : 0), nfs = (r3 ? 21 : 24) + (IG ? 2 : 0);
+      const ph = photoOf(g), r3 = !wrows || wrows >= 3, sz = (photoMode ? 74 : 54) + (r3 ? 0 : wrows === 2 ? 26 : 46), nfs = r3 ? 21 : 24;
       const wbody = g.variants.length === 0
         ? `<div style="margin-top:4px;">${stockHtml(c)}</div>`
         : members.map((m, i) => `<div style="margin-top:3px; display:flex; gap:6px; align-items:center; flex-wrap:wrap;"><span style="font-size:15px; font-weight:700; color:${MUTED}; min-width:30px;">${esc(m.label)}</span>${i === hotIdx ? hot : ''}${stockHtml(m.c, true)}</div>`).join('');
@@ -7187,17 +7186,58 @@ async function buildCatalogPages(cfg, items) {
         </div>
       </div>`;
   const headOf = (it, pageNo, total) => wide ? `<div style="background:${PAPER}; color:${INK}; border-bottom:2px solid ${BRAND}; padding:12px 24px 10px; flex:none;">
-        <div style="display:flex; justify-content:space-between; align-items:center;"><img src="${B.logo}" style="display:block; height:20px; width:auto;"><span style="display:flex; align-items:center; gap:8px; font-size:14px; letter-spacing:.5px; color:${MUTED};">${isNew ? `<span style="background:${BRAND}; color:#fff; font-weight:800; letter-spacing:2px; font-size:12px; padding:1px 8px; border-radius:4px;">NEW</span>` : ''}<span>${esc(cfg.title)} · ${todayStr()}${total > 1 ? ` · ${pageNo}/${total}` : ''}</span></span></div>
+        <div style="display:flex; justify-content:space-between; align-items:center;"><img src="${B.logo}" style="display:block; height:20px; width:auto;"><span style="display:flex; align-items:center; gap:8px; font-size:14px; letter-spacing:.5px; color:${MUTED};">${isNew ? `<span style="background:${BRAND}; color:#fff; font-weight:800; letter-spacing:2px; font-size:12px; padding:1px 8px; border-radius:4px;">NEW</span>` : ''}<span>${esc(cfg.title)}${total > 1 ? ` · ${pageNo}/${total}` : ''}</span></span></div>
         <div style="margin-top:8px; display:flex; align-items:baseline; gap:14px;"><div style="font-size:34px; font-weight:800; line-height:1.15; letter-spacing:-.5px; word-break:keep-all; overflow-wrap:anywhere;">${esc(it.item)}</div>${it.mix ? `<div style="font-size:15px; color:${MUTED}; flex:none;">혼용률 ${esc(it.mix)}</div>` : ''}</div>
       </div>` : `<div style="background:${PAPER}; color:${INK}; border-bottom:2px solid ${BRAND}; padding:22px 24px 18px;">
-        <div style="display:flex; justify-content:space-between; align-items:center;"><img src="${B.logo}" style="display:block; height:22px; width:auto;"><span style="font-size:15px; letter-spacing:.5px; color:${MUTED};">${todayStr()}${total > 1 ? ` · ${pageNo}/${total}` : ''}</span></div>
+        <div style="display:flex; justify-content:space-between; align-items:center;"><img src="${B.logo}" style="display:block; height:22px; width:auto;"><span style="font-size:15px; letter-spacing:.5px; color:${MUTED};">${total > 1 ? `${pageNo}/${total}` : ''}</span></div>
         <div style="margin-top:16px; display:flex; align-items:center; gap:8px; font-size:15px; letter-spacing:.5px; color:${MUTED};">${isNew ? `<span style="background:${BRAND}; color:#fff; font-weight:800; letter-spacing:2px; font-size:13px; padding:1px 8px; border-radius:4px;">NEW</span>` : ''}<span>${esc(cfg.title)}</span></div>
         <div style="margin-top:4px; font-size:38px; font-weight:800; line-height:1.15; letter-spacing:-.5px; word-break:keep-all; overflow-wrap:anywhere;">${esc(it.item)}</div>
         ${it.mix ? `<div style="font-size:16px; margin-top:6px; color:${MUTED};">혼용률 ${esc(it.mix)}</div>` : ''}
       </div>`;
   const pageWrap = (inner) => `<div class="stm-img-page" style="width:${PW}px; ${wide ? `height:${PH}px; display:flex; flex-direction:column; overflow:hidden; ` : ''}box-sizing:border-box; background:${PAPER}; color:${INK}; font-family:${fontFam};">${inner}${footer}</div>`;
   // 한 품목 = 첫 장은 소재 확대샷(사진이 있으면 항상) + 다음 장부터 스왓치 순번 순서의 컬러 타일 (한 장에 최대 10타일이라 폰에서 스크롤 없이 보임)
+  // 인스타 4:5 / 고객 페이지(신상·베스트) 공통 디자인: 1페이지(소재 사진) = 4면 여백의 액자 (+ 인스타만 로고 아래 QR/주소), 컬러 페이지 = 여백 최소로 컬러 사진을 한 장 6칸 꽉 채움 (로고/QR 없음).
+  // 컬러명은 사진 아래 흰 띠(캡션)에: 컬러명 + 무지/기모 칩(한 컬러에 둘이 있으면 둘 다) + 번호. BEST는 4면 테두리 + ★ BEST
+  const pagesOfItemIG = (it) => {
+    const out = [], itemSpring = itemHasSpring(it.item), photo = _catPhotos[catPhotoKey(it)] || '';
+    const fixed = !!FM, K = fixed ? 1.2 : 1; // fixed: 인스타 800x1000 / 아니면 폭 600에 세로로 긴 이미지
+    const per = FM ? FM.per : 6, cols = FM ? FM.cols : 2;
+    if (photo) {
+      const igFoot = cfg.noFooter ? '' : `<div style="margin-top:14px; padding-top:12px; border-top:1px solid ${HAIR}; display:flex; align-items:flex-start; gap:14px;"><div style="flex:none; width:58px;"><img src="${B.qr}" style="display:block; width:58px; height:58px;"><div style="margin-top:4px; width:58px; box-sizing:border-box; background:${BRAND}; color:#fff; border-radius:3px; text-align:center; font-size:9px; font-weight:700; line-height:14px; white-space:nowrap; letter-spacing:-.3px;">${B.qrLabel}</div></div><div style="flex:none; height:58px; display:flex; flex-direction:column; justify-content:space-between; color:${BRAND}; font-size:14px; line-height:1;"><div style="font-size:16px; font-weight:700;">${B.addr}</div><div>TEL ${B.tel}</div><div>FAX ${B.fax}</div></div></div>`;
+      const side = fixed ? 74 : 36;
+      const frame = fixed
+        ? `<div style="flex:1; min-height:0; margin-top:${Math.round(PH * 0.03)}px; background:#fff; padding:19px; box-sizing:border-box;"><div style="width:100%; height:100%; background:url('${photo}') center/cover no-repeat;"></div></div>`
+        : `<div style="margin-top:20px; background:#fff; padding:14px; box-sizing:border-box;"><div style="width:100%; height:${PW - side * 2 - 28}px; background:url('${photo}') center/cover no-repeat;"></div></div>`;
+      out.push(`<div class="stm-img-page" style="width:${PW}px; ${fixed ? `height:${PH}px; display:flex; flex-direction:column; overflow:hidden; padding:${Math.round(PH * 0.05)}px ${side}px ${Math.round(PH * 0.045)}px;` : `padding:24px ${side}px 34px;`} box-sizing:border-box; background:${PAPER}; color:${INK}; font-family:${fontFam};">
+        <div style="display:flex; justify-content:space-between; align-items:center; flex:none;"><img src="${B.logo}" style="display:block; height:${fixed ? 25 : 22}px; width:auto;"><span style="font-size:${fixed ? 15 : 13}px; letter-spacing:${fixed ? 5 : 4}px; color:${MUTED};">${isNew ? 'NEW ARRIVAL' : esc(cfg.title)}</span></div>
+        ${frame}
+        <div style="flex:none; margin-top:${fixed ? Math.round(PH * 0.025) : 22}px;"><div style="font-size:${fixed ? 43 : 36}px; font-weight:800; line-height:1.15; letter-spacing:-.5px; word-break:keep-all; overflow-wrap:anywhere;">${esc(it.item)}</div>${it.mix ? `<div style="font-size:${fixed ? 18 : 16}px; margin-top:6px; color:${MUTED};">혼용률 ${esc(it.mix)}</div>` : ''}</div>
+        ${igFoot}
+      </div>`);
+    }
+    for (const gs of catSplitGroups(it, per)) {
+      const cells = gs.map(g => {
+        const c = g.main, ph = photoOf(g), dot = catDotColor(c.color), sw = swOf(g);
+        const isBest = [g.main, ...g.variants.map(v => v.c)].some(m => bestColor.has(m.item + '|' + m.color));
+        const nums = sw ? (itemSpring ? [['F/W', sw.order], ['S/S', sw.orderSpring]].filter(n => n[1] != null) : (sw.order != null ? [['NO', sw.order]] : [])) : []; // 스왓치 번호 (F/W, S/S가 둘 다 있으면 둘 다)
+        const numBlocks = nums.map(([l, n]) => `<div style="flex:none; background:${BRAND}; color:#fff; min-width:${Math.round(44 * K)}px; height:100%; box-sizing:border-box; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:0 ${Math.round(7 * K)}px; line-height:1;"><span style="font-size:${Math.round(10 * K)}px; letter-spacing:1px; opacity:.8;">${l}</span><b style="font-size:${Math.round(23 * K)}px;">${esc(String(n))}</b></div>`).join('');
+        const tags = g.variants.length ? [{ label: '무지' }, ...g.variants].map(m => m.label).filter(Boolean) : [];
+        const chips = tags.map(t => `<span style="flex:none; border:1px solid #bbb; border-radius:${Math.round(10 * K)}px; padding:1px ${Math.round(8 * K)}px; font-size:${Math.round(13 * K)}px; color:#6b6460; margin-left:5px; white-space:nowrap;">${esc(t)}</span>`).join('');
+        return `<div style="position:relative; min-width:0; min-height:0; background:#fff; display:flex; flex-direction:column; overflow:hidden;">
+          <div style="flex:1; min-height:0; position:relative; ${ph ? `background:url('${ph}') center/cover no-repeat;` : `background:${dot || '#eceae4'};`}">${!ph && !dot ? `<div style="position:absolute; inset:0; display:flex; align-items:center; justify-content:center; color:#b5b09f; font-size:60px; font-weight:700;">${esc(String(c.color).slice(0, 1))}</div>` : ''}</div>
+          <div style="flex:none; height:${Math.round(50 * K)}px; box-sizing:border-box; display:flex; align-items:center; border-top:1px solid #eee;">${numBlocks}<div style="display:flex; align-items:center; min-width:0; padding:0 ${Math.round(8 * K)}px 0 ${Math.round((numBlocks ? 10 : 12) * K)}px;"><b style="font-size:${Math.round(19 * K)}px; color:#2b2727; line-height:1.15; word-break:keep-all; overflow-wrap:anywhere;">${esc(c.color)}</b>${chips}</div></div>
+          ${isBest ? `<div style="position:absolute; inset:0; border:3px solid ${BRAND}; box-sizing:border-box;"></div><div style="position:absolute; left:0; top:0; background:${BRAND}; color:#fff; padding:${Math.round(4 * K)}px ${Math.round(10 * K)}px; font-size:${Math.round(13 * K)}px; font-weight:800; letter-spacing:2px;">★ BEST</div>` : ''}
+        </div>`;
+      });
+      while (cells.length % cols) cells.push('<div></div>'); // 홀수 개여도 칸 크기는 똑같이
+      const rows = fixed ? FM.rows : Math.ceil(cells.length / cols);
+      if (fixed) while (cells.length < cols * rows) cells.push('<div></div>');
+      out.push(`<div class="stm-img-page" style="width:${PW}px; ${fixed ? `height:${PH}px;` : ''} box-sizing:border-box; background:#fff; font-family:${fontFam}; padding:8px; display:grid; gap:8px; grid-template-columns:repeat(${cols}, 1fr); grid-template-rows:repeat(${rows}, ${fixed ? '1fr' : '292px'}); overflow:hidden;">${cells.join('')}</div>`);
+    }
+    return out;
+  };
   const pagesOfItem = (it) => {
+    if ((FM && FM.insta) || cfg.cardStyle) return pagesOfItemIG(it);
     const itemSpring = itemHasSpring(it.item);
     const photo = _catPhotos[catPhotoKey(it)] || '';
     const sp = catSplitGroups(it, FM ? FM.per : false);
@@ -7213,7 +7253,7 @@ async function buildCatalogPages(cfg, items) {
     }
     for (const gs of sp) {
       out.push(pageWrap(wide
-        ? `${headOf(it, no++, total)}<div style="flex:1; min-height:0; display:grid; grid-template-columns:repeat(3, 1fr); grid-template-rows:${IG ? `repeat(${Math.ceil(gs.length / 3)}, ${igRow(gs.length)}px)` : (gs.length <= 3 ? 'repeat(1, 190px)' : `repeat(${Math.ceil(gs.length / 3)}, 1fr)`)}; align-content:${IG ? 'start' : (gs.length <= 3 ? 'center' : 'stretch')}; gap:8px; padding:10px 14px; background:#efeaea;">${gs.map(g => tileHtml(g, itemSpring, photoMode, Math.ceil(gs.length / 3))).join('')}</div>`
+        ? `${headOf(it, no++, total)}<div style="flex:1; min-height:0; display:grid; grid-template-columns:repeat(3, 1fr); grid-template-rows:${gs.length <= 3 ? 'repeat(1, 190px)' : `repeat(${Math.ceil(gs.length / 3)}, 1fr)`}; align-content:${gs.length <= 3 ? 'center' : 'stretch'}; gap:8px; padding:10px 14px; background:#efeaea;">${gs.map(g => tileHtml(g, itemSpring, photoMode, Math.ceil(gs.length / 3))).join('')}</div>`
         : `${headOf(it, no++, total)}
         <div style="display:grid; grid-template-columns:1fr 1fr; gap:14px; padding:20px 20px 22px; background:#efeaea;">${gs.map(g => tileHtml(g, itemSpring, photoMode)).join('')}</div>`));
     }
@@ -7448,7 +7488,7 @@ async function publishCatalog() {
   if (_pubBusy) return;
   const sec = document.getElementById('pub-sec').value;
   const isBestSec = sec === 'best_fw' || sec === 'best_ss';
-  const cfg = { ...readCatalogCfg(), format: 'chat', noFooter: true, display: 'none', ...(isBestSec ? { noNewTag: true, title: 'Best Item' } : {}) }; // 고객 페이지 신상/Best 이미지엔 재고(있음/소량/야드)를 넣지 않음 - 재고는 재고 탭에서만 // 고객 페이지는 폰 세로 화면이라 세로로 긴 이미지, 전화/주소/QR은 페이지 자체에 있으니 이미지 아래 문구는 뺌
+  const cfg = { ...readCatalogCfg(), format: 'chat', cardStyle: true, noFooter: true, display: 'none', ...(isBestSec ? { noNewTag: true, title: 'Best Item' } : {}) }; // 고객 페이지 신상/Best 이미지엔 재고(있음/소량/야드)를 넣지 않음 - 재고는 재고 탭에서만 // 고객 페이지는 폰 세로 화면이라 세로로 긴 이미지, 전화/주소/QR은 페이지 자체에 있으니 이미지 아래 문구는 뺌
   const items = catPicked(cfg);
   if (items.length === 0) { showToast(cfg.mode === 'new' ? '올릴 컬러를 먼저 검색해서 추가해주세요' : '올릴 품목을 먼저 검색해서 추가해주세요'); return; }
   if (items.length > 20) { showToast(`품목이 ${items.length}개예요 - 한 번에 20개까지 올릴 수 있어요`); return; }
