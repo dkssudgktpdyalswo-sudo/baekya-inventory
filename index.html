@@ -817,7 +817,7 @@
     </div>
     <div id="cat-new-scope" style="display:none;">
       <label>컬러 선택</label>
-      <input id="cat-search" type="text" placeholder="품번 · 컬러 검색" oninput="renderCatalogScope()" style="width:100%;">
+      <input id="cat-search" type="text" placeholder="품번 검색" oninput="renderCatalogScope()" style="width:100%;">
       <div id="cat-picker"></div>
       <div id="cat-sel-list" style="margin-top:8px;"></div>
       <div style="display:flex; gap:6px; flex-wrap:wrap; margin-top:6px;">
@@ -1392,7 +1392,7 @@
 const PASSWORD = "3059";
 const ADMIN_PASSWORD = "9503"; // 매출/미수금 탭 전용 - 필요하면 이 값만 바꿔서 변경 가능
 const DATA_VERSION = "2026-08-03-v4"; // 재고/이월장부 씨앗 데이터를 바꿀 때마다 이 값을 새로 바꿔주세요
-const APP_CODE_VERSION = "2026-11-25-e"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
+const APP_CODE_VERSION = "2026-11-25-f"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
 const SCHEMA_STAMP = 2; // 서버 저장규칙이 확인하는 "최신 앱 도장" - 절대 자주 바꾸지 않음(이 값을 아는 코드만 저장 가능하게 서버에서 막을 때 씀)
 const CONFIRMED_EMPTY = '__CONFIRMED_EMPTY__'; // "서버가 확실하게 문서가 없다고 확인해줬다"는 걸 표시하는 특수값
                                                  // (한번도 확인 안 한 null과 구분해서, 그 사이 다른 사람이 첫 데이터를 만들었으면 충돌로 감지하기 위함)
@@ -3286,7 +3286,12 @@ function renderInv() {
   if (activeCat !== null) groups = groups.filter(g => g.cat === activeCat);
   if (searchTerm.trim()) {
     const t = searchTerm.trim();
-    groups = groups.filter(g => matchesSearchWords(t, g.item, g.color, mixMap.get(normalizeNameForMatch(g.item)), ...g.rolls.filter(r => !r.defective).flatMap(r => [r.note, r.rollNote]))); // 탕 메모 내용 + 혼용률로도 찾을 수 있게
+    // 품목 이름에 검색어가 들어간 품목이 하나라도 있으면 그 품목들만 보여줌 ("코코" 품목을 찾는데 다른 품목의 "코코" 컬러가 같이 뜨지 않게).
+    // 품목 이름으로 찾아지는 게 하나도 없을 때만 컬러/탕 메모/혼용률까지 넓혀서 찾음 ("2 인디고"처럼 품목+컬러를 띄어 쓴 검색도 계속 됨)
+    const nameHit = groups.some(g => matchesSearchWords(t, g.item));
+    groups = groups.filter(g => nameHit
+      ? matchesSearchWords(t, g.item)
+      : matchesSearchWords(t, g.item, g.color, mixMap.get(normalizeNameForMatch(g.item)), ...g.rolls.filter(r => !r.defective).flatMap(r => [r.note, r.rollNote])));
   }
   for (const g of groups) g._swatch = findSwatchFor(g.cat, g.item, g.color);
 
@@ -7397,10 +7402,11 @@ function renderCatalogScope() {
     let html = '';
     if (q) {
       let n = 0;
+      const nameHit = _catUniverse.some(u => matchesSearchWords(q, u.item)); // 품목 이름으로 찾아지는 게 있으면 그 품목만 (다른 품목의 같은 이름 컬러는 안 뜸). 하나도 없을 때만 컬러로도 찾음
       _catUniverse.forEach((it, ii) => {
         if (n >= 8) return;
         const gs = catGroupsOf(it).map((g, gi) => ({ g, gi })); // 무지/기모는 한 칩으로
-        const cols = gs.filter(x => catGroupMembers(x.g).some(m => matchesSearchWords(q, it.item, m.color)));
+        const cols = gs.filter(x => nameHit ? matchesSearchWords(q, it.item) : catGroupMembers(x.g).some(m => matchesSearchWords(q, it.item, m.color)));
         if (cols.length === 0) return;
         n++;
         const allOn = cols.every(x => catGroupOn(x.g));
