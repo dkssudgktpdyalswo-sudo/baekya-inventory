@@ -139,7 +139,9 @@
   #askInputModal.open { z-index: 60; } /* 입력창은 다른 화면 위에서 열려도 항상 최상단 */
   #similarCustomerModal.open { z-index: 50; } /* 다른 화면(매출수정 등) 위에 열려있어도, 이 확인창이 가려지지 않고 항상 최상단에 뜨게 함 */
   .modal { background: white; width: 100%; max-width: 420px; border-radius: 16px 16px 0 0; padding: 20px; max-height: 85vh; overflow-y: auto; min-height: 0; }
-  .modal h3 { margin: 0 0 14px; font-size: 16px; }
+  .modal h3 { margin: 0 0 14px; font-size: 16px; padding-right: 28px; }
+  .modal-xbar { position: sticky; top: 0; height: 0; z-index: 5; text-align: right; } /* 창이 길어도 맨 위에서 바로 닫을 수 있는 ✕ (스크롤해도 따라다님) */
+  .modal-x { position: absolute; right: -12px; top: -14px; width: 34px; height: 34px; border: none; border-radius: 50%; background: rgba(240,238,232,0.97); color: #666; font-size: 18px; line-height: 34px; padding: 0; cursor: pointer; box-shadow: 0 1px 4px rgba(0,0,0,0.18); }
   .modal label { font-size: 12px; color: var(--muted); display: block; margin: 10px 0 4px; }
   .modal input, .modal select { width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 8px; font-size: 15px; }
   .modal .row2 { display: flex; gap: 8px; }
@@ -1390,7 +1392,7 @@
 const PASSWORD = "3059";
 const ADMIN_PASSWORD = "9503"; // 매출/미수금 탭 전용 - 필요하면 이 값만 바꿔서 변경 가능
 const DATA_VERSION = "2026-08-03-v4"; // 재고/이월장부 씨앗 데이터를 바꿀 때마다 이 값을 새로 바꿔주세요
-const APP_CODE_VERSION = "2026-11-24-zzw"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
+const APP_CODE_VERSION = "2026-11-25-e"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
 const SCHEMA_STAMP = 2; // 서버 저장규칙이 확인하는 "최신 앱 도장" - 절대 자주 바꾸지 않음(이 값을 아는 코드만 저장 가능하게 서버에서 막을 때 씀)
 const CONFIRMED_EMPTY = '__CONFIRMED_EMPTY__'; // "서버가 확실하게 문서가 없다고 확인해줬다"는 걸 표시하는 특수값
                                                  // (한번도 확인 안 한 null과 구분해서, 그 사이 다른 사람이 첫 데이터를 만들었으면 충돌로 감지하기 위함)
@@ -2817,8 +2819,32 @@ function selectItemSuggestion(name) {
   document.getElementById('itemSuggestBox').classList.add('hidden');
 }
 function hideItemSuggestionsDelayed() {
-  setTimeout(() => document.getElementById('itemSuggestBox').classList.add('hidden'), 150);
+  setTimeout(() => {
+    // 다른 입력칸으로 넘어가서 그 칸이 방금 목록을 띄웠으면(포커스가 목록 주인한테 있으면) 닫지 않음 - 예전엔 앞 칸의 닫기 예약이 뒤 칸 목록을 뜨자마자 지워서 여러 번 눌러야 했음
+    if (_itemSuggestTarget && document.activeElement === _itemSuggestTarget) return;
+    document.getElementById('itemSuggestBox').classList.add('hidden');
+  }, 150);
 }
+// 이미 포커스된 칸을 다시 눌렀을 때(목록을 고르고 나서 등) 후보 목록이 다시 안 뜨던 것 + 키보드가 올라와 화면이 움직일 때 목록이 엉뚱한 위치에 남던 것
+document.addEventListener('click', (e) => {
+  const el = e.target;
+  if (!el || el.tagName !== 'INPUT') return;
+  const fa = el.getAttribute('onfocus');
+  if (!fa || !/Suggestions\(/.test(fa)) return;
+  if (document.getElementById('itemSuggestBox').classList.contains('hidden')) { try { el.onfocus && el.onfocus(); } catch (err) { /* 후보 없음 */ } }
+});
+function repositionSuggestBox() {
+  const box = document.getElementById('itemSuggestBox');
+  if (!box || box.classList.contains('hidden') || !_itemSuggestTarget || !_itemSuggestTarget.isConnected) return;
+  const rect = _itemSuggestTarget.getBoundingClientRect();
+  const bw = Math.min(Math.max(rect.width, 200), window.innerWidth - 16);
+  box.style.left = Math.max(8, Math.min(rect.left, window.innerWidth - bw - 8)) + 'px';
+  box.style.top = (rect.bottom + 2) + 'px';
+  box.style.width = bw + 'px';
+}
+window.addEventListener('scroll', repositionSuggestBox, true);
+window.addEventListener('resize', repositionSuggestBox);
+if (window.visualViewport) { window.visualViewport.addEventListener('resize', repositionSuggestBox); window.visualViewport.addEventListener('scroll', repositionSuggestBox); }
 
 
 // ================= 재고 탭 =================
@@ -14763,8 +14789,6 @@ const SPS_CSS_RULES = [
   ['', 'width:210mm;height:296.6mm;display:grid;grid-template-columns:105mm 105mm;grid-template-rows:148.3mm 148.3mm;position:relative;overflow:hidden;background:#fff;color:#1c1c1c;'],
   ['+ .sps-sheet', 'page-break-before:always;'],
   ['*', 'box-sizing:border-box;'],
-  ['.cv', 'position:absolute;left:105mm;top:0;bottom:0;border-left:.3mm dashed #bbb;'],
-  ['.ch', 'position:absolute;top:148.3mm;left:0;right:0;border-top:.3mm dashed #bbb;'],
   ['.sp', 'width:105mm;height:148.3mm;padding:26px 17px 10px;position:relative;overflow:hidden;'],
   ['.kind', 'position:absolute;top:20px;right:17px;font-size:8px;font-weight:700;letter-spacing:.5px;'],
   ['.logo', 'text-align:center;margin:8px 0 8px;line-height:0;'],
@@ -14820,7 +14844,7 @@ function spsBuildSheets(rowsByCustomer, startSlot, today, withTax) {
   for (let i = 0; i < slots.length; i += 4) {
     const four = slots.slice(i, i + 4);
     while (four.length < 4) four.push(null);
-    sheets.push(`<div class="sps-sheet">${four.map(sl => sl ? spsSlipHtml(sl, today, withTax) : '<div class="sp"></div>').join('')}<i class="cv"></i><i class="ch"></i></div>`);
+    sheets.push(`<div class="sps-sheet">${four.map(sl => sl ? spsSlipHtml(sl, today, withTax) : '<div class="sp"></div>').join('')}</div>`);
   }
   return `<style>${spsCss()}</style>${sheets.join('')}`;
 }
@@ -15650,6 +15674,53 @@ async function init() {
     };
   }
   ['saveAdd', 'saveCost', 'confirmLogEdit', 'addExpense', 'saveChinaOrderModal', 'addFixedCost', 'addProcessingType'].forEach(guard);
+})();
+
+// 팝업 창 바깥(어두운 부분)을 누르거나 ESC를 누르면 닫기/취소 버튼과 똑같이 닫힘.
+// 안전장치: 창 안에 뭘 입력/선택했으면(고친 게 있으면) 실수로 날아가지 않게 바깥 눌러도 안 닫힘 - 그땐 취소 버튼으로. 이미지 만들기/고객 페이지 올리기 창은 작업 중 닫힘 방지로 제외
+(function () {
+  const NO_OUTSIDE_CLOSE = new Set(['catalogModal', 'pubModal']);
+  const NO_X = new Set([]);
+  const overlays = () => Array.from(document.querySelectorAll('.modal-overlay'));
+  overlays().forEach(ov => {
+    ov.addEventListener('input', () => { ov.dataset.dirty = '1'; }, true);
+    ov.addEventListener('change', () => { ov.dataset.dirty = '1'; }, true);
+    new MutationObserver(() => { if (!ov.classList.contains('open')) delete ov.dataset.dirty; }).observe(ov, { attributes: true, attributeFilter: ['class'] });
+  });
+  overlays().forEach(ov => { // 모든 창 맨 위에 ✕ 버튼 (누르면 그 창의 닫기/취소와 똑같이 닫힘)
+    const modal = ov.querySelector('.modal');
+    const hasCancel = Array.from(ov.querySelectorAll('button')).some(bt => /^(닫기|취소)$/.test(bt.textContent.trim()));
+    if (!modal || !hasCancel || modal.querySelector(':scope > .modal-xbar') || NO_X.has(ov.id)) return;
+    const bar = document.createElement('div'); bar.className = 'modal-xbar';
+    const x = document.createElement('button');
+    x.type = 'button'; x.className = 'modal-x'; x.textContent = '✕'; x.setAttribute('aria-label', '닫기');
+    x.onclick = () => closeByCancel(ov, true);
+    bar.appendChild(x);
+    modal.insertBefore(bar, modal.firstChild);
+  });
+  function closeByCancel(ov, force) {
+    if (!ov || !ov.classList.contains('open')) return false;
+    if (!force && (NO_OUTSIDE_CLOSE.has(ov.id) || ov.dataset.dirty === '1')) return false; // ✕ 버튼은 직접 누른 거라 항상 닫힘
+    const btn = Array.from(ov.querySelectorAll('button')).find(b => /^(닫기|취소)$/.test(b.textContent.trim()) && !b.classList.contains('hidden'));
+    if (!btn) return false;
+    btn.click();
+    return true;
+  }
+  let downOnOverlay = null;
+  document.addEventListener('mousedown', e => { downOnOverlay = e.target.classList && e.target.classList.contains('modal-overlay') ? e.target : null; }, true);
+  document.addEventListener('touchstart', e => { const t = e.target; downOnOverlay = t.classList && t.classList.contains('modal-overlay') ? t : null; }, { capture: true, passive: true });
+  document.addEventListener('click', e => {
+    const t = e.target;
+    if (t.classList && t.classList.contains('modal-overlay') && downOnOverlay === t) closeByCancel(t); // 창 안에서 누른 채 바깥에서 뗀 경우(글자 드래그 등)는 안 닫음
+    downOnOverlay = null;
+  });
+  document.addEventListener('keydown', e => {
+    if (e.key !== 'Escape') return;
+    const open = overlays().filter(o => o.classList.contains('open'));
+    if (!open.length) return;
+    open.sort((a, b) => (parseInt(getComputedStyle(a).zIndex) || 0) - (parseInt(getComputedStyle(b).zIndex) || 0));
+    closeByCancel(open[open.length - 1]);
+  });
 })();
 </script>
 </body>
