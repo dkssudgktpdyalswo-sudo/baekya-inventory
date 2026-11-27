@@ -1392,7 +1392,7 @@
 const PASSWORD = "3059";
 const ADMIN_PASSWORD = "9503"; // 매출/미수금 탭 전용 - 필요하면 이 값만 바꿔서 변경 가능
 const DATA_VERSION = "2026-08-03-v4"; // 재고/이월장부 씨앗 데이터를 바꿀 때마다 이 값을 새로 바꿔주세요
-const APP_CODE_VERSION = "2026-11-25-f"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
+const APP_CODE_VERSION = "2026-11-27-a"; // 이 앱 코드 자체의 버전. 새 파일을 배포할 때마다 이 값을 반드시 새로 바꿔주세요 - 그러면 예전 화면이 자동으로 새로고침됨
 const SCHEMA_STAMP = 2; // 서버 저장규칙이 확인하는 "최신 앱 도장" - 절대 자주 바꾸지 않음(이 값을 아는 코드만 저장 가능하게 서버에서 막을 때 씀)
 const CONFIRMED_EMPTY = '__CONFIRMED_EMPTY__'; // "서버가 확실하게 문서가 없다고 확인해줬다"는 걸 표시하는 특수값
                                                  // (한번도 확인 안 한 null과 구분해서, 그 사이 다른 사람이 첫 데이터를 만들었으면 충돌로 감지하기 위함)
@@ -4443,7 +4443,11 @@ async function deleteAllRollsForColor(item, color) {
   const t_color = String(color).trim();
   const count = rolls.filter(r => String(r.item).trim() === t_item && String(r.color).trim() === t_color).length;
   const targetSwatch = swatchInfo.find(s => String(s.item).trim() === t_item && String(s.color).trim() === t_color);
-  if (count === 0 && !targetSwatch) { showToast('삭제할 게 없어요'); return; }
+  if (count === 0 && !targetSwatch) {
+    const fromChina = chinaOrders.some(o => o.status !== 'received' && chinaOrderMatchKey(o.item, o.color) === chinaOrderMatchKey(t_item, t_color));
+    showToast(fromChina ? '이 컬러는 중국발주 목록에만 있어요. 중국발주 탭에서 지우면 사라져요' : '삭제할 게 없어요');
+    return;
+  }
   if (!askAdminPassword(`"${item} ${color}" 컬러 전체 삭제는 관리자만 할 수 있어요.\n관리자 비밀번호를 입력하세요.`)) return; // 실수로 지우지 않게 잠가둠 (비밀번호가 맞아야 아래 확인창이 뜸)
   if (!confirm(`"${item} ${color}"을(를) 완전히 삭제할까요?${count > 0 ? ` (재고 ${count}개 포함)` : ''}\n스왓치 번호·중국품번 등록 정보도 같이 지워지고, 뒤 번호들은 한 칸씩 당겨져요.`)) return;
   rolls = rolls.filter(r => !(String(r.item).trim() === t_item && String(r.color).trim() === t_color));
@@ -14973,9 +14977,22 @@ async function saveSwatchEdit() {
   if (newColorName && newColorName !== color) {
     const t_item = String(item).trim();
     const t_oldColor = String(color).trim();
+    // 이 컬러로 걸려 있는 중국발주/이월(아직 출고 안 끝난 것)/컬러별 원가 - 이름을 바꾸기 "전에" 찾아둠 (바꾼 뒤엔 옛 이름이 재고에서 사라져서 같은 컬러로 못 알아봄)
+    const oldKey = chinaOrderMatchKey(t_item, t_oldColor);
+    const nm = normalizeNameForMatch;
+    const chinaHit = chinaOrders.filter(o => (String(o.item).trim() === t_item && String(o.color).trim() === t_oldColor) || chinaOrderMatchKey(o.item, o.color) === oldKey);
+    const orderHit = orders.filter(o => !o.done && nm(o.item) === nm(t_item) && nm(o.color) === nm(t_oldColor));
+    const costHit = costs.filter(c => c.color && String(c.item).trim() === t_item && String(c.color).trim() === t_oldColor);
     for (const r of rolls) {
       if (String(r.item).trim() === t_item && String(r.color).trim() === t_oldColor) r.color = newColorName;
     }
+    // 재고에는 없고 중국발주로만 떠 있던 컬러는 발주 쪽 이름을 바꿔야 목록의 이름이 같이 바뀜 (안 바꾸면 옛 이름 줄이 그대로 남음)
+    for (const o of chinaHit) o.color = newColorName;
+    for (const o of orderHit) o.color = newColorName;
+    for (const c of costHit) c.color = newColorName;
+    if (chinaHit.length) await persistChinaOrders();
+    if (orderHit.length) await persistOrders();
+    if (costHit.length) await persistCosts();
     for (const s of swatchInfo) {
       if (String(s.item).trim() === t_item && String(s.color).trim() === t_oldColor) s.color = newColorName;
     }
@@ -15030,6 +15047,13 @@ function openSwatchBulkModal(cat, item) {
     if (!r.defective) stock.set(c, Math.round(((stock.get(c) || 0) + (Number(r.qty) || 0)) * 100) / 100);
   }
   for (const sw of swatchInfo) if (String(sw.item).trim() === t_item && sw.color != null && swHasInfo(sw)) names.add(String(sw.color).trim());
+  for (const o of chinaOrders) { // 재고에는 없고 중국발주로만 목록에 떠 있는 컬러도 이름을 고칠 수 있게 (목록에 보이는 이름과 똑같이 맞춤)
+    if (o.status === 'received') continue;
+    const it = String(resolveInventoryItem(o.item) || '').trim();
+    if (it !== t_item) continue;
+    const co = String(resolveInventoryColor(it, o.color) || '').trim();
+    if (co && ![...names].some(n => normalizeNameForMatch(n) === normalizeNameForMatch(co))) names.add(co);
+  }
   names.delete('');
   if (names.size === 0) { showToast('고칠 컬러가 없어요'); return; }
   const rows = Array.from(names).map(c => {
@@ -15143,6 +15167,27 @@ async function saveSwatchBulk() {
     const renameMap = res.renameMap;
     let renamed = 0;
     if (renameMap.size > 0) {
+      // 이 컬러들로 걸려 있는 중국발주 / 아직 출고 안 끝난 이월 / 컬러별 원가도 같이 새 이름으로 (바꾸기 전에 먼저 찾아둠)
+      const nm = normalizeNameForMatch;
+      const hits = [];
+      for (const [from, to] of renameMap) {
+        const k = chinaOrderMatchKey(t_item, from);
+        hits.push({
+          to,
+          china: chinaOrders.filter(o => (String(o.item).trim() === t_item && String(o.color).trim() === from) || chinaOrderMatchKey(o.item, o.color) === k),
+          ord: orders.filter(o => !o.done && nm(o.item) === nm(t_item) && nm(o.color) === nm(from)),
+          cost: costs.filter(c => c.color && String(c.item).trim() === t_item && String(c.color).trim() === from)
+        });
+      }
+      let chinaChg = false, ordChg = false, costChg = false;
+      for (const h of hits) {
+        for (const o of h.china) { o.color = h.to; chinaChg = true; }
+        for (const o of h.ord) { o.color = h.to; ordChg = true; }
+        for (const c of h.cost) { c.color = h.to; costChg = true; }
+      }
+      if (chinaChg) await persistChinaOrders();
+      if (ordChg) await persistOrders();
+      if (costChg) await persistCosts();
       for (const r of rolls) if (String(r.item).trim() === t_item && renameMap.has(String(r.color).trim())) r.color = renameMap.get(String(r.color).trim());
       for (const sw of swatchInfo) if (String(sw.item).trim() === t_item && sw.color != null && renameMap.has(String(sw.color).trim())) sw.color = renameMap.get(String(sw.color).trim());
       for (const pb of priceBook) if (String(pb.item).trim() === t_item && pb.color && renameMap.has(String(pb.color).trim())) pb.color = renameMap.get(String(pb.color).trim());
